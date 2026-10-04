@@ -10,6 +10,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /nudge-server ./cmd/server
 FROM alpine:3.22
 
 WORKDIR /app
+RUN apk add --no-cache tzdata
 COPY --from=build /nudge-server /app/nudge-server
 
 EXPOSE 8080
