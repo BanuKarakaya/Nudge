@@ -83,17 +83,21 @@ func writeRaindropSuccess(w http.ResponseWriter) {
   <title>Nudge’ye hoş geldin</title>
   <style>
     :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f7f7fb; color: #1f1f2e; }
-    .card { width: min(420px, calc(100% - 40px)); box-sizing: border-box; padding: 40px 32px; text-align: center; background: white; border: 1px solid #e8e8f0; border-radius: 20px; box-shadow: 0 16px 40px rgba(31, 31, 46, .08); }
-    .icon { width: 64px; height: 64px; margin: 0 auto 20px; display: grid; place-items: center; border-radius: 50%; background: #e8f8f0; color: #168653; font-size: 32px; }
-    h1 { margin: 0 0 12px; font-size: 25px; }
-    p { margin: 0; color: #686879; line-height: 1.55; }
-    .hint { margin-top: 22px; font-size: 13px; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #fff7f5; color: #29211f; }
+    .card { width: min(460px, calc(100% - 40px)); box-sizing: border-box; padding: 42px 34px; text-align: center; background: white; border: 1px solid #f4d8d2; border-radius: 22px; box-shadow: 0 18px 48px rgba(222, 61, 40, .12); }
+    .brand { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 26px; color: #de3d28; font-size: 20px; font-weight: 750; letter-spacing: -.3px; }
+    .icon { position: relative; width: 70px; height: 70px; margin: 0 auto 20px; display: grid; place-items: center; border-radius: 14px; background: #fff1ee; color: #de3d28; font-size: 34px; }
+    .bookmark { position: relative; display: block; width: 25px; height: 34px; border-radius: 3px 3px 1px 1px; background: linear-gradient(180deg, #c92d20, #e44b38); }
+    .bookmark::after { content: ""; position: absolute; bottom: -1px; left: 0; width: 0; height: 0; border-left: 12.5px solid transparent; border-right: 12.5px solid transparent; border-bottom: 9px solid #fff1ee; }
+    h1 { margin: 0 0 12px; font-size: 25px; letter-spacing: -.5px; }
+    p { margin: 0; color: #756967; line-height: 1.55; }
+    .hint { margin-top: 22px; font-size: 13px; color: #a18d88; }
   </style>
 </head>
 <body>
   <main class="card">
-    <div class="icon" aria-hidden="true">✓</div>
+    <div class="brand"><span class="bookmark" aria-hidden="true"></span><span>Nudge</span></div>
+    <div class="icon" aria-hidden="true"><span class="bookmark"></span></div>
     <h1>Raindrop başarıyla bağlandı</h1>
     <p>Nudge artık kaydettiğin bookmark’ları takip edebilir ve sana hatırlatmalar gönderebilir.</p>
     <p class="hint">Bu pencereyi kapatabilirsin.</p>
