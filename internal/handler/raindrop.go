@@ -3,6 +3,7 @@ package handler
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"html/template"
 	"net/http"
 	"strconv"
 	"sync"
@@ -70,10 +71,40 @@ func (h *RaindropHandler) callback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "could not save Raindrop connection")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"message": "Raindrop account connected",
-		"user_id": userID,
-	})
+	writeRaindropSuccess(w)
+}
+
+func writeRaindropSuccess(w http.ResponseWriter) {
+	const page = `<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nudge’ye hoş geldin</title>
+  <style>
+    :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f7f7fb; color: #1f1f2e; }
+    .card { width: min(420px, calc(100% - 40px)); box-sizing: border-box; padding: 40px 32px; text-align: center; background: white; border: 1px solid #e8e8f0; border-radius: 20px; box-shadow: 0 16px 40px rgba(31, 31, 46, .08); }
+    .icon { width: 64px; height: 64px; margin: 0 auto 20px; display: grid; place-items: center; border-radius: 50%; background: #e8f8f0; color: #168653; font-size: 32px; }
+    h1 { margin: 0 0 12px; font-size: 25px; }
+    p { margin: 0; color: #686879; line-height: 1.55; }
+    .hint { margin-top: 22px; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="icon" aria-hidden="true">✓</div>
+    <h1>Raindrop başarıyla bağlandı</h1>
+    <p>Nudge artık kaydettiğin bookmark’ları takip edebilir ve sana hatırlatmalar gönderebilir.</p>
+    <p class="hint">Bu pencereyi kapatabilirsin.</p>
+  </main>
+</body>
+</html>`
+	// Parse the HTML as a template so future user-facing copy remains safely escaped.
+	tmpl := template.Must(template.New("raindrop-success").Parse(page))
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_ = tmpl.Execute(w, nil)
 }
 
 func randomState() (string, error) {
