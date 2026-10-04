@@ -79,5 +79,38 @@ func (h *SlackInteractionHandler) handle(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"text": "Bookmark durumu güncellendi."})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"replace_original": true,
+		"text":             "Bookmark durumu güncellendi.",
+		"blocks":           bookmarkStatusBlocks(payload.Actions[0].ActionID, payload.Actions[0].Value),
+	})
+}
+
+func bookmarkStatusBlocks(actionID, value string) []map[string]any {
+	readText := "Okudum"
+	unreadText := "Okumadım"
+	if actionID == "bookmark_read" {
+		readText = "✅ Okudum"
+	} else {
+		unreadText = "✅ Okumadım"
+	}
+
+	return []map[string]any{{
+		"type": "actions",
+		"elements": []map[string]any{
+			{
+				"type":      "button",
+				"text":      map[string]string{"type": "plain_text", "text": readText},
+				"action_id": "bookmark_read",
+				"value":     value,
+				"style":     "primary",
+			},
+			{
+				"type":      "button",
+				"text":      map[string]string{"type": "plain_text", "text": unreadText},
+				"action_id": "bookmark_unread",
+				"value":     value,
+			},
+		},
+	}}
 }
