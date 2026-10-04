@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -41,6 +42,77 @@ const postMessageURL = "https://slack.com/api/chat.postMessage"
 
 type APIClient struct {
 	HTTPClient *http.Client
+}
+
+type usersListResponse struct {
+	OK      bool                 `json:"ok"`
+	Error   string               `json:"error"`
+	Members []domain.SlackMember `json:"members"`
+}
+
+type conversationOpenResponse struct {
+	OK      bool   `json:"ok"`
+	Error   string `json:"error"`
+	Channel struct {
+		ID string `json:"id"`
+	} `json:"channel"`
+}
+
+func (c APIClient) ListUsers(ctx context.Context, token string) ([]domain.SlackMember, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://slack.com/api/users.list?limit=200", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var result usersListResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 || !result.OK {
+		if result.Error == "" {
+			result.Error = resp.Status
+		}
+		return nil, fmt.Errorf("Slack users.list failed: %s", result.Error)
+	}
+	return result.Members, nil
+}
+
+func (c APIClient) OpenDirectMessage(ctx context.Context, token, slackUserID string) (string, error) {
+	form := url.Values{"users": []string{slackUserID}}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://slack.com/api/conversations.open", strings.NewReader(form.Encode()))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	var result conversationOpenResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 || !result.OK {
+		if result.Error == "" {
+			result.Error = resp.Status
+		}
+		return "", fmt.Errorf("Slack conversations.open failed: %s", result.Error)
+	}
+	return result.Channel.ID, nil
+}
+
+func (c APIClient) httpClient() *http.Client {
+	if c.HTTPClient != nil {
+		return c.HTTPClient
+	}
+	return http.DefaultClient
 }
 
 type postMessageRequest struct {

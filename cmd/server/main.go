@@ -97,22 +97,25 @@ func main() {
 	raindropSyncHandler := handler.NewRaindropSyncHandler(raindropSyncService)
 	raindropSyncHandler.RegisterRoutes(mux)
 
-	if reminderUserID, reminderChannel, reminderTimezone := reminderConfig(); reminderUserID > 0 && reminderChannel != "" {
+	if reminderUserID, reminderTimezone := reminderConfig(); reminderUserID > 0 {
 		notificationRepository := postgres.NewNotificationRepository(db)
 		dailyReminder := scheduler.NewDailyReminder(
 			reminderUserID,
-			reminderChannel,
+			os.Getenv("NUDGE_PUBLIC_URL"),
 			reminderTimezone,
+			installationRepository,
+			raindropRepository,
 			raindropSyncService,
 			bookmarkService,
 			slackMessageService,
 			slackBookmarkService,
 			notificationRepository,
+			slackAPIClient,
 		)
 		go dailyReminder.Run(context.Background())
-		log.Printf("daily reminder enabled for %s at 22:00 (%s)", reminderChannel, reminderTimezone)
+		log.Printf("daily reminder enabled for workspace at 22:00 (%s)", reminderTimezone)
 	} else {
-		log.Printf("daily reminder disabled: set NUDGE_REMINDER_USER_ID and NUDGE_REMINDER_CHANNEL_ID")
+		log.Printf("daily reminder disabled: set NUDGE_REMINDER_USER_ID")
 	}
 
 	addr := ":" + port
@@ -122,9 +125,8 @@ func main() {
 	}
 }
 
-func reminderConfig() (int64, string, *time.Location) {
+func reminderConfig() (int64, *time.Location) {
 	userID, _ := strconv.ParseInt(os.Getenv("NUDGE_REMINDER_USER_ID"), 10, 64)
-	channel := os.Getenv("NUDGE_REMINDER_CHANNEL_ID")
 	timezoneName := os.Getenv("NUDGE_TIMEZONE")
 	if timezoneName == "" {
 		timezoneName = "Europe/Istanbul"
@@ -134,5 +136,5 @@ func reminderConfig() (int64, string, *time.Location) {
 		log.Printf("invalid NUDGE_TIMEZONE %q, using UTC: %v", timezoneName, err)
 		timezone = time.UTC
 	}
-	return userID, channel, timezone
+	return userID, timezone
 }

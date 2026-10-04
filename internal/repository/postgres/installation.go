@@ -61,3 +61,40 @@ func (r *InstallationRepository) GetByUserID(ctx context.Context, userID int64) 
 	)
 	return installation, err
 }
+
+func (r *InstallationRepository) UpsertUser(ctx context.Context, teamID, slackUserID string) (int64, error) {
+	const query = `
+		INSERT INTO users (team_id, slack_user_id)
+		VALUES ($1, $2)
+		ON CONFLICT (team_id, slack_user_id) DO UPDATE SET
+			slack_user_id = EXCLUDED.slack_user_id
+		RETURNING id`
+
+	var userID int64
+	err := r.db.QueryRow(ctx, query, teamID, slackUserID).Scan(&userID)
+	return userID, err
+}
+
+func (r *InstallationRepository) ListUsersByTeam(ctx context.Context, teamID string) ([]domain.WorkspaceUser, error) {
+	const query = `
+		SELECT id, team_id, slack_user_id
+		FROM users
+		WHERE team_id = $1
+		ORDER BY id`
+
+	rows, err := r.db.Query(ctx, query, teamID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	users := make([]domain.WorkspaceUser, 0)
+	for rows.Next() {
+		var user domain.WorkspaceUser
+		if err := rows.Scan(&user.ID, &user.TeamID, &user.SlackUserID); err != nil {
+			return nil, err
+		}
+		users = append(users, user)
+	}
+	return users, rows.Err()
+}
