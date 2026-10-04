@@ -47,18 +47,67 @@ func NewDailyReminder(seedUserID int64, publicURL string, timezone *time.Locatio
 
 func (r *DailyReminder) Run(ctx context.Context) {
 	for {
-		wait := time.Until(r.nextRun(time.Now()))
+		next, onboarding := r.nextEvent(time.Now())
+		wait := time.Until(next)
 		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
 			return
 		case <-timer.C:
-			if err := r.RunOnce(ctx, time.Now()); err != nil {
+			var err error
+			if onboarding {
+				err = r.SendOnboardingOnce(ctx)
+			} else {
+				err = r.RunOnce(ctx, time.Now())
+			}
+			if err != nil {
 				log.Printf("daily reminder failed: %v", err)
 			}
 		}
 	}
+}
+
+func (r *DailyReminder) SendOnboardingOnce(ctx context.Context) error {
+	installation, err := r.installations.GetByUserID(ctx, r.seedUserID)
+	if err != nil {
+		return fmt.Errorf("get workspace installation: %w", err)
+	}
+	members, err := r.slack.ListUsers(ctx, installation.BotToken)
+	if err != nil {
+		return fmt.Errorf("list workspace members: %w", err)
+	}
+	for _, member := range members {
+		if member.ID == "" || member.Deleted || member.IsBot {
+			continue
+		}
+		if err := r.processOnboardingMember(ctx, installation.TeamID, installation.BotToken, member.ID); err != nil {
+			log.Printf("onboarding for Slack user %s failed: %v", member.ID, err)
+		}
+	}
+	return nil
+}
+
+func (r *DailyReminder) processOnboardingMember(ctx context.Context, teamID, botToken, slackUserID string) error {
+	userID, err := r.installations.UpsertUser(ctx, teamID, slackUserID)
+	if err != nil {
+		return fmt.Errorf("save workspace user: %w", err)
+	}
+	if _, err := r.connections.GetByUserID(ctx, userID); err == nil {
+		return nil
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("check Raindrop connection: %w", err)
+	}
+	dmChannel, err := r.slack.OpenDirectMessage(ctx, botToken, slackUserID)
+	if err != nil {
+		return fmt.Errorf("open direct message: %w", err)
+	}
+	claimed, err := r.notifications.Claim(ctx, userID, "raindrop_connection", "initial")
+	if err != nil || !claimed {
+		return err
+	}
+	link := fmt.Sprintf("%s/raindrop/install?user_id=%d", r.publicURL, userID)
+	return r.messages.SendMessage(ctx, userID, dmChannel, "Nudge’yi kullanmak için önce Raindrop hesabını bağla:\n"+link)
 }
 
 func (r *DailyReminder) RunOnce(ctx context.Context, now time.Time) error {
@@ -94,15 +143,10 @@ func (r *DailyReminder) processMember(ctx context.Context, teamID, botToken, sla
 		return fmt.Errorf("open direct message: %w", err)
 	}
 	if _, err := r.connections.GetByUserID(ctx, userID); err != nil {
-		if !errors.Is(err, pgx.ErrNoRows) {
-			return fmt.Errorf("check Raindrop connection: %w", err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
 		}
-		claimed, claimErr := r.notifications.Claim(ctx, userID, "raindrop_connection", "initial")
-		if claimErr != nil || !claimed {
-			return claimErr
-		}
-		link := fmt.Sprintf("%s/raindrop/install?user_id=%d", r.publicURL, userID)
-		return r.messages.SendMessage(ctx, userID, dmChannel, "Nudge’yi kullanmak için önce Raindrop hesabını bağla:\n"+link)
+		return fmt.Errorf("check Raindrop connection: %w", err)
 	}
 	if _, err := r.sync.SyncLatest(ctx, userID); err != nil {
 		return fmt.Errorf("sync Raindrop bookmarks: %w", err)
@@ -126,11 +170,18 @@ func (r *DailyReminder) processMember(ctx context.Context, teamID, botToken, sla
 	return nil
 }
 
-func (r *DailyReminder) nextRun(now time.Time) time.Time {
+func (r *DailyReminder) nextEvent(now time.Time) (time.Time, bool) {
 	localNow := now.In(r.timezone)
-	next := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 22, 0, 0, 0, r.timezone)
-	if !next.After(localNow) {
-		next = next.Add(24 * time.Hour)
+	onboarding := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 18, 0, 0, 0, r.timezone)
+	reminder := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 22, 0, 0, 0, r.timezone)
+	if !onboarding.After(localNow) {
+		onboarding = onboarding.Add(24 * time.Hour)
 	}
-	return next
+	if !reminder.After(localNow) {
+		reminder = reminder.Add(24 * time.Hour)
+	}
+	if onboarding.Before(reminder) {
+		return onboarding, true
+	}
+	return reminder, false
 }

@@ -120,7 +120,7 @@ func main() {
 			slackAPIClient,
 		)
 		go dailyReminder.Run(context.Background())
-		log.Printf("daily reminder enabled for workspace at 22:00 (%s)", reminderTimezone)
+		log.Printf("onboarding enabled at 18:00 and daily reminder at 22:00 (%s)", reminderTimezone)
 	} else {
 		log.Printf("daily reminder disabled: set NUDGE_REMINDER_USER_ID")
 	}
