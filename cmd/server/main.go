@@ -96,6 +96,13 @@ func main() {
 	)
 	raindropSyncHandler := handler.NewRaindropSyncHandler(raindropSyncService)
 	raindropSyncHandler.RegisterRoutes(mux)
+	onboardingService := service.NewOnboardingService(
+		installationRepository,
+		slackAPIClient,
+		os.Getenv("NUDGE_PUBLIC_URL"),
+	)
+	onboardingHandler := handler.NewOnboardingHandler(onboardingService, os.Getenv("NUDGE_TEST_TOKEN"))
+	onboardingHandler.RegisterRoutes(mux)
 
 	if reminderUserID, reminderTimezone := reminderConfig(); reminderUserID > 0 {
 		notificationRepository := postgres.NewNotificationRepository(db)
