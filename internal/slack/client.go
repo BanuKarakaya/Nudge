@@ -61,6 +61,12 @@ type bookmarkMessageRequest struct {
 	UnfurlMedia bool             `json:"unfurl_media"`
 }
 
+type interactionResponse struct {
+	ReplaceOriginal bool             `json:"replace_original"`
+	Text            string           `json:"text"`
+	Blocks          []map[string]any `json:"blocks"`
+}
+
 func (c APIClient) PostMessage(ctx context.Context, token, channel, text string) error {
 	body, err := json.Marshal(postMessageRequest{Channel: channel, Text: text})
 	if err != nil {
@@ -138,6 +144,39 @@ func (c APIClient) PostBookmarkMessage(ctx context.Context, token, channel strin
 		return err
 	}
 	return c.post(ctx, token, body)
+}
+
+// UpdateInteraction replaces the original Slack message through the response URL
+// supplied with a block action payload.
+func (c APIClient) UpdateInteraction(ctx context.Context, responseURL string, blocks []map[string]any) error {
+	payload := interactionResponse{
+		ReplaceOriginal: true,
+		Text:            "Bookmark durumu güncellendi.",
+		Blocks:          blocks,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	client := c.HTTPClient
+	if client == nil {
+		client = http.DefaultClient
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, responseURL, strings.NewReader(string(body)))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("Slack interaction update failed: %s", resp.Status)
+	}
+	return nil
 }
 
 func (c APIClient) post(ctx context.Context, token string, body []byte) error {
