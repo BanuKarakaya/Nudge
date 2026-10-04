@@ -5,12 +5,14 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"nudge/internal/database"
 	"nudge/internal/handler"
 	"nudge/internal/raindrop"
 	"nudge/internal/repository/postgres"
+	"nudge/internal/scheduler"
 	"nudge/internal/service"
 	"nudge/internal/slack"
 )
@@ -95,9 +97,42 @@ func main() {
 	raindropSyncHandler := handler.NewRaindropSyncHandler(raindropSyncService)
 	raindropSyncHandler.RegisterRoutes(mux)
 
+	if reminderUserID, reminderChannel, reminderTimezone := reminderConfig(); reminderUserID > 0 && reminderChannel != "" {
+		notificationRepository := postgres.NewNotificationRepository(db)
+		dailyReminder := scheduler.NewDailyReminder(
+			reminderUserID,
+			reminderChannel,
+			reminderTimezone,
+			raindropSyncService,
+			bookmarkService,
+			slackMessageService,
+			slackBookmarkService,
+			notificationRepository,
+		)
+		go dailyReminder.Run(context.Background())
+		log.Printf("daily reminder enabled for %s at 22:00 (%s)", reminderChannel, reminderTimezone)
+	} else {
+		log.Printf("daily reminder disabled: set NUDGE_REMINDER_USER_ID and NUDGE_REMINDER_CHANNEL_ID")
+	}
+
 	addr := ":" + port
 	log.Printf("Nudge server listening on %s", addr)
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func reminderConfig() (int64, string, *time.Location) {
+	userID, _ := strconv.ParseInt(os.Getenv("NUDGE_REMINDER_USER_ID"), 10, 64)
+	channel := os.Getenv("NUDGE_REMINDER_CHANNEL_ID")
+	timezoneName := os.Getenv("NUDGE_TIMEZONE")
+	if timezoneName == "" {
+		timezoneName = "Europe/Istanbul"
+	}
+	timezone, err := time.LoadLocation(timezoneName)
+	if err != nil {
+		log.Printf("invalid NUDGE_TIMEZONE %q, using UTC: %v", timezoneName, err)
+		timezone = time.UTC
+	}
+	return userID, channel, timezone
 }
