@@ -106,8 +106,12 @@ func (r *DailyReminder) processOnboardingMember(ctx context.Context, teamID, bot
 	if err != nil || !claimed {
 		return err
 	}
-	link := fmt.Sprintf("%s/raindrop/install?user_id=%d", r.publicURL, userID)
-	return r.messages.SendMessage(ctx, userID, dmChannel, "Nudge’yi kullanmak için önce Raindrop hesabını bağla:\n"+link)
+	raindropLink := fmt.Sprintf("%s/raindrop/install?user_id=%d", r.publicURL, userID)
+	feedbinLink := fmt.Sprintf("%s/feedbin/install?user_id=%d", r.publicURL, userID)
+	message := "Nudge’yi kullanmak için hesaplarını bağla:\n\n" +
+		"• Raindrop: " + raindropLink + "\n" +
+		"• Feedbin: " + feedbinLink
+	return r.messages.SendMessage(ctx, userID, dmChannel, message)
 }
 
 func (r *DailyReminder) RunOnce(ctx context.Context, now time.Time) error {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"nudge/internal/database"
+	"nudge/internal/feedbin"
 	"nudge/internal/handler"
 	"nudge/internal/raindrop"
 	"nudge/internal/repository/postgres"
@@ -96,6 +97,12 @@ func main() {
 	)
 	raindropSyncHandler := handler.NewRaindropSyncHandler(raindropSyncService)
 	raindropSyncHandler.RegisterRoutes(mux)
+	feedbinRepository := postgres.NewFeedbinConnectionRepository(db)
+	feedbinService := service.NewFeedbinService(feedbinRepository, feedbin.Client{
+		HTTPClient: &http.Client{Timeout: 15 * time.Second},
+	})
+	feedbinHandler := handler.NewFeedbinHandler(feedbinService)
+	feedbinHandler.RegisterRoutes(mux)
 	onboardingService := service.NewOnboardingService(
 		installationRepository,
 		slackAPIClient,
