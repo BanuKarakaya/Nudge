@@ -116,8 +116,9 @@ func (c APIClient) httpClient() *http.Client {
 }
 
 type postMessageRequest struct {
-	Channel string `json:"channel"`
-	Text    string `json:"text"`
+	Channel  string `json:"channel"`
+	Text     string `json:"text"`
+	ThreadTS string `json:"thread_ts,omitempty"`
 }
 
 type postMessageResponse struct {
@@ -140,7 +141,15 @@ type interactionResponse struct {
 }
 
 func (c APIClient) PostMessage(ctx context.Context, token, channel, text string) error {
-	body, err := json.Marshal(postMessageRequest{Channel: channel, Text: text})
+	return c.postText(ctx, token, postMessageRequest{Channel: channel, Text: text})
+}
+
+func (c APIClient) PostMessageInThread(ctx context.Context, token, channel, threadTS, text string) error {
+	return c.postText(ctx, token, postMessageRequest{Channel: channel, Text: text, ThreadTS: threadTS})
+}
+
+func (c APIClient) postText(ctx context.Context, token string, payload postMessageRequest) error {
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}

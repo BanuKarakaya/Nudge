@@ -98,3 +98,14 @@ func (r *InstallationRepository) ListUsersByTeam(ctx context.Context, teamID str
 	}
 	return users, rows.Err()
 }
+
+func (r *InstallationRepository) GetUserIDBySlackUserID(ctx context.Context, teamID, slackUserID string) (int64, error) {
+	const query = `
+		SELECT id
+		FROM users
+		WHERE team_id = $1 AND slack_user_id = $2`
+
+	var userID int64
+	err := r.db.QueryRow(ctx, query, teamID, slackUserID).Scan(&userID)
+	return userID, err
+}

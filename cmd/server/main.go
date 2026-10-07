@@ -103,6 +103,15 @@ func main() {
 	)
 	onboardingHandler := handler.NewOnboardingHandler(onboardingService, os.Getenv("NUDGE_TEST_TOKEN"))
 	onboardingHandler.RegisterRoutes(mux)
+	_, appTimezone := reminderConfig()
+	slackEventHandler := handler.NewSlackEventHandler(
+		os.Getenv("SLACK_SIGNING_SECRET"),
+		installationRepository,
+		bookmarkService,
+		slackAPIClient,
+		appTimezone,
+	)
+	slackEventHandler.RegisterRoutes(mux)
 
 	if reminderUserID, reminderTimezone := reminderConfig(); reminderUserID > 0 {
 		notificationRepository := postgres.NewNotificationRepository(db)
