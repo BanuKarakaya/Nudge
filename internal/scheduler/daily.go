@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -27,6 +28,7 @@ type DailyReminder struct {
 	timezone      *time.Location
 	installations repository.InstallationRepository
 	connections   repository.RaindropConnectionRepository
+	feedbin       repository.FeedbinConnectionRepository
 	sync          *service.RaindropSyncService
 	bookmarks     service.BookmarkService
 	messages      *service.SlackMessagingService
@@ -37,11 +39,12 @@ type DailyReminder struct {
 
 func NewDailyReminder(seedUserID int64, publicURL string, timezone *time.Location,
 	installations repository.InstallationRepository, connections repository.RaindropConnectionRepository,
+	feedbin repository.FeedbinConnectionRepository,
 	sync *service.RaindropSyncService, bookmarks service.BookmarkService,
 	messages *service.SlackMessagingService, bookmarkMsgs *service.SlackBookmarkMessagingService,
 	notifications repository.NotificationRepository, slackClient SlackWorkspaceClient) *DailyReminder {
 	return &DailyReminder{seedUserID: seedUserID, publicURL: publicURL, timezone: timezone,
-		installations: installations, connections: connections, sync: sync, bookmarks: bookmarks,
+		installations: installations, connections: connections, feedbin: feedbin, sync: sync, bookmarks: bookmarks,
 		messages: messages, bookmarkMsgs: bookmarkMsgs, notifications: notifications, slack: slackClient}
 }
 
@@ -93,24 +96,44 @@ func (r *DailyReminder) processOnboardingMember(ctx context.Context, teamID, bot
 	if err != nil {
 		return fmt.Errorf("save workspace user: %w", err)
 	}
-	if _, err := r.connections.GetByUserID(ctx, userID); err == nil {
+	_, raindropErr := r.connections.GetByUserID(ctx, userID)
+	if raindropErr != nil && !errors.Is(raindropErr, pgx.ErrNoRows) {
+		return fmt.Errorf("check Raindrop connection: %w", raindropErr)
+	}
+	_, feedbinErr := r.feedbin.GetByUserID(ctx, userID)
+	if feedbinErr != nil && !errors.Is(feedbinErr, pgx.ErrNoRows) {
+		return fmt.Errorf("check Feedbin connection: %w", feedbinErr)
+	}
+	if raindropErr == nil && feedbinErr == nil {
 		return nil
-	} else if !errors.Is(err, pgx.ErrNoRows) {
-		return fmt.Errorf("check Raindrop connection: %w", err)
 	}
 	dmChannel, err := r.slack.OpenDirectMessage(ctx, botToken, slackUserID)
 	if err != nil {
 		return fmt.Errorf("open direct message: %w", err)
 	}
-	claimed, err := r.notifications.Claim(ctx, userID, "raindrop_connection", "initial")
-	if err != nil || !claimed {
-		return err
+	var links []string
+	if raindropErr != nil {
+		claimed, claimErr := r.notifications.Claim(ctx, userID, "raindrop_connection", "initial")
+		if claimErr != nil {
+			return claimErr
+		}
+		if claimed {
+			links = append(links, "• Raindrop: "+fmt.Sprintf("%s/raindrop/install?user_id=%d", r.publicURL, userID))
+		}
 	}
-	raindropLink := fmt.Sprintf("%s/raindrop/install?user_id=%d", r.publicURL, userID)
-	feedbinLink := fmt.Sprintf("%s/feedbin/install?user_id=%d", r.publicURL, userID)
-	message := "Nudge’yi kullanmak için hesaplarını bağla:\n\n" +
-		"• Raindrop: " + raindropLink + "\n" +
-		"• Feedbin: " + feedbinLink
+	if feedbinErr != nil {
+		claimed, claimErr := r.notifications.Claim(ctx, userID, "feedbin_connection", "initial")
+		if claimErr != nil {
+			return claimErr
+		}
+		if claimed {
+			links = append(links, "• Feedbin: "+fmt.Sprintf("%s/feedbin/install?user_id=%d", r.publicURL, userID))
+		}
+	}
+	if len(links) == 0 {
+		return nil
+	}
+	message := "Nudge’yi kullanmak için hesaplarını bağla:\n\n" + strings.Join(links, "\n")
 	return r.messages.SendMessage(ctx, userID, dmChannel, message)
 }
 
@@ -176,7 +199,7 @@ func (r *DailyReminder) processMember(ctx context.Context, teamID, botToken, sla
 
 func (r *DailyReminder) nextEvent(now time.Time) (time.Time, bool) {
 	localNow := now.In(r.timezone)
-	onboarding := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 18, 0, 0, 0, r.timezone)
+	onboarding := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 13, 45, 0, 0, r.timezone)
 	reminder := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 22, 0, 0, 0, r.timezone)
 	if !onboarding.After(localNow) {
 		onboarding = onboarding.Add(24 * time.Hour)
