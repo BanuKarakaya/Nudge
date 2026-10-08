@@ -116,9 +116,11 @@ func (c APIClient) httpClient() *http.Client {
 }
 
 type postMessageRequest struct {
-	Channel  string `json:"channel"`
-	Text     string `json:"text"`
-	ThreadTS string `json:"thread_ts,omitempty"`
+	Channel     string `json:"channel"`
+	Text        string `json:"text"`
+	ThreadTS    string `json:"thread_ts,omitempty"`
+	UnfurlLinks bool   `json:"unfurl_links"`
+	UnfurlMedia bool   `json:"unfurl_media"`
 }
 
 type postMessageResponse struct {
@@ -141,11 +143,11 @@ type interactionResponse struct {
 }
 
 func (c APIClient) PostMessage(ctx context.Context, token, channel, text string) error {
-	return c.postText(ctx, token, postMessageRequest{Channel: channel, Text: text})
+	return c.postText(ctx, token, postMessageRequest{Channel: channel, Text: text, UnfurlLinks: false, UnfurlMedia: false})
 }
 
 func (c APIClient) PostMessageInThread(ctx context.Context, token, channel, threadTS, text string) error {
-	return c.postText(ctx, token, postMessageRequest{Channel: channel, Text: text, ThreadTS: threadTS})
+	return c.postText(ctx, token, postMessageRequest{Channel: channel, Text: text, ThreadTS: threadTS, UnfurlLinks: false, UnfurlMedia: false})
 }
 
 func (c APIClient) postText(ctx context.Context, token string, payload postMessageRequest) error {
