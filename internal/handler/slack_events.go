@@ -21,6 +21,7 @@ type SlackEventHandler struct {
 	signingSecret string
 	installations repository.InstallationRepository
 	bookmarks     service.BookmarkService
+	feedbinDigest *service.FeedbinDigestService
 	client        slackThreadMessageClient
 	timezone      *time.Location
 }
@@ -29,8 +30,8 @@ type slackThreadMessageClient interface {
 	PostMessageInThread(ctx context.Context, token, channel, threadTS, text string) error
 }
 
-func NewSlackEventHandler(signingSecret string, installations repository.InstallationRepository, bookmarks service.BookmarkService, client slackThreadMessageClient, timezone *time.Location) *SlackEventHandler {
-	return &SlackEventHandler{signingSecret: signingSecret, installations: installations, bookmarks: bookmarks, client: client, timezone: timezone}
+func NewSlackEventHandler(signingSecret string, installations repository.InstallationRepository, bookmarks service.BookmarkService, feedbinDigest *service.FeedbinDigestService, client slackThreadMessageClient, timezone *time.Location) *SlackEventHandler {
+	return &SlackEventHandler{signingSecret: signingSecret, installations: installations, bookmarks: bookmarks, feedbinDigest: feedbinDigest, client: client, timezone: timezone}
 }
 
 func (h *SlackEventHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -70,7 +71,12 @@ func (h *SlackEventHandler) handle(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "invalid Slack signature")
 		return
 	}
-	if envelope.Event.Type != "app_mention" || !strings.Contains(strings.ToLower(envelope.Event.Text), "özetimi ver") {
+	if envelope.Event.Type != "app_mention" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	text := strings.ToLower(envelope.Event.Text)
+	if !strings.Contains(text, "özetimi ver") && !strings.Contains(text, "rsslerimi ver") && !strings.Contains(text, "rss'lerimi ver") {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
@@ -103,19 +109,39 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 	}
 	now := time.Now()
 	from := lastDailyStart(now, h.timezone).UTC()
-	bookmarks, err := h.bookmarks.ListByDate(ctx, userID, from, now.UTC())
-	if err != nil {
-		log.Printf("list bookmarks for Slack mention: %v", err)
-		return
-	}
 	threadTS := event.Event.ThreadTS
 	if threadTS == "" {
 		threadTS = event.Event.TS
 	}
-	message := formatThreadSummary(bookmarks)
+	var message string
+	if strings.Contains(strings.ToLower(event.Event.Text), "rss") {
+		if h.feedbinDigest == nil {
+			return
+		}
+		message, err = h.feedbinDigest.BuildDigest(ctx, userID, lastFeedbinStart(now, h.timezone))
+	} else {
+		bookmarks, listErr := h.bookmarks.ListByDate(ctx, userID, from, now.UTC())
+		err = listErr
+		if err == nil {
+			message = formatThreadSummary(bookmarks)
+		}
+	}
+	if err != nil {
+		log.Printf("build Slack mention summary: %v", err)
+		return
+	}
 	if err := h.client.PostMessageInThread(ctx, installation.BotToken, event.Event.Channel, threadTS, message); err != nil {
 		log.Printf("send Slack thread summary: %v", err)
 	}
+}
+
+func lastFeedbinStart(now time.Time, location *time.Location) time.Time {
+	localNow := now.In(location)
+	start := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 23, 0, 0, 0, location)
+	if localNow.Before(start) {
+		start = start.Add(-24 * time.Hour)
+	}
+	return start
 }
 
 func lastDailyStart(now time.Time, location *time.Location) time.Time {

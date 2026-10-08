@@ -132,6 +132,7 @@ func main() {
 		os.Getenv("SLACK_SIGNING_SECRET"),
 		installationRepository,
 		bookmarkService,
+		feedbinDigestService,
 		slackAPIClient,
 		appTimezone,
 	)
@@ -153,7 +154,19 @@ func main() {
 			slackAPIClient,
 		)
 		go dailyReminder.Run(context.Background())
+		feedbinReminder := scheduler.NewFeedbinReminder(
+			reminderUserID,
+			reminderTimezone,
+			installationRepository,
+			feedbinRepository,
+			feedbinDigestService,
+			slackMessageService,
+			notificationRepository,
+			slackAPIClient,
+		)
+		go feedbinReminder.Run(context.Background())
 		log.Printf("onboarding enabled at 18:00 and daily reminder at 22:00 (%s)", reminderTimezone)
+		log.Printf("Feedbin reminder enabled at 23:00 (%s)", reminderTimezone)
 	} else {
 		log.Printf("daily reminder disabled: set NUDGE_REMINDER_USER_ID")
 	}
