@@ -108,6 +108,18 @@ func main() {
 	})
 	feedbinHandler := handler.NewFeedbinHandler(feedbinService)
 	feedbinHandler.RegisterRoutes(mux)
+	feedbinDigestService := service.NewFeedbinDigestService(feedbinRepository, feedbin.Client{
+		HTTPClient: &http.Client{Timeout: 15 * time.Second},
+	})
+	_, feedbinTimezone := reminderConfig()
+	feedbinDigestHandler := handler.NewFeedbinDigestHandler(
+		installationRepository,
+		feedbinDigestService,
+		slackAPIClient,
+		feedbinTimezone,
+		os.Getenv("NUDGE_TEST_TOKEN"),
+	)
+	feedbinDigestHandler.RegisterRoutes(mux)
 	onboardingService := service.NewOnboardingService(
 		installationRepository,
 		slackAPIClient,
