@@ -28,6 +28,15 @@ func (h *FeedbinHandler) install(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "user_id must be a positive integer")
 		return
 	}
+	connected, err := h.service.IsConnected(r.Context(), userID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not check Feedbin connection")
+		return
+	}
+	if connected {
+		writeFeedbinAlreadyConnected(w)
+		return
+	}
 	writeFeedbinForm(w, userID, "")
 }
 
@@ -71,6 +80,12 @@ func writeFeedbinForm(w http.ResponseWriter, userID int64, errorMessage string) 
 
 func writeFeedbinSuccess(w http.ResponseWriter) {
 	const page = `<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Feedbin bağlandı</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#fff7f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#29211f}.card{width:min(460px,calc(100% - 40px));padding:42px 34px;text-align:center;background:#fff;border:1px solid #f4d8d2;border-radius:22px;box-shadow:0 18px 48px rgba(222,61,40,.12)}.icon{font-size:48px;margin-bottom:18px}h1{font-size:25px;margin:0 0 12px}p{color:#756967;line-height:1.55}</style></head><body><main class="card"><div class="icon">✅</div><h1>Feedbin başarıyla bağlandı</h1><p>Nudge artık okunmamış RSS’lerini folder’larına göre takip edebilir.</p><p>Bu pencereyi kapatabilirsin.</p></main></body></html>`
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write([]byte(page))
+}
+
+func writeFeedbinAlreadyConnected(w http.ResponseWriter) {
+	const page = `<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Feedbin bağlı</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#fff7f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#29211f}.card{width:min(460px,calc(100% - 40px));padding:42px 34px;text-align:center;background:#fff;border:1px solid #f4d8d2;border-radius:22px;box-shadow:0 18px 48px rgba(222,61,40,.12)}.icon{font-size:48px;margin-bottom:18px}h1{font-size:25px;margin:0 0 12px}p{color:#756967;line-height:1.55}</style></head><body><main class="card"><div class="icon">✅</div><h1>Feedbin zaten bağlı</h1><p>Nudge, Feedbin hesabını takip ediyor. Bu pencereyi kapatabilirsin.</p></main></body></html>`
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(page))
 }

@@ -14,6 +14,7 @@ import (
 	"nudge/internal/raindrop"
 	"nudge/internal/repository/postgres"
 	"nudge/internal/scheduler"
+	"nudge/internal/secure"
 	"nudge/internal/service"
 	"nudge/internal/slack"
 )
@@ -97,7 +98,11 @@ func main() {
 	)
 	raindropSyncHandler := handler.NewRaindropSyncHandler(raindropSyncService)
 	raindropSyncHandler.RegisterRoutes(mux)
-	feedbinRepository := postgres.NewFeedbinConnectionRepository(db)
+	feedbinCipher, err := secure.NewCipherFromBase64(os.Getenv("FEEDBIN_ENCRYPTION_KEY"))
+	if err != nil {
+		log.Fatalf("Feedbin encryption is not configured: %v", err)
+	}
+	feedbinRepository := postgres.NewFeedbinConnectionRepository(db, feedbinCipher)
 	feedbinService := service.NewFeedbinService(feedbinRepository, feedbin.Client{
 		HTTPClient: &http.Client{Timeout: 15 * time.Second},
 	})

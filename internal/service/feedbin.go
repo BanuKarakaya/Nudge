@@ -2,6 +2,9 @@ package service
 
 import (
 	"context"
+	"errors"
+
+	"github.com/jackc/pgx/v5"
 
 	"nudge/internal/domain"
 	"nudge/internal/repository"
@@ -9,6 +12,17 @@ import (
 
 type FeedbinClient interface {
 	ValidateCredentials(ctx context.Context, email, password string) error
+}
+
+func (s *FeedbinService) IsConnected(ctx context.Context, userID int64) (bool, error) {
+	_, err := s.connections.GetByUserID(ctx, userID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 type FeedbinService struct {
