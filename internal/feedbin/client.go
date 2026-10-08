@@ -6,7 +6,7 @@ import (
 	"net/http"
 )
 
-const userURL = "https://api.feedbin.com/v2/user.json"
+const authenticationURL = "https://api.feedbin.com/v2/authentication.json"
 
 type Client struct {
 	HTTPClient *http.Client
@@ -18,7 +18,7 @@ func (c Client) ValidateCredentials(ctx context.Context, email, password string)
 		client = http.DefaultClient
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, userURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, authenticationURL, nil)
 	if err != nil {
 		return err
 	}
