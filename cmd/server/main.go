@@ -127,6 +127,7 @@ func main() {
 	feedbinDigestHandler := handler.NewFeedbinDigestHandler(
 		installationRepository,
 		feedbinDigestService,
+		textSummarizer,
 		slackAPIClient,
 		feedbinTimezone,
 		os.Getenv("NUDGE_TEST_TOKEN"),

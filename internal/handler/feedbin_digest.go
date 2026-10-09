@@ -2,7 +2,9 @@ package handler
 
 import (
 	"context"
+	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"nudge/internal/repository"
@@ -17,13 +19,14 @@ type FeedbinDigestSlackClient interface {
 type FeedbinDigestHandler struct {
 	installations repository.InstallationRepository
 	digest        *service.FeedbinDigestService
+	ai            service.TextSummarizer
 	slack         FeedbinDigestSlackClient
 	timezone      *time.Location
 	testToken     string
 }
 
-func NewFeedbinDigestHandler(installations repository.InstallationRepository, digest *service.FeedbinDigestService, slack FeedbinDigestSlackClient, timezone *time.Location, testToken string) *FeedbinDigestHandler {
-	return &FeedbinDigestHandler{installations: installations, digest: digest, slack: slack, timezone: timezone, testToken: testToken}
+func NewFeedbinDigestHandler(installations repository.InstallationRepository, digest *service.FeedbinDigestService, ai service.TextSummarizer, slack FeedbinDigestSlackClient, timezone *time.Location, testToken string) *FeedbinDigestHandler {
+	return &FeedbinDigestHandler{installations: installations, digest: digest, ai: ai, slack: slack, timezone: timezone, testToken: testToken}
 }
 
 func (h *FeedbinDigestHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -41,14 +44,21 @@ func (h *FeedbinDigestHandler) testDigest(w http.ResponseWriter, r *http.Request
 		return
 	}
 	localNow := time.Now().In(h.timezone)
-	since := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 22, 0, 0, 0, h.timezone)
+	since := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 23, 0, 0, 0, h.timezone)
 	if localNow.Before(since) {
 		since = since.Add(-24 * time.Hour)
 	}
-	digest, err := h.digest.BuildDigest(r.Context(), userID, since)
+	digest, err := h.digest.BuildAnalysisInput(r.Context(), userID, since)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "could not build Feedbin digest")
 		return
+	}
+	if h.ai != nil && !strings.Contains(digest, "yeni RSS yok") {
+		if analyzed, aiErr := h.ai.Summarize(r.Context(), digest); aiErr == nil {
+			digest = analyzed
+		} else {
+			log.Printf("Feedbin AI summary failed for test endpoint: %v", aiErr)
+		}
 	}
 	installation, err := h.installations.GetByUserID(r.Context(), userID)
 	if err != nil {
