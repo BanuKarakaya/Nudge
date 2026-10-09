@@ -89,7 +89,10 @@ func (h *SlackEventHandler) handle(w http.ResponseWriter, r *http.Request) {
 }
 
 func isSupportedMention(text string) bool {
-	return strings.Contains(text, "rss") || strings.Contains(text, "özetimi ver")
+	return strings.Contains(text, "rss") ||
+		strings.Contains(text, "bookmark") ||
+		strings.Contains(text, "kaydettiğim") ||
+		strings.Contains(text, "özetimi ver")
 }
 
 func wantsRSSSummary(text string) bool {
@@ -180,10 +183,10 @@ func lastDailyStart(now time.Time, location *time.Location) time.Time {
 
 func formatThreadSummary(bookmarks []domain.Bookmark) string {
 	if len(bookmarks) == 0 {
-		return "📚 *Özetin*\n\nDün 22:00’den beri kaydettiğin bir bookmark yok."
+		return "📚 *Bookmarkların Beybi*\n\nDün 22:00’den beri kaydettiğin bir bookmark yok."
 	}
 	var builder strings.Builder
-	builder.WriteString("📚 *Özetin*\n\n")
+	builder.WriteString("📚 *Bookmarkların Beybi*\n\n")
 	for _, bookmark := range bookmarks {
 		builder.WriteString("• *")
 		builder.WriteString(strings.ReplaceAll(bookmark.Title, "*", ""))
