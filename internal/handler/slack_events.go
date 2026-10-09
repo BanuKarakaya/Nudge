@@ -77,17 +77,36 @@ func (h *SlackEventHandler) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	text := strings.ToLower(envelope.Event.Text)
-	if !strings.Contains(text, "özetimi ver") && !strings.Contains(text, "rsslerimi ver") && !strings.Contains(text, "rss'lerimi ver") {
+	if !isSupportedMention(text) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
 
 	// Acknowledge immediately; Slack requires event responses within three seconds.
 	w.WriteHeader(http.StatusOK)
-	go h.replyWithSummary(envelope)
+	go h.replyWithSummary(envelope, wantsRSSSummary(text))
 }
 
-func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
+func isSupportedMention(text string) bool {
+	if strings.Contains(text, "rss") {
+		return strings.Contains(text, "rsslerimi ver") ||
+			strings.Contains(text, "rss'lerimi ver") ||
+			strings.Contains(text, "rss başlıklarını ver") ||
+			strings.Contains(text, "rss başlıklarımı ver") ||
+			strings.Contains(text, "rss özet ver") ||
+			strings.Contains(text, "rss özeti ver") ||
+			strings.Contains(text, "rss özetimi ver")
+	}
+	return strings.Contains(text, "özetimi ver")
+}
+
+func wantsRSSSummary(text string) bool {
+	return strings.Contains(text, "rss özet ver") ||
+		strings.Contains(text, "rss özeti ver") ||
+		strings.Contains(text, "rss özetimi ver")
+}
+
+func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope, summarizeRSS bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	userID, err := h.installations.GetUserIDBySlackUserID(ctx, event.TeamID, event.Event.User)
@@ -120,7 +139,7 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 			return
 		}
 		message, err = h.feedbinDigest.BuildAnalysisInput(ctx, userID, lastFeedbinStart(now, h.timezone))
-		if err == nil && h.ai != nil && !strings.Contains(message, "yeni RSS yok") {
+		if err == nil && summarizeRSS && h.ai != nil && !strings.Contains(message, "yeni RSS yok") {
 			if analyzed, aiErr := h.ai.Summarize(ctx, message); aiErr == nil {
 				message = analyzed
 			} else {
