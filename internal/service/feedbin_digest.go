@@ -26,6 +26,10 @@ func NewFeedbinDigestService(connections repository.FeedbinConnectionRepository,
 }
 
 func (s *FeedbinDigestService) BuildDigest(ctx context.Context, userID int64, since time.Time) (string, error) {
+	return s.BuildAnalysisInput(ctx, userID, since)
+}
+
+func (s *FeedbinDigestService) BuildAnalysisInput(ctx context.Context, userID int64, since time.Time) (string, error) {
 	connection, err := s.connections.GetByUserID(ctx, userID)
 	if err != nil {
 		return "", err
@@ -55,7 +59,7 @@ func (s *FeedbinDigestService) BuildDigest(ctx context.Context, userID int64, si
 	}
 
 	if len(groups) == 0 {
-		return "📰 *Bugünkü RSS’ler*\n\nDün 22.00’den beri okunmamış yeni RSS yok.", nil
+		return "📰 *Bugünkü RSS’ler*\n\nDün 23.00’den beri okunmamış yeni RSS yok.", nil
 	}
 	folders := make([]string, 0, len(groups))
 	for folder := range groups {

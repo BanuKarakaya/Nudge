@@ -22,6 +22,7 @@ type SlackEventHandler struct {
 	installations repository.InstallationRepository
 	bookmarks     service.BookmarkService
 	feedbinDigest *service.FeedbinDigestService
+	ai            service.TextSummarizer
 	client        slackThreadMessageClient
 	timezone      *time.Location
 }
@@ -30,8 +31,8 @@ type slackThreadMessageClient interface {
 	PostMessageInThread(ctx context.Context, token, channel, threadTS, text string) error
 }
 
-func NewSlackEventHandler(signingSecret string, installations repository.InstallationRepository, bookmarks service.BookmarkService, feedbinDigest *service.FeedbinDigestService, client slackThreadMessageClient, timezone *time.Location) *SlackEventHandler {
-	return &SlackEventHandler{signingSecret: signingSecret, installations: installations, bookmarks: bookmarks, feedbinDigest: feedbinDigest, client: client, timezone: timezone}
+func NewSlackEventHandler(signingSecret string, installations repository.InstallationRepository, bookmarks service.BookmarkService, feedbinDigest *service.FeedbinDigestService, ai service.TextSummarizer, client slackThreadMessageClient, timezone *time.Location) *SlackEventHandler {
+	return &SlackEventHandler{signingSecret: signingSecret, installations: installations, bookmarks: bookmarks, feedbinDigest: feedbinDigest, ai: ai, client: client, timezone: timezone}
 }
 
 func (h *SlackEventHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -118,7 +119,14 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 		if h.feedbinDigest == nil {
 			return
 		}
-		message, err = h.feedbinDigest.BuildDigest(ctx, userID, lastFeedbinStart(now, h.timezone))
+		message, err = h.feedbinDigest.BuildAnalysisInput(ctx, userID, lastFeedbinStart(now, h.timezone))
+		if err == nil && h.ai != nil && !strings.Contains(message, "yeni RSS yok") {
+			if analyzed, aiErr := h.ai.Summarize(ctx, message); aiErr == nil {
+				message = analyzed
+			} else {
+				log.Printf("Feedbin AI summary failed for Slack mention: %v", aiErr)
+			}
+		}
 	} else {
 		bookmarks, listErr := h.bookmarks.ListByDate(ctx, userID, from, now.UTC())
 		err = listErr

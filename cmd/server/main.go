@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"nudge/internal/ai"
 	"nudge/internal/database"
 	"nudge/internal/feedbin"
 	"nudge/internal/handler"
@@ -111,6 +112,14 @@ func main() {
 	feedbinDigestService := service.NewFeedbinDigestService(feedbinRepository, feedbin.Client{
 		HTTPClient: &http.Client{Timeout: 15 * time.Second},
 	})
+	var textSummarizer service.TextSummarizer
+	if apiKey := os.Getenv("GEMINI_API_KEY"); apiKey != "" {
+		textSummarizer = ai.GeminiClient{
+			APIKey:     apiKey,
+			Model:      os.Getenv("GEMINI_MODEL"),
+			HTTPClient: &http.Client{Timeout: 60 * time.Second},
+		}
+	}
 	_, feedbinTimezone := reminderConfig()
 	feedbinDigestHandler := handler.NewFeedbinDigestHandler(
 		installationRepository,
@@ -133,6 +142,7 @@ func main() {
 		installationRepository,
 		bookmarkService,
 		feedbinDigestService,
+		textSummarizer,
 		slackAPIClient,
 		appTimezone,
 	)
@@ -161,6 +171,7 @@ func main() {
 			installationRepository,
 			feedbinRepository,
 			feedbinDigestService,
+			textSummarizer,
 			slackMessageService,
 			notificationRepository,
 			slackAPIClient,

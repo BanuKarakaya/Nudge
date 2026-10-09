@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -21,13 +22,14 @@ type FeedbinReminder struct {
 	installations repository.InstallationRepository
 	connections   repository.FeedbinConnectionRepository
 	digest        *service.FeedbinDigestService
+	ai            service.TextSummarizer
 	messages      *service.SlackMessagingService
 	notifications repository.NotificationRepository
 	slack         SlackWorkspaceClient
 }
 
-func NewFeedbinReminder(seedUserID int64, timezone *time.Location, installations repository.InstallationRepository, connections repository.FeedbinConnectionRepository, digest *service.FeedbinDigestService, messages *service.SlackMessagingService, notifications repository.NotificationRepository, slack SlackWorkspaceClient) *FeedbinReminder {
-	return &FeedbinReminder{seedUserID: seedUserID, timezone: timezone, installations: installations, connections: connections, digest: digest, messages: messages, notifications: notifications, slack: slack}
+func NewFeedbinReminder(seedUserID int64, timezone *time.Location, installations repository.InstallationRepository, connections repository.FeedbinConnectionRepository, digest *service.FeedbinDigestService, ai service.TextSummarizer, messages *service.SlackMessagingService, notifications repository.NotificationRepository, slack SlackWorkspaceClient) *FeedbinReminder {
+	return &FeedbinReminder{seedUserID: seedUserID, timezone: timezone, installations: installations, connections: connections, digest: digest, ai: ai, messages: messages, notifications: notifications, slack: slack}
 }
 
 func (r *FeedbinReminder) Run(ctx context.Context) {
@@ -79,9 +81,16 @@ func (r *FeedbinReminder) processMember(ctx context.Context, teamID, botToken, s
 		}
 		return fmt.Errorf("check Feedbin connection: %w", err)
 	}
-	digest, err := r.digest.BuildDigest(ctx, userID, since)
+	digest, err := r.digest.BuildAnalysisInput(ctx, userID, since)
 	if err != nil {
 		return fmt.Errorf("build Feedbin digest: %w", err)
+	}
+	if r.ai != nil && !strings.Contains(digest, "yeni RSS yok") {
+		if analyzed, aiErr := r.ai.Summarize(ctx, digest); aiErr == nil {
+			digest = analyzed
+		} else {
+			log.Printf("Feedbin AI summary failed for user %d, using titles: %v", userID, aiErr)
+		}
 	}
 	claimed, err := r.notifications.Claim(ctx, userID, feedbinNotificationType, periodKey)
 	if err != nil || !claimed {
