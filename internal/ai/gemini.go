@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 const defaultModel = "gemini-2.5-flash"
@@ -42,33 +43,17 @@ type generateResponse struct {
 	} `json:"candidates"`
 }
 
-func (c GeminiClient) Summarize(ctx context.Context, input string) (string, error) {
-	if c.APIKey == "" {
-		return "", fmt.Errorf("Gemini API key is not configured")
+func (c GeminiClient) generate(ctx context.Context, prompt string, maxOutputTokens int) (string, error) {
+	body, err := json.Marshal(generateRequest{
+		Contents:         []content{{Parts: []part{{Text: prompt}}}},
+		GenerationConfig: generationConfig{Temperature: 0, MaxOutputTokens: maxOutputTokens},
+	})
+	if err != nil {
+		return "", err
 	}
 	model := c.Model
 	if model == "" {
 		model = defaultModel
-	}
-	prompt := `Sen Nudge adlı kişisel RSS asistanısın. Aşağıdaki Feedbin okunmamış RSS listesini Türkçe, kısa ve anlaşılır bir gün sonu analizine dönüştür.
-
-Kurallar:
-- Sadece verilen başlıkları kullan; verilen listede olmayan bilgi uydurma.
-- En fazla 5 önemli gelişmeyi "🔥 Öne çıkanlar" altında yaz.
-- Folder bazında en fazla 2 kısa tema/çıkarım yaz.
-- Önemsiz veya tekrar eden içerikleri "⏭️ Daha sonra bakılabilecekler" altında kısaca belirt.
-- Her maddeyi mümkünse başlığa Slack linki vererek yaz.
-- Çıktı yalnızca Slack Markdown mesajı olsun; giriş/çıkış açıklaması ekleme.
-
-RSS listesi:
-` + input
-
-	body, err := json.Marshal(generateRequest{
-		Contents:         []content{{Parts: []part{{Text: prompt}}}},
-		GenerationConfig: generationConfig{Temperature: 0.2, MaxOutputTokens: 1800},
-	})
-	if err != nil {
-		return "", err
 	}
 	endpoint := "https://generativelanguage.googleapis.com/v1beta/models/" + url.PathEscape(model) + ":generateContent?key=" + url.QueryEscape(c.APIKey)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
@@ -94,7 +79,48 @@ RSS listesi:
 		return "", err
 	}
 	if len(result.Candidates) == 0 || len(result.Candidates[0].Content.Parts) == 0 {
-		return "", fmt.Errorf("Gemini returned no summary")
+		return "", fmt.Errorf("Gemini returned no text")
 	}
 	return result.Candidates[0].Content.Parts[0].Text, nil
+}
+
+func (c GeminiClient) ClassifyRSSRequest(ctx context.Context, request string) (string, error) {
+	if c.APIKey == "" {
+		return "", fmt.Errorf("Gemini API key is not configured")
+	}
+	prompt := `Aşağıdaki Slack isteği RSS başlıklarını mı istiyor, yoksa RSS özeti/analizi mi istiyor?
+Yalnızca tek kelime cevap ver: TITLES veya SUMMARY.
+Özet, önemli içerikler, analiz, değerlendir, günün özeti gibi istekler SUMMARY'dir.
+Başlıklar, liste, neler var, göster gibi istekler TITLES'dır.
+
+İstek: ` + request
+	result, err := c.generate(ctx, prompt, 5)
+	if err != nil {
+		return "", err
+	}
+	result = strings.ToUpper(strings.TrimSpace(result))
+	if result != "TITLES" && result != "SUMMARY" {
+		return "", fmt.Errorf("unexpected RSS intent %q", result)
+	}
+	return result, nil
+}
+
+func (c GeminiClient) Summarize(ctx context.Context, input string) (string, error) {
+	if c.APIKey == "" {
+		return "", fmt.Errorf("Gemini API key is not configured")
+	}
+	prompt := `Sen Nudge adlı kişisel RSS asistanısın. Aşağıdaki Feedbin okunmamış RSS listesini Türkçe, kısa ve anlaşılır bir gün sonu analizine dönüştür.
+
+Kurallar:
+- Sadece verilen başlıkları kullan; verilen listede olmayan bilgi uydurma.
+- En fazla 5 önemli gelişmeyi "🔥 Öne çıkanlar" altında yaz.
+- Folder bazında en fazla 2 kısa tema/çıkarım yaz.
+- Önemsiz veya tekrar eden içerikleri "⏭️ Daha sonra bakılabilecekler" altında kısaca belirt.
+- Her maddeyi mümkünse başlığa Slack linki vererek yaz.
+- Çıktı yalnızca Slack Markdown mesajı olsun; giriş/çıkış açıklaması ekleme.
+
+RSS listesi:
+` + input
+
+	return c.generate(ctx, prompt, 1800)
 }

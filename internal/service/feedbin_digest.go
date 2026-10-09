@@ -59,7 +59,7 @@ func (s *FeedbinDigestService) BuildAnalysisInput(ctx context.Context, userID in
 	}
 
 	if len(groups) == 0 {
-		return "📰 *Bugünkü RSS’ler*\n\nDün 23.00’den beri okunmamış yeni RSS yok.", nil
+		return "📰 *Bugünkü RSS Özetin Beybi*\n\nDün 23.00’den beri okunmamış yeni RSS yok.", nil
 	}
 	folders := make([]string, 0, len(groups))
 	for folder := range groups {
@@ -67,7 +67,7 @@ func (s *FeedbinDigestService) BuildAnalysisInput(ctx context.Context, userID in
 	}
 	sort.Strings(folders)
 	var b strings.Builder
-	b.WriteString("📰 *Bugünkü RSS’ler*\n")
+	b.WriteString("📰 *Bugünkü RSS Özetin Beybi*\n")
 	for _, folder := range folders {
 		items := groups[folder]
 		sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.Before(items[j].CreatedAt) })

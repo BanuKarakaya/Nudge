@@ -23,6 +23,7 @@ type SlackEventHandler struct {
 	bookmarks     service.BookmarkService
 	feedbinDigest *service.FeedbinDigestService
 	ai            service.TextSummarizer
+	classifier    service.RSSIntentClassifier
 	client        slackThreadMessageClient
 	timezone      *time.Location
 }
@@ -31,8 +32,8 @@ type slackThreadMessageClient interface {
 	PostMessageInThread(ctx context.Context, token, channel, threadTS, text string) error
 }
 
-func NewSlackEventHandler(signingSecret string, installations repository.InstallationRepository, bookmarks service.BookmarkService, feedbinDigest *service.FeedbinDigestService, ai service.TextSummarizer, client slackThreadMessageClient, timezone *time.Location) *SlackEventHandler {
-	return &SlackEventHandler{signingSecret: signingSecret, installations: installations, bookmarks: bookmarks, feedbinDigest: feedbinDigest, ai: ai, client: client, timezone: timezone}
+func NewSlackEventHandler(signingSecret string, installations repository.InstallationRepository, bookmarks service.BookmarkService, feedbinDigest *service.FeedbinDigestService, ai service.TextSummarizer, classifier service.RSSIntentClassifier, client slackThreadMessageClient, timezone *time.Location) *SlackEventHandler {
+	return &SlackEventHandler{signingSecret: signingSecret, installations: installations, bookmarks: bookmarks, feedbinDigest: feedbinDigest, ai: ai, classifier: classifier, client: client, timezone: timezone}
 }
 
 func (h *SlackEventHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -88,22 +89,11 @@ func (h *SlackEventHandler) handle(w http.ResponseWriter, r *http.Request) {
 }
 
 func isSupportedMention(text string) bool {
-	if strings.Contains(text, "rss") {
-		return strings.Contains(text, "rsslerimi ver") ||
-			strings.Contains(text, "rss'lerimi ver") ||
-			strings.Contains(text, "rss başlıklarını ver") ||
-			strings.Contains(text, "rss başlıklarımı ver") ||
-			strings.Contains(text, "rss özet ver") ||
-			strings.Contains(text, "rss özeti ver") ||
-			strings.Contains(text, "rss özetimi ver")
-	}
-	return strings.Contains(text, "özetimi ver")
+	return strings.Contains(text, "rss") || strings.Contains(text, "özetimi ver")
 }
 
 func wantsRSSSummary(text string) bool {
-	return strings.Contains(text, "rss özet ver") ||
-		strings.Contains(text, "rss özeti ver") ||
-		strings.Contains(text, "rss özetimi ver")
+	return strings.Contains(text, "özet") || strings.Contains(text, "analiz") || strings.Contains(text, "önemli")
 }
 
 func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope, summarizeRSS bool) {
@@ -137,6 +127,14 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope, summarize
 	if strings.Contains(strings.ToLower(event.Event.Text), "rss") {
 		if h.feedbinDigest == nil {
 			return
+		}
+		request := strings.ToLower(event.Event.Text)
+		if !summarizeRSS && h.classifier != nil && !strings.Contains(request, "başlık") && !strings.Contains(request, "liste") {
+			if intent, classifyErr := h.classifier.ClassifyRSSRequest(ctx, request); classifyErr == nil {
+				summarizeRSS = intent == "SUMMARY"
+			} else {
+				log.Printf("classify Slack RSS mention: %v", classifyErr)
+			}
 		}
 		message, err = h.feedbinDigest.BuildAnalysisInput(ctx, userID, lastFeedbinStart(now, h.timezone))
 		if err == nil && summarizeRSS && h.ai != nil && !strings.Contains(message, "yeni RSS yok") {
