@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 )
@@ -85,7 +86,8 @@ RSS listesi:
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("Gemini API returned HTTP %d", resp.StatusCode)
+		errorBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return "", fmt.Errorf("Gemini API returned HTTP %d: %s", resp.StatusCode, string(errorBody))
 	}
 	var result generateResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {

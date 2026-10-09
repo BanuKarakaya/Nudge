@@ -114,11 +114,14 @@ func main() {
 	})
 	var textSummarizer service.TextSummarizer
 	if apiKey := os.Getenv("GEMINI_API_KEY"); apiKey != "" {
+		log.Printf("Gemini summaries enabled (model=%s)", os.Getenv("GEMINI_MODEL"))
 		textSummarizer = ai.GeminiClient{
 			APIKey:     apiKey,
 			Model:      os.Getenv("GEMINI_MODEL"),
 			HTTPClient: &http.Client{Timeout: 60 * time.Second},
 		}
+	} else {
+		log.Printf("Gemini summaries disabled: GEMINI_API_KEY is not configured")
 	}
 	_, feedbinTimezone := reminderConfig()
 	feedbinDigestHandler := handler.NewFeedbinDigestHandler(
