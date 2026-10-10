@@ -105,6 +105,18 @@ Başlıklar, liste, neler var, göster gibi istekler TITLES'dır.
 	return result, nil
 }
 
+func (c GeminiClient) Respond(ctx context.Context, request string) (string, error) {
+	if c.APIKey == "" {
+		return "", fmt.Errorf("Gemini API key is not configured")
+	}
+	prompt := `Sen Nudge'sın: sıcak, kısa ve yardımcı bir Türkçe kişisel asistansın.
+Kullanıcının mesajına doğal bir şekilde cevap ver. Kullanıcı RSS veya bookmark istemiyorsa dış servislere eriştiğini iddia etme; yalnızca sohbet et.
+Gereksiz uzun açıklama, sistem bilgisi veya yapay zekâ olduğunu belirten ifade kullanma.
+
+Kullanıcı mesajı: ` + request
+	return c.generate(ctx, prompt, 500)
+}
+
 func (c GeminiClient) Summarize(ctx context.Context, input string) (string, error) {
 	if c.APIKey == "" {
 		return "", fmt.Errorf("Gemini API key is not configured")
@@ -112,12 +124,17 @@ func (c GeminiClient) Summarize(ctx context.Context, input string) (string, erro
 	prompt := `Sen Nudge adlı kişisel RSS asistanısın. Aşağıdaki Feedbin okunmamış RSS listesini Türkçe, kısa ve anlaşılır bir gün sonu analizine dönüştür.
 
 Kurallar:
-- Sadece verilen başlıkları kullan; verilen listede olmayan bilgi uydurma.
+- Çıktının ilk satırı tam olarak şu olsun: 📰 *Bugünkü RSS Özetin Beybi*
+- En az 3 makale varsa 3 ila 5 makale seç; yalnızca tek bir makale önerme.
+- Her seçilen makale için önce doğru Slack linkini tek satırda yaz: • <TAM_URL|BAŞLIK>
+- Linkteki URL'yi asla değiştirme, kısaltma, URL-encode etme veya başlığın bir parçasını URL'ye taşıma.
+- Link satırının hemen altında iki kısa satır yaz: "Konu: ..." ve "Neden önemli: ...".
+- Konu ve önem açıklamasını yalnızca verilen içerik özeti ve başlığa dayanarak yaz; bilgi uydurma.
 - En fazla 5 önemli gelişmeyi "🔥 Öne çıkanlar" altında yaz.
-- Folder bazında en fazla 2 kısa tema/çıkarım yaz.
-- Önemsiz veya tekrar eden içerikleri "⏭️ Daha sonra bakılabilecekler" altında kısaca belirt.
-- Her maddeyi mümkünse başlığa Slack linki vererek yaz.
-- Çıktı yalnızca Slack Markdown mesajı olsun; giriş/çıkış açıklaması ekleme.
+- Folder bazında tekrar eden temaları "📂 Temalar" altında en fazla 3 maddeyle belirt.
+- Seçilmeyen içerikleri "⏭️ Daha sonra bakılabilecekler" altında başlıklarıyla kısaca belirt.
+- Çıktı yalnızca Slack Markdown mesajı olsun; "Merhaba", kod bloğu veya ayraç satırı ekleme.
+- Başlıklar için Slack'in kalın yazımını kullan; Markdown başlık işaretleri kullanma.
 
 RSS listesi:
 ` + input

@@ -9,3 +9,7 @@ type TextSummarizer interface {
 type RSSIntentClassifier interface {
 	ClassifyRSSRequest(ctx context.Context, request string) (string, error)
 }
+
+type AssistantResponder interface {
+	Respond(ctx context.Context, request string) (string, error)
+}

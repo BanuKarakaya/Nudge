@@ -54,7 +54,10 @@ func (h *FeedbinDigestHandler) testDigest(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if h.ai != nil && !strings.Contains(digest, "yeni RSS yok") {
-		if analyzed, aiErr := h.ai.Summarize(r.Context(), digest); aiErr == nil {
+		analysisInput, inputErr := h.digest.BuildAIInput(r.Context(), userID, since)
+		if inputErr != nil {
+			log.Printf("Feedbin AI input failed for test endpoint: %v", inputErr)
+		} else if analyzed, aiErr := h.ai.Summarize(r.Context(), analysisInput); aiErr == nil {
 			digest = analyzed
 		} else {
 			log.Printf("Feedbin AI summary failed for test endpoint: %v", aiErr)

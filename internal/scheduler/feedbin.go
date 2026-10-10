@@ -86,7 +86,10 @@ func (r *FeedbinReminder) processMember(ctx context.Context, teamID, botToken, s
 		return fmt.Errorf("build Feedbin digest: %w", err)
 	}
 	if r.ai != nil && !strings.Contains(digest, "yeni RSS yok") {
-		if analyzed, aiErr := r.ai.Summarize(ctx, digest); aiErr == nil {
+		analysisInput, inputErr := r.digest.BuildAIInput(ctx, userID, since)
+		if inputErr != nil {
+			log.Printf("Feedbin AI input failed for user %d, using titles: %v", userID, inputErr)
+		} else if analyzed, aiErr := r.ai.Summarize(ctx, analysisInput); aiErr == nil {
 			digest = analyzed
 		} else {
 			log.Printf("Feedbin AI summary failed for user %d, using titles: %v", userID, aiErr)

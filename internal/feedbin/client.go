@@ -17,11 +17,14 @@ const (
 )
 
 type Entry struct {
-	ID        int64
-	FeedID    int64     `json:"feed_id"`
-	Title     string    `json:"title"`
-	URL       string    `json:"url"`
-	CreatedAt time.Time `json:"created_at"`
+	ID                  int64     `json:"id"`
+	FeedID              int64     `json:"feed_id"`
+	Title               string    `json:"title"`
+	URL                 string    `json:"url"`
+	Content             string    `json:"content"`
+	Summary             string    `json:"summary"`
+	ExtractedContentURL string    `json:"extracted_content_url"`
+	CreatedAt           time.Time `json:"created_at"`
 }
 
 type Tagging struct {

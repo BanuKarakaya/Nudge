@@ -24,6 +24,7 @@ type SlackEventHandler struct {
 	feedbinDigest *service.FeedbinDigestService
 	ai            service.TextSummarizer
 	classifier    service.RSSIntentClassifier
+	assistant     service.AssistantResponder
 	client        slackThreadMessageClient
 	timezone      *time.Location
 }
@@ -32,8 +33,8 @@ type slackThreadMessageClient interface {
 	PostMessageInThread(ctx context.Context, token, channel, threadTS, text string) error
 }
 
-func NewSlackEventHandler(signingSecret string, installations repository.InstallationRepository, bookmarks service.BookmarkService, feedbinDigest *service.FeedbinDigestService, ai service.TextSummarizer, classifier service.RSSIntentClassifier, client slackThreadMessageClient, timezone *time.Location) *SlackEventHandler {
-	return &SlackEventHandler{signingSecret: signingSecret, installations: installations, bookmarks: bookmarks, feedbinDigest: feedbinDigest, ai: ai, classifier: classifier, client: client, timezone: timezone}
+func NewSlackEventHandler(signingSecret string, installations repository.InstallationRepository, bookmarks service.BookmarkService, feedbinDigest *service.FeedbinDigestService, ai service.TextSummarizer, classifier service.RSSIntentClassifier, assistant service.AssistantResponder, client slackThreadMessageClient, timezone *time.Location) *SlackEventHandler {
+	return &SlackEventHandler{signingSecret: signingSecret, installations: installations, bookmarks: bookmarks, feedbinDigest: feedbinDigest, ai: ai, classifier: classifier, assistant: assistant, client: client, timezone: timezone}
 }
 
 func (h *SlackEventHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -77,22 +78,9 @@ func (h *SlackEventHandler) handle(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	text := strings.ToLower(envelope.Event.Text)
-	if !isSupportedMention(text) {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
 	// Acknowledge immediately; Slack requires event responses within three seconds.
 	w.WriteHeader(http.StatusOK)
-	go h.replyWithSummary(envelope, wantsRSSSummary(text))
-}
-
-func isSupportedMention(text string) bool {
-	return strings.Contains(text, "rss") ||
-		strings.Contains(text, "bookmark") ||
-		strings.Contains(text, "kaydettiğim") ||
-		strings.Contains(text, "özetimi ver")
+	go h.replyWithSummary(envelope, wantsRSSSummary(strings.ToLower(envelope.Event.Text)))
 }
 
 func wantsRSSSummary(text string) bool {
@@ -141,18 +129,25 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope, summarize
 		}
 		message, err = h.feedbinDigest.BuildAnalysisInput(ctx, userID, lastFeedbinStart(now, h.timezone))
 		if err == nil && summarizeRSS && h.ai != nil && !strings.Contains(message, "yeni RSS yok") {
-			if analyzed, aiErr := h.ai.Summarize(ctx, message); aiErr == nil {
+			analysisInput, inputErr := h.feedbinDigest.BuildAIInput(ctx, userID, lastFeedbinStart(now, h.timezone))
+			if inputErr != nil {
+				log.Printf("Feedbin AI input failed for Slack mention: %v", inputErr)
+			} else if analyzed, aiErr := h.ai.Summarize(ctx, analysisInput); aiErr == nil {
 				message = analyzed
 			} else {
 				log.Printf("Feedbin AI summary failed for Slack mention: %v", aiErr)
 			}
 		}
-	} else {
+	} else if strings.Contains(strings.ToLower(event.Event.Text), "bookmark") || strings.Contains(strings.ToLower(event.Event.Text), "kaydettiğim") || strings.Contains(strings.ToLower(event.Event.Text), "özetimi ver") {
 		bookmarks, listErr := h.bookmarks.ListByDate(ctx, userID, from, now.UTC())
 		err = listErr
 		if err == nil {
 			message = formatThreadSummary(bookmarks)
 		}
+	} else if h.assistant != nil {
+		message, err = h.assistant.Respond(ctx, event.Event.Text)
+	} else {
+		message = "Buradayım 🙂 RSS ve bookmark özetlerinde yardımcı olabilirim."
 	}
 	if err != nil {
 		log.Printf("build Slack mention summary: %v", err)
