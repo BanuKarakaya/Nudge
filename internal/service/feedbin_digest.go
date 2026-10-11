@@ -81,6 +81,27 @@ func (s *FeedbinDigestService) BuildAIInput(ctx context.Context, userID int64, s
 	return formatFeedbinAIInput(groups), nil
 }
 
+func (s *FeedbinDigestService) BuildUnreadStats(ctx context.Context, userID int64) (string, error) {
+	connection, err := s.connections.GetByUserID(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+	entries, err := s.client.ListUnreadSince(ctx, connection.Email, connection.Password, time.Time{})
+	if err != nil {
+		return "", err
+	}
+	if len(entries) == 0 {
+		return "📊 *RSS durumun Beybi*\n\nŞu anda okunmamış RSS’in yok.", nil
+	}
+	oldest := entries[0].CreatedAt
+	for _, entry := range entries[1:] {
+		if entry.CreatedAt.Before(oldest) {
+			oldest = entry.CreatedAt
+		}
+	}
+	return fmt.Sprintf("📊 *RSS durumun Beybi*\n\n• Toplam okunmamış RSS: *%d*\n• Okumadığın dönem: *%s* tarihinden beri", len(entries), oldest.In(time.FixedZone("Europe/Istanbul", 3*60*60)).Format("02.01.2006")), nil
+}
+
 func sortedFolders(groups feedbinGroups) []string {
 	folders := make([]string, 0, len(groups))
 	for folder := range groups {
@@ -146,4 +167,34 @@ func contentSnippet(item feedbin.Entry) string {
 
 func slackSafeTitle(title string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(title, "|", "-"), "\n", " ")
+}
+
+func RenderFeedbinAISummary(summary, input string) (string, bool) {
+	links := make(map[string]string)
+	var currentID, currentTitle, currentURL string
+	for _, line := range strings.Split(input, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "[RSS-") && strings.HasSuffix(line, "]") {
+			currentID = strings.TrimSuffix(strings.TrimPrefix(line, "["), "]")
+			currentTitle, currentURL = "", ""
+		} else if strings.HasPrefix(line, "Başlık: ") {
+			currentTitle = strings.TrimPrefix(line, "Başlık: ")
+		} else if strings.HasPrefix(line, "URL: ") {
+			currentURL = strings.TrimPrefix(line, "URL: ")
+			if currentID != "" {
+				links[currentID] = fmt.Sprintf("<%s|%s>", currentURL, slackSafeTitle(currentTitle))
+			}
+		}
+	}
+
+	selectedCount := strings.Count(summary, "Konu:")
+	importanceCount := strings.Count(summary, "Neden önemli:")
+	if selectedCount == 0 || importanceCount < selectedCount {
+		return "", false
+	}
+
+	for id, link := range links {
+		summary = strings.ReplaceAll(summary, "["+id+"]", "• "+link)
+	}
+	return strings.TrimSpace(summary), true
 }

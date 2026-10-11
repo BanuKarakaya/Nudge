@@ -88,10 +88,11 @@ func (c GeminiClient) ClassifyRSSRequest(ctx context.Context, request string) (s
 	if c.APIKey == "" {
 		return "", fmt.Errorf("Gemini API key is not configured")
 	}
-	prompt := `Aşağıdaki Slack isteği RSS başlıklarını mı istiyor, yoksa RSS özeti/analizi mi istiyor?
-Yalnızca tek kelime cevap ver: TITLES veya SUMMARY.
+	prompt := `Aşağıdaki Slack isteğinin hangi RSS işlemini istediğini belirle.
+Yalnızca tek kelime cevap ver: TITLES, SUMMARY veya STATS.
 Özet, önemli içerikler, analiz, değerlendir, günün özeti gibi istekler SUMMARY'dir.
 Başlıklar, liste, neler var, göster gibi istekler TITLES'dır.
+Toplam sayı, kaç tane, ne zamandır, hangi günden beri, okunmamış sayısı gibi istekler STATS'tır.
 
 İstek: ` + request
 	result, err := c.generate(ctx, prompt, 5)
@@ -99,7 +100,7 @@ Başlıklar, liste, neler var, göster gibi istekler TITLES'dır.
 		return "", err
 	}
 	result = strings.ToUpper(strings.TrimSpace(result))
-	if result != "TITLES" && result != "SUMMARY" {
+	if result != "TITLES" && result != "SUMMARY" && result != "STATS" {
 		return "", fmt.Errorf("unexpected RSS intent %q", result)
 	}
 	return result, nil
@@ -126,18 +127,17 @@ func (c GeminiClient) Summarize(ctx context.Context, input string) (string, erro
 Kurallar:
 - Çıktının ilk satırı tam olarak şu olsun: 📰 *Bugünkü RSS Özetin Beybi*
 - En az 3 makale varsa 3 ila 5 makale seç; yalnızca tek bir makale önerme.
-- Her seçilen makale için önce doğru Slack linkini tek satırda yaz: • <TAM_URL|BAŞLIK>
-- Linkteki URL'yi asla değiştirme, kısaltma, URL-encode etme veya başlığın bir parçasını URL'ye taşıma.
-- Link satırının hemen altında iki kısa satır yaz: "Konu: ..." ve "Neden önemli: ...".
+- Makaleleri URL ile değil, verilen kimlikleriyle belirt: [RSS-1], [RSS-2] gibi. URL yazma.
+- Her seçilen makale için kimlik satırının hemen altında iki kısa satır yaz: "Konu: ..." ve "Neden önemli: ...".
 - Konu ve önem açıklamasını yalnızca verilen içerik özeti ve başlığa dayanarak yaz; bilgi uydurma.
 - En fazla 5 önemli gelişmeyi "🔥 Öne çıkanlar" altında yaz.
 - Folder bazında tekrar eden temaları "📂 Temalar" altında en fazla 3 maddeyle belirt.
-- Seçilmeyen içerikleri "⏭️ Daha sonra bakılabilecekler" altında başlıklarıyla kısaca belirt.
+- Seçilmeyen içeriklerden en fazla 5 tanesini "⏭️ Daha sonra bakılabilecekler" altında [RSS-n] kimlikleriyle belirt; 140 başlığın tamamını tekrarlama.
 - Çıktı yalnızca Slack Markdown mesajı olsun; "Merhaba", kod bloğu veya ayraç satırı ekleme.
 - Başlıklar için Slack'in kalın yazımını kullan; Markdown başlık işaretleri kullanma.
 
 RSS listesi:
 ` + input
 
-	return c.generate(ctx, prompt, 1800)
+	return c.generate(ctx, prompt, 2400)
 }

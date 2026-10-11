@@ -87,6 +87,14 @@ func wantsRSSSummary(text string) bool {
 	return strings.Contains(text, "özet") || strings.Contains(text, "analiz") || strings.Contains(text, "önemli")
 }
 
+func wantsRSSStats(text string) bool {
+	return strings.Contains(text, "kaç") ||
+		strings.Contains(text, "toplam") ||
+		strings.Contains(text, "ne zamandır") ||
+		strings.Contains(text, "hangi günden") ||
+		strings.Contains(text, "okumadığım")
+}
+
 func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope, summarizeRSS bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -120,20 +128,34 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope, summarize
 			return
 		}
 		request := strings.ToLower(event.Event.Text)
-		if !summarizeRSS && h.classifier != nil && !strings.Contains(request, "başlık") && !strings.Contains(request, "liste") {
+		rssIntent := "TITLES"
+		if summarizeRSS {
+			rssIntent = "SUMMARY"
+		} else if wantsRSSStats(request) {
+			rssIntent = "STATS"
+		}
+		if rssIntent == "TITLES" && h.classifier != nil && !strings.Contains(request, "başlık") && !strings.Contains(request, "liste") {
 			if intent, classifyErr := h.classifier.ClassifyRSSRequest(ctx, request); classifyErr == nil {
-				summarizeRSS = intent == "SUMMARY"
+				rssIntent = intent
 			} else {
 				log.Printf("classify Slack RSS mention: %v", classifyErr)
 			}
 		}
-		message, err = h.feedbinDigest.BuildAnalysisInput(ctx, userID, lastFeedbinStart(now, h.timezone))
-		if err == nil && summarizeRSS && h.ai != nil && !strings.Contains(message, "yeni RSS yok") {
+		if rssIntent == "STATS" {
+			message, err = h.feedbinDigest.BuildUnreadStats(ctx, userID)
+		} else {
+			message, err = h.feedbinDigest.BuildAnalysisInput(ctx, userID, lastFeedbinStart(now, h.timezone))
+		}
+		if err == nil && rssIntent == "SUMMARY" && h.ai != nil && !strings.Contains(message, "yeni RSS yok") {
 			analysisInput, inputErr := h.feedbinDigest.BuildAIInput(ctx, userID, lastFeedbinStart(now, h.timezone))
 			if inputErr != nil {
 				log.Printf("Feedbin AI input failed for Slack mention: %v", inputErr)
 			} else if analyzed, aiErr := h.ai.Summarize(ctx, analysisInput); aiErr == nil {
-				message = analyzed
+				if rendered, complete := service.RenderFeedbinAISummary(analyzed, analysisInput); complete {
+					message = rendered
+				} else {
+					log.Printf("Feedbin AI summary was incomplete for Slack mention; using titles")
+				}
 			} else {
 				log.Printf("Feedbin AI summary failed for Slack mention: %v", aiErr)
 			}

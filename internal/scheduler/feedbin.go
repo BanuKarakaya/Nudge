@@ -90,7 +90,11 @@ func (r *FeedbinReminder) processMember(ctx context.Context, teamID, botToken, s
 		if inputErr != nil {
 			log.Printf("Feedbin AI input failed for user %d, using titles: %v", userID, inputErr)
 		} else if analyzed, aiErr := r.ai.Summarize(ctx, analysisInput); aiErr == nil {
-			digest = analyzed
+			if rendered, complete := service.RenderFeedbinAISummary(analyzed, analysisInput); complete {
+				digest = rendered
+			} else {
+				log.Printf("Feedbin AI summary was incomplete for user %d, using titles", userID)
+			}
 		} else {
 			log.Printf("Feedbin AI summary failed for user %d, using titles: %v", userID, aiErr)
 		}

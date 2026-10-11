@@ -58,7 +58,11 @@ func (h *FeedbinDigestHandler) testDigest(w http.ResponseWriter, r *http.Request
 		if inputErr != nil {
 			log.Printf("Feedbin AI input failed for test endpoint: %v", inputErr)
 		} else if analyzed, aiErr := h.ai.Summarize(r.Context(), analysisInput); aiErr == nil {
-			digest = analyzed
+			if rendered, complete := service.RenderFeedbinAISummary(analyzed, analysisInput); complete {
+				digest = rendered
+			} else {
+				log.Printf("Feedbin AI summary was incomplete for test endpoint; using titles")
+			}
 		} else {
 			log.Printf("Feedbin AI summary failed for test endpoint: %v", aiErr)
 		}
