@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"html"
 	"regexp"
@@ -187,14 +188,38 @@ func RenderFeedbinAISummary(summary, input string) (string, bool) {
 		}
 	}
 
-	selectedCount := strings.Count(summary, "Konu:")
-	importanceCount := strings.Count(summary, "Neden önemli:")
-	if selectedCount == 0 || importanceCount < selectedCount {
+	var result struct {
+		Articles []struct {
+			ID         string `json:"id"`
+			Topic      string `json:"topic"`
+			Importance string `json:"importance"`
+		} `json:"articles"`
+	}
+	if json.Unmarshal([]byte(summary), &result) != nil || len(result.Articles) == 0 || len(result.Articles) > 5 {
 		return "", false
 	}
-
-	for id, link := range links {
-		summary = strings.ReplaceAll(summary, "["+id+"]", "• "+link)
+	if len(links) >= 3 && len(result.Articles) < 3 {
+		return "", false
 	}
-	return strings.TrimSpace(summary), true
+	var output strings.Builder
+	output.WriteString("📰 *Bugünkü RSS Özetin Beybi*\n\n🔥 *Öne çıkanlar*\n")
+	seen := make(map[string]bool)
+	for _, article := range result.Articles {
+		link, exists := links[article.ID]
+		if !exists || seen[article.ID] || !completeSummarySentence(article.Topic) || !completeSummarySentence(article.Importance) {
+			return "", false
+		}
+		seen[article.ID] = true
+		escape := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
+		fmt.Fprintf(&output, "\n• %s\nKonu: %s\nNeden önemli: %s\n", link, escape.Replace(article.Topic), escape.Replace(article.Importance))
+	}
+	return strings.TrimSpace(output.String()), true
+}
+
+func completeSummarySentence(text string) bool {
+	text = strings.TrimSpace(text)
+	if text == "" || len([]rune(text)) > 600 || strings.Contains(text, "RSS-") || strings.Contains(text, "http") {
+		return false
+	}
+	return strings.HasSuffix(text, ".") || strings.HasSuffix(text, "!") || strings.HasSuffix(text, "?")
 }
