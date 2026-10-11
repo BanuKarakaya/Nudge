@@ -2,11 +2,28 @@ package ai
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 )
+
+func TestSummaryRequestsJSONSchema(t *testing.T) {
+	client := GeminiClient{APIKey: "test", HTTPClient: &http.Client{Transport: testTransport(func(r *http.Request) (*http.Response, error) {
+		var request generateRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if request.GenerationConfig.ResponseMimeType != "application/json" || request.GenerationConfig.ResponseSchema == nil {
+			t.Fatal("summary must request structured JSON")
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"candidates":[{"finishReason":"STOP","content":{"parts":[{"text":"{}"}]}}]}`)), Header: make(http.Header)}, nil
+	})}}
+	if _, err := client.Summarize(context.Background(), "test"); err != nil {
+		t.Fatal(err)
+	}
+}
 
 type testTransport func(*http.Request) (*http.Response, error)
 

@@ -64,6 +64,40 @@ func (s *FeedbinDigestService) BuildDigest(ctx context.Context, userID int64, si
 	return s.BuildAnalysisInput(ctx, userID, since)
 }
 
+const SummaryUnavailable = "RSS özetini şu anda tamamlayamadım. Biraz sonra tekrar deneyebilir misin?"
+
+// BuildSummary loads one snapshot and never substitutes a title list for a summary.
+func (s *FeedbinDigestService) BuildSummary(ctx context.Context, userID int64, since time.Time, ai TextSummarizer) (string, error) {
+	groups, err := s.loadGroups(ctx, userID, since)
+	if err != nil {
+		return "", err
+	}
+	if len(groups) == 0 {
+		return formatFeedbinList(groups), nil
+	}
+	if ai == nil {
+		return "", fmt.Errorf("RSS summarizer unavailable")
+	}
+	return summarizeFeedbinInput(ctx, ai, formatFeedbinAIInput(groups))
+}
+
+func summarizeFeedbinInput(ctx context.Context, ai TextSummarizer, input string) (string, error) {
+	for attempt := 0; attempt < 2; attempt++ {
+		request := input
+		if attempt > 0 {
+			request += "\nÖnceki yanıt doğrulanamadı. Yalnızca kaynakta bulunan kimlikleri kullanarak bütün alanları dolu, geçerli articles JSON nesnesi döndür."
+		}
+		raw, err := ai.Summarize(ctx, request)
+		if err != nil {
+			return "", err
+		}
+		if rendered, ok := RenderFeedbinAISummary(raw, input); ok {
+			return rendered, nil
+		}
+	}
+	return "", fmt.Errorf("RSS summary validation failed after retry")
+}
+
 func (s *FeedbinDigestService) BuildAnalysisInput(ctx context.Context, userID int64, since time.Time) (string, error) {
 	groups, err := s.loadGroups(ctx, userID, since)
 	if err != nil {
@@ -171,6 +205,10 @@ func slackSafeTitle(title string) string {
 }
 
 func RenderFeedbinAISummary(summary, input string) (string, bool) {
+	summary = strings.TrimSpace(summary)
+	if strings.HasPrefix(summary, "```json\n") && strings.HasSuffix(summary, "```") {
+		summary = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(summary, "```json\n"), "```"))
+	}
 	links := make(map[string]string)
 	var currentID, currentTitle, currentURL string
 	for _, line := range strings.Split(input, "\n") {

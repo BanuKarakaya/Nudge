@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -81,23 +80,9 @@ func (r *FeedbinReminder) processMember(ctx context.Context, teamID, botToken, s
 		}
 		return fmt.Errorf("check Feedbin connection: %w", err)
 	}
-	digest, err := r.digest.BuildAnalysisInput(ctx, userID, since)
+	digest, err := r.digest.BuildSummary(ctx, userID, since, r.ai)
 	if err != nil {
 		return fmt.Errorf("build Feedbin digest: %w", err)
-	}
-	if r.ai != nil && !strings.Contains(digest, "yeni RSS yok") {
-		analysisInput, inputErr := r.digest.BuildAIInput(ctx, userID, since)
-		if inputErr != nil {
-			log.Printf("Feedbin AI input failed for user %d, using titles: %v", userID, inputErr)
-		} else if analyzed, aiErr := r.ai.Summarize(ctx, analysisInput); aiErr == nil {
-			if rendered, complete := service.RenderFeedbinAISummary(analyzed, analysisInput); complete {
-				digest = rendered
-			} else {
-				log.Printf("Feedbin AI summary was incomplete for user %d, using titles", userID)
-			}
-		} else {
-			log.Printf("Feedbin AI summary failed for user %d, using titles: %v", userID, aiErr)
-		}
 	}
 	claimed, err := r.notifications.Claim(ctx, userID, feedbinNotificationType, periodKey)
 	if err != nil || !claimed {

@@ -33,8 +33,10 @@ type part struct {
 }
 
 type generationConfig struct {
-	Temperature     float32 `json:"temperature"`
-	MaxOutputTokens int     `json:"maxOutputTokens"`
+	Temperature      float32        `json:"temperature"`
+	MaxOutputTokens  int            `json:"maxOutputTokens"`
+	ResponseMimeType string         `json:"responseMimeType,omitempty"`
+	ResponseSchema   map[string]any `json:"responseSchema,omitempty"`
 }
 
 type generateResponse struct {
@@ -53,9 +55,27 @@ func (c GeminiClient) generate(ctx context.Context, prompt string, maxOutputToke
 }
 
 func (c GeminiClient) generateOnce(ctx context.Context, prompt string, maxOutputTokens int) (string, error) {
+	config := generationConfig{Temperature: 0, MaxOutputTokens: maxOutputTokens}
+	if strings.Contains(prompt, "Şema: {\"articles\"") {
+		config.ResponseMimeType = "application/json"
+		config.ResponseSchema = map[string]any{
+			"type": "OBJECT", "required": []string{"articles"},
+			"properties": map[string]any{"articles": map[string]any{
+				"type": "ARRAY", "minItems": 1, "maxItems": 5,
+				"items": map[string]any{
+					"type": "OBJECT", "required": []string{"id", "topic", "importance"},
+					"properties": map[string]any{
+						"id":         map[string]any{"type": "STRING"},
+						"topic":      map[string]any{"type": "STRING"},
+						"importance": map[string]any{"type": "STRING"},
+					},
+				},
+			}},
+		}
+	}
 	body, err := json.Marshal(generateRequest{
 		Contents:         []content{{Parts: []part{{Text: prompt}}}},
-		GenerationConfig: generationConfig{Temperature: 0, MaxOutputTokens: maxOutputTokens},
+		GenerationConfig: config,
 	})
 	if err != nil {
 		return "", err

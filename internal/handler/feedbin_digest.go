@@ -4,7 +4,6 @@ import (
 	"context"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 
 	"nudge/internal/repository"
@@ -48,24 +47,11 @@ func (h *FeedbinDigestHandler) testDigest(w http.ResponseWriter, r *http.Request
 	if localNow.Before(since) {
 		since = since.Add(-24 * time.Hour)
 	}
-	digest, err := h.digest.BuildAnalysisInput(r.Context(), userID, since)
+	digest, err := h.digest.BuildSummary(r.Context(), userID, since, h.ai)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "could not build Feedbin digest")
+		log.Printf("Feedbin test summary failed: %v", err)
+		writeError(w, http.StatusBadGateway, service.SummaryUnavailable)
 		return
-	}
-	if h.ai != nil && !strings.Contains(digest, "yeni RSS yok") {
-		analysisInput, inputErr := h.digest.BuildAIInput(r.Context(), userID, since)
-		if inputErr != nil {
-			log.Printf("Feedbin AI input failed for test endpoint: %v", inputErr)
-		} else if analyzed, aiErr := h.ai.Summarize(r.Context(), analysisInput); aiErr == nil {
-			if rendered, complete := service.RenderFeedbinAISummary(analyzed, analysisInput); complete {
-				digest = rendered
-			} else {
-				log.Printf("Feedbin AI summary was incomplete for test endpoint; using titles")
-			}
-		} else {
-			log.Printf("Feedbin AI summary failed for test endpoint: %v", aiErr)
-		}
 	}
 	installation, err := h.installations.GetByUserID(r.Context(), userID)
 	if err != nil {

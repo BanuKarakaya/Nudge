@@ -1,9 +1,46 @@
 package service
 
 import (
+	"context"
+	"fmt"
 	"strings"
 	"testing"
 )
+
+type sequenceSummarizer struct {
+	calls   int
+	outputs []string
+}
+
+func (s *sequenceSummarizer) Summarize(context.Context, string) (string, error) {
+	s.calls++
+	if s.calls > len(s.outputs) {
+		return "", fmt.Errorf("unexpected extra call")
+	}
+	return s.outputs[s.calls-1], nil
+}
+
+func TestSummaryRetriesInvalidFormatAndNeverReturnsTitles(t *testing.T) {
+	input := "[RSS-1]\nBaşlık: Example\nURL: https://example.com/article\n"
+	valid := `{"articles":[{"id":"RSS-1","topic":"Konu.","importance":"Önemli."}]}`
+	for _, success := range []bool{true, false} {
+		second := "invalid again"
+		if success {
+			second = valid
+		}
+		ai := &sequenceSummarizer{outputs: []string{"invalid", second}}
+		output, err := summarizeFeedbinInput(context.Background(), ai, input)
+		if ai.calls != 2 {
+			t.Fatalf("expected retry; calls=%d", ai.calls)
+		}
+		if success && (err != nil || !strings.Contains(output, "Neden önemli:")) {
+			t.Fatalf("summary missing: %s %v", output, err)
+		}
+		if !success && (err == nil || output != "") {
+			t.Fatalf("failure must not produce title fallback: %s %v", output, err)
+		}
+	}
+}
 
 func TestRenderFeedbinSummaryRejectsIncompleteOutput(t *testing.T) {
 	input := "[RSS-1]\nBaşlık: Example\nURL: https://example.com/article\n"

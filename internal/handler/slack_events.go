@@ -143,22 +143,14 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope, summarize
 		}
 		if rssIntent == "STATS" {
 			message, err = h.feedbinDigest.BuildUnreadStats(ctx, userID)
+		} else if rssIntent == "SUMMARY" {
+			message, err = h.feedbinDigest.BuildSummary(ctx, userID, lastFeedbinStart(now, h.timezone), h.ai)
+			if err != nil {
+				log.Printf("Feedbin summary request failed: %v", err)
+				message, err = service.SummaryUnavailable, nil
+			}
 		} else {
 			message, err = h.feedbinDigest.BuildAnalysisInput(ctx, userID, lastFeedbinStart(now, h.timezone))
-		}
-		if err == nil && rssIntent == "SUMMARY" && h.ai != nil && !strings.Contains(message, "yeni RSS yok") {
-			analysisInput, inputErr := h.feedbinDigest.BuildAIInput(ctx, userID, lastFeedbinStart(now, h.timezone))
-			if inputErr != nil {
-				log.Printf("Feedbin AI input failed for Slack mention: %v", inputErr)
-			} else if analyzed, aiErr := h.ai.Summarize(ctx, analysisInput); aiErr == nil {
-				if rendered, complete := service.RenderFeedbinAISummary(analyzed, analysisInput); complete {
-					message = rendered
-				} else {
-					log.Printf("Feedbin AI summary was incomplete for Slack mention; using titles")
-				}
-			} else {
-				log.Printf("Feedbin AI summary failed for Slack mention: %v", aiErr)
-			}
 		}
 	} else if strings.Contains(strings.ToLower(event.Event.Text), "bookmark") || strings.Contains(strings.ToLower(event.Event.Text), "kaydettiğim") || strings.Contains(strings.ToLower(event.Event.Text), "özetimi ver") {
 		bookmarks, listErr := h.bookmarks.ListByDate(ctx, userID, from, now.UTC())
