@@ -6,6 +6,56 @@ summary/recommendation. Routing is model-based, not keyword-based. The action
 enum describes supported backend data operations; ordinary conversation,
 explanations and comparisons use a direct reply.
 
+## General assistance and web research
+
+`WEB_SEARCH` is a backend capability, not a phrase users have to memorize. The
+conversation model interprets topic, source preference and follow-up context.
+For example, “RSS'lerimden değil, internetten AI agent hakkında bir makale bul”
+routes to Google Search instead of reusing an unrelated Feedbin recommendation.
+General explanations, writing help and conversation do not require Feedbin or
+Raindrop accounts. The assistant must not claim unsupported actions were done.
+
+Search runs in a separate `generateContent` request with `google_search` enabled,
+without the JSON routing schema (for Gemini 2.5 compatibility). The router creates
+a self-contained public research request; private thread history and the RSS
+inventory are not passed to the search call. This is a model instruction, not a
+guarantee of automatic sensitive-data redaction; users should not send secrets.
+
+Responses require search queries and valid web grounding sources. Only metadata
+URLs are rendered as links; arbitrary generated URLs are not used. Source links
+and the supplied Google search suggestion labels/targets appear with the answer
+as native Slack links. Slack cannot render the provider's HTML/CSS search widget;
+review Google's current display requirements before wider distribution. Search
+errors, unsupported models, quotas and incomplete output produce an explicit
+error, not an RSS fallback. Search does not compare a result against the user's
+entire Feedbin inventory and must not promise that it is absent from that account.
+
+The existing `GEMINI_API_KEY` and `GEMINI_MODEL` are used. No new key, migration,
+Slack scope or billing upgrade is performed. Use a model supporting Google Search;
+`gemini-2.5-flash` supports it. Google's pricing page currently lists up to 500
+grounded requests/day on that model's free tier, shared with Flash-Lite, subject
+to other project/model quotas. Paid-tier token costs and grounding overages can
+apply when billing is enabled; this application does not enforce a spend cap.
+
+References (checked 2026-10-12):
+
+- https://ai.google.dev/gemini-api/docs/generate-content/google-search
+- https://ai.google.dev/gemini-api/docs/pricing#gemini-2.5-flash
+- https://ai.google.dev/gemini-api/terms#grounding-with-google-search
+
+After deployment, test in Slack:
+
+1. Ask for an RSS summary.
+2. Ask “RSS'lerimden değil, internetten AI agent mimarileri hakkında bir makale
+   öner; konusunu ve neden önemli olduğunu kısaca anlat.”
+3. Check that the answer is relevant to agents and has web source links, not
+   another RSS digest.
+4. Ask “Bunu daha basit anlatır mısın?” in the same thread.
+
+Mocked tests cover tool configuration, routing dispatch, history propagation,
+source/suggestion rendering, invalid URLs, API quota errors and truncation.
+Live intent accuracy and the account's actual search quota require this Slack test.
+
 For a selection from an earlier summary, Gemini returns an article ID and a
 reason. Nudge verifies that ID against the delivered recommendations and renders
 the stored title/URL itself. It does not fetch a new Feedbin inventory for that

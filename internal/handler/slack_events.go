@@ -28,6 +28,7 @@ type SlackEventHandler struct {
 	ai                service.TextSummarizer
 	recommender       service.RSSRecommender
 	dialogue          service.ConversationAssistant
+	web               service.WebAssistant
 	history           service.ConversationStore
 	conversationLocks [64]sync.Mutex
 	client            slackThreadMessageClient
@@ -38,8 +39,8 @@ type slackThreadMessageClient interface {
 	PostMessageInThread(ctx context.Context, token, channel, threadTS, text string) error
 }
 
-func NewSlackEventHandler(signingSecret string, installations repository.InstallationRepository, bookmarks service.BookmarkService, feedbinDigest *service.FeedbinDigestService, ai service.TextSummarizer, recommender service.RSSRecommender, dialogue service.ConversationAssistant, history service.ConversationStore, client slackThreadMessageClient, timezone *time.Location) *SlackEventHandler {
-	return &SlackEventHandler{signingSecret: signingSecret, installations: installations, bookmarks: bookmarks, feedbinDigest: feedbinDigest, ai: ai, recommender: recommender, dialogue: dialogue, history: history, client: client, timezone: timezone}
+func NewSlackEventHandler(signingSecret string, installations repository.InstallationRepository, bookmarks service.BookmarkService, feedbinDigest *service.FeedbinDigestService, ai service.TextSummarizer, recommender service.RSSRecommender, dialogue service.ConversationAssistant, web service.WebAssistant, history service.ConversationStore, client slackThreadMessageClient, timezone *time.Location) *SlackEventHandler {
+	return &SlackEventHandler{signingSecret: signingSecret, installations: installations, bookmarks: bookmarks, feedbinDigest: feedbinDigest, ai: ai, recommender: recommender, dialogue: dialogue, web: web, history: history, client: client, timezone: timezone}
 }
 
 func (h *SlackEventHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -159,6 +160,15 @@ func (h *SlackEventHandler) conversationReply(ctx context.Context, state service
 	}
 	var message string
 	switch decision.Action {
+	case service.ConversationWebSearch:
+		if h.web == nil {
+			err = fmt.Errorf("web search unavailable")
+		} else {
+			message, err = h.web.SearchWeb(ctx, decision.SearchRequest)
+		}
+		if err != nil {
+			return "İnternet aramasını şu anda tamamlayamadım. Biraz sonra tekrar deneyebilir misin? RSS listene dönmedim; web kaynağını doğrulamadan bağlantı önermeyeceğim.", decision.Action, err
+		}
 	case service.ConversationReply:
 		message = decision.Reply
 	case service.ConversationSelect:

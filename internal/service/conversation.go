@@ -41,20 +41,30 @@ const (
 	ConversationRSSStats     = "RSS_STATS"
 	ConversationRSSRecommend = "RSS_RECOMMEND"
 	ConversationBookmarks    = "BOOKMARKS"
+	ConversationWebSearch    = "WEB_SEARCH"
 )
 
 type ConversationDecision struct {
-	Action    string `json:"action"`
-	Reply     string `json:"reply"`
-	ArticleID string `json:"article_id"`
+	Action        string `json:"action"`
+	Reply         string `json:"reply"`
+	ArticleID     string `json:"article_id"`
+	SearchRequest string `json:"search_request,omitempty"`
 }
 
 type ConversationAssistant interface {
 	Converse(context.Context, ConversationState, string) (ConversationDecision, error)
 }
 
+type WebAssistant interface {
+	SearchWeb(context.Context, string) (string, error)
+}
+
 func (d ConversationDecision) Validate(state ConversationState) error {
 	switch d.Action {
+	case ConversationWebSearch:
+		if strings.TrimSpace(d.SearchRequest) == "" || len([]rune(d.SearchRequest)) > 1500 {
+			return fmt.Errorf("invalid web search request")
+		}
 	case ConversationReply:
 		if strings.TrimSpace(d.Reply) == "" {
 			return fmt.Errorf("empty conversation reply")
