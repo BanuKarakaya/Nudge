@@ -23,6 +23,7 @@ type SlackEventHandler struct {
 	bookmarks     service.BookmarkService
 	feedbinDigest *service.FeedbinDigestService
 	ai            service.TextSummarizer
+	recommender   service.RSSRecommender
 	classifier    service.RSSIntentClassifier
 	assistant     service.AssistantResponder
 	client        slackThreadMessageClient
@@ -33,8 +34,8 @@ type slackThreadMessageClient interface {
 	PostMessageInThread(ctx context.Context, token, channel, threadTS, text string) error
 }
 
-func NewSlackEventHandler(signingSecret string, installations repository.InstallationRepository, bookmarks service.BookmarkService, feedbinDigest *service.FeedbinDigestService, ai service.TextSummarizer, classifier service.RSSIntentClassifier, assistant service.AssistantResponder, client slackThreadMessageClient, timezone *time.Location) *SlackEventHandler {
-	return &SlackEventHandler{signingSecret: signingSecret, installations: installations, bookmarks: bookmarks, feedbinDigest: feedbinDigest, ai: ai, classifier: classifier, assistant: assistant, client: client, timezone: timezone}
+func NewSlackEventHandler(signingSecret string, installations repository.InstallationRepository, bookmarks service.BookmarkService, feedbinDigest *service.FeedbinDigestService, ai service.TextSummarizer, classifier service.RSSIntentClassifier, recommender service.RSSRecommender, assistant service.AssistantResponder, client slackThreadMessageClient, timezone *time.Location) *SlackEventHandler {
+	return &SlackEventHandler{signingSecret: signingSecret, installations: installations, bookmarks: bookmarks, feedbinDigest: feedbinDigest, ai: ai, classifier: classifier, recommender: recommender, assistant: assistant, client: client, timezone: timezone}
 }
 
 func (h *SlackEventHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -95,6 +96,14 @@ func wantsRSSStats(text string) bool {
 		strings.Contains(text, "okumadığım")
 }
 
+func wantsRSSRecommendation(text string) bool {
+	return strings.Contains(text, "hangisini") ||
+		strings.Contains(text, "sadece bir") ||
+		strings.Contains(text, "bir tane") ||
+		strings.Contains(text, "en önemlisi") ||
+		strings.Contains(text, "öner")
+}
+
 func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope, summarizeRSS bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
 	defer cancel()
@@ -133,6 +142,8 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope, summarize
 			rssIntent = "SUMMARY"
 		} else if wantsRSSStats(request) {
 			rssIntent = "STATS"
+		} else if wantsRSSRecommendation(request) {
+			rssIntent = "RECOMMENDATION"
 		}
 		if rssIntent == "TITLES" && h.classifier != nil && !strings.Contains(request, "başlık") && !strings.Contains(request, "liste") {
 			if intent, classifyErr := h.classifier.ClassifyRSSRequest(ctx, request); classifyErr == nil {
@@ -143,6 +154,12 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope, summarize
 		}
 		if rssIntent == "STATS" {
 			message, err = h.feedbinDigest.BuildUnreadStats(ctx, userID)
+		} else if rssIntent == "RECOMMENDATION" {
+			message, err = h.feedbinDigest.BuildRecommendation(ctx, userID, lastFeedbinStart(now, h.timezone), h.recommender)
+			if err != nil {
+				log.Printf("Feedbin recommendation failed: %v", err)
+				message, err = "RSS’ler arasından şu anda tek bir öneri seçemedim. Lütfen biraz sonra tekrar sorar mısın?", nil
+			}
 		} else if rssIntent == "SUMMARY" {
 			message, err = h.feedbinDigest.BuildSummary(ctx, userID, lastFeedbinStart(now, h.timezone), h.ai)
 			if err != nil {

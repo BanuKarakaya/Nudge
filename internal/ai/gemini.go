@@ -72,6 +72,17 @@ func (c GeminiClient) generateOnce(ctx context.Context, prompt string, maxOutput
 				},
 			}},
 		}
+	} else if strings.Contains(prompt, `Şema: {"id"`) {
+		config.ResponseMimeType = "application/json"
+		config.ResponseSchema = map[string]any{
+			"type":     "OBJECT",
+			"required": []string{"id", "topic", "importance"},
+			"properties": map[string]any{
+				"id":         map[string]any{"type": "STRING"},
+				"topic":      map[string]any{"type": "STRING"},
+				"importance": map[string]any{"type": "STRING"},
+			},
+		}
 	}
 	body, err := json.Marshal(generateRequest{
 		Contents:         []content{{Parts: []part{{Text: prompt}}}},
@@ -128,10 +139,11 @@ func (c GeminiClient) ClassifyRSSRequest(ctx context.Context, request string) (s
 		return "", fmt.Errorf("Gemini API key is not configured")
 	}
 	prompt := `Aşağıdaki Slack isteğinin hangi RSS işlemini istediğini belirle.
-Yalnızca tek kelime cevap ver: TITLES, SUMMARY veya STATS.
+	Yalnızca tek kelime cevap ver: TITLES, SUMMARY, STATS veya RECOMMENDATION.
 Özet, önemli içerikler, analiz, değerlendir, günün özeti gibi istekler SUMMARY'dir.
 Başlıklar, liste, neler var, göster gibi istekler TITLES'dır.
-Toplam sayı, kaç tane, ne zamandır, hangi günden beri, okunmamış sayısı gibi istekler STATS'tır.
+	Toplam sayı, kaç tane, ne zamandır, hangi günden beri, okunmamış sayısı gibi istekler STATS'tır.
+	Hangisini seçerdin, sadece birini okuyabilirim, en önemlisi hangisi, bana bir tane öner gibi istekler RECOMMENDATION'dır.
 
 İstek: ` + request
 	result, err := c.generate(ctx, prompt, 1024)
@@ -139,7 +151,7 @@ Toplam sayı, kaç tane, ne zamandır, hangi günden beri, okunmamış sayısı 
 		return "", err
 	}
 	result = strings.ToUpper(strings.TrimSpace(result))
-	if result != "TITLES" && result != "SUMMARY" && result != "STATS" {
+	if result != "TITLES" && result != "SUMMARY" && result != "STATS" && result != "RECOMMENDATION" {
 		return "", fmt.Errorf("unexpected RSS intent %q", result)
 	}
 	return result, nil
@@ -175,4 +187,22 @@ RSS listesi:
 ` + input
 
 	return c.generate(ctx, prompt, 8192)
+}
+
+func (c GeminiClient) Recommend(ctx context.Context, input string) (string, error) {
+	if c.APIKey == "" {
+		return "", fmt.Errorf("Gemini API key is not configured")
+	}
+	prompt := `Aşağıdaki RSS makaleleri arasından kullanıcının bugün okuyacağı yalnızca bir makaleyi seç.
+Yalnızca geçerli JSON döndür. Şema: {"id":"RSS-1","topic":"Tam bir kısa cümle.","importance":"Bu makaleyi seçme nedenin."}
+Yalnızca verilen RSS kimliklerinden birini kullan. Başlık veya URL uydurma.
+Konu ve seçim nedeni en fazla 250 karakter olsun ve tamamlanmış cümleyle bitsin.
+
+RSS listesi:
+` + input
+	raw, err := c.generate(ctx, prompt, 2048)
+	if err != nil {
+		return "", err
+	}
+	return raw, nil
 }

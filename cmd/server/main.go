@@ -114,6 +114,7 @@ func main() {
 	})
 	var textSummarizer service.TextSummarizer
 	var rssClassifier service.RSSIntentClassifier
+	var rssRecommender service.RSSRecommender
 	var assistant service.AssistantResponder
 	if apiKey := os.Getenv("GEMINI_API_KEY"); apiKey != "" {
 		log.Printf("Gemini summaries enabled (model=%s)", os.Getenv("GEMINI_MODEL"))
@@ -124,6 +125,7 @@ func main() {
 		}
 		textSummarizer = geminiClient
 		rssClassifier = geminiClient
+		rssRecommender = geminiClient
 		assistant = geminiClient
 	} else {
 		log.Printf("Gemini summaries disabled: GEMINI_API_KEY is not configured")
@@ -153,6 +155,7 @@ func main() {
 		feedbinDigestService,
 		textSummarizer,
 		rssClassifier,
+		rssRecommender,
 		assistant,
 		slackAPIClient,
 		appTimezone,

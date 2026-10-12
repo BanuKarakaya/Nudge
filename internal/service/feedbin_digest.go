@@ -98,6 +98,31 @@ func summarizeFeedbinInput(ctx context.Context, ai TextSummarizer, input string)
 	return "", fmt.Errorf("RSS summary validation failed after retry")
 }
 
+func (s *FeedbinDigestService) BuildRecommendation(ctx context.Context, userID int64, since time.Time, ai RSSRecommender) (string, error) {
+	groups, err := s.loadGroups(ctx, userID, since)
+	if err != nil {
+		return "", err
+	}
+	if len(groups) == 0 {
+		return formatFeedbinList(groups), nil
+	}
+	if ai == nil {
+		return "", fmt.Errorf("RSS recommender unavailable")
+	}
+	input := formatFeedbinAIInput(groups)
+	for attempt := 0; attempt < 2; attempt++ {
+		raw, recommendErr := ai.Recommend(ctx, input)
+		if recommendErr != nil {
+			return "", recommendErr
+		}
+		if rendered, ok := RenderFeedbinRecommendation(raw, input); ok {
+			return rendered, nil
+		}
+		input += "\nYanıtı yalnızca geçerli JSON olarak ve tek bir mevcut RSS kimliğiyle döndür."
+	}
+	return "", fmt.Errorf("RSS recommendation validation failed after retry")
+}
+
 func (s *FeedbinDigestService) BuildAnalysisInput(ctx context.Context, userID int64, since time.Time) (string, error) {
 	groups, err := s.loadGroups(ctx, userID, since)
 	if err != nil {
@@ -252,6 +277,35 @@ func RenderFeedbinAISummary(summary, input string) (string, bool) {
 		fmt.Fprintf(&output, "\n• %s\nKonu: %s\nNeden önemli: %s\n", link, escape.Replace(article.Topic), escape.Replace(article.Importance))
 	}
 	return strings.TrimSpace(output.String()), true
+}
+
+func RenderFeedbinRecommendation(raw, input string) (string, bool) {
+	var result struct {
+		ID         string `json:"id"`
+		Topic      string `json:"topic"`
+		Importance string `json:"importance"`
+	}
+	raw = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(raw, "```json"), "```"))
+	if json.Unmarshal([]byte(raw), &result) != nil || result.ID == "" || !completeSummarySentence(result.Topic) || !completeSummarySentence(result.Importance) {
+		return "", false
+	}
+	var title, url string
+	currentID := ""
+	for _, line := range strings.Split(input, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "[RSS-") && strings.HasSuffix(line, "]") {
+			currentID = strings.TrimSuffix(strings.TrimPrefix(line, "["), "]")
+		} else if currentID == result.ID && strings.HasPrefix(line, "Başlık: ") {
+			title = strings.TrimPrefix(line, "Başlık: ")
+		} else if currentID == result.ID && strings.HasPrefix(line, "URL: ") {
+			url = strings.TrimPrefix(line, "URL: ")
+		}
+	}
+	if title == "" || url == "" {
+		return "", false
+	}
+	escape := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
+	return fmt.Sprintf("🎯 *Bugün bunu okumanı öneriyorum Beybi*\n\n• <%s|%s>\nKonu: %s\nNeden bunu seçtim: %s", url, slackSafeTitle(title), escape.Replace(result.Topic), escape.Replace(result.Importance)), true
 }
 
 func completeSummarySentence(text string) bool {
