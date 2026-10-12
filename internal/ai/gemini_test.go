@@ -5,9 +5,45 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"nudge/internal/service"
 	"strings"
 	"testing"
 )
+
+func TestConverseSendsHistoryAndValidatesPriorArticleSelection(t *testing.T) {
+	var state service.ConversationState
+	state.Remember("özetimi ver", "<https://example.com/1|One>\nKonu: Test.", service.ConversationRSSSummary)
+	state.Remember("teşekkürler", "Rica ederim.", service.ConversationReply)
+	request := "Verdiğin RSS özetinden sadece birini okuyabilirim, hangisini seçerdin?"
+	calls := 0
+	client := GeminiClient{APIKey: "test", HTTPClient: &http.Client{Transport: testTransport(func(r *http.Request) (*http.Response, error) {
+		var body generateRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		prompt := body.Contents[0].Parts[0].Text
+		for _, part := range []string{"PREVIOUS-1", "https://example.com/1", "teşekkürler", request} {
+			if !strings.Contains(prompt, part) {
+				t.Fatalf("missing context %q", part)
+			}
+		}
+		if body.GenerationConfig.ResponseMimeType != "application/json" {
+			t.Fatal("missing decision schema")
+		}
+		id := "PREVIOUS-999"
+		if calls > 0 {
+			id = "PREVIOUS-1"
+		}
+		calls++
+		answer, _ := json.Marshal(service.ConversationDecision{Action: service.ConversationSelect, ArticleID: id, Reply: "Kısa ve açıklayıcı olduğu için."})
+		payload, _ := json.Marshal(map[string]any{"candidates": []any{map[string]any{"finishReason": "STOP", "content": map[string]any{"parts": []any{map[string]any{"text": string(answer)}}}}}})
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(string(payload))), Header: make(http.Header)}, nil
+	})}}
+	decision, err := client.Converse(context.Background(), state, request)
+	if err != nil || decision.ArticleID != "PREVIOUS-1" || calls != 2 {
+		t.Fatalf("expected validated retry: %+v %v calls=%d", decision, err, calls)
+	}
+}
 
 func TestSummaryRequestsJSONSchema(t *testing.T) {
 	client := GeminiClient{APIKey: "test", HTTPClient: &http.Client{Transport: testTransport(func(r *http.Request) (*http.Response, error) {

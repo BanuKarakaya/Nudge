@@ -3,10 +3,13 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"hash/fnv"
 	"io"
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -18,24 +21,25 @@ import (
 )
 
 type SlackEventHandler struct {
-	signingSecret string
-	installations repository.InstallationRepository
-	bookmarks     service.BookmarkService
-	feedbinDigest *service.FeedbinDigestService
-	ai            service.TextSummarizer
-	recommender   service.RSSRecommender
-	classifier    service.RSSIntentClassifier
-	assistant     service.AssistantResponder
-	client        slackThreadMessageClient
-	timezone      *time.Location
+	signingSecret     string
+	installations     repository.InstallationRepository
+	bookmarks         service.BookmarkService
+	feedbinDigest     *service.FeedbinDigestService
+	ai                service.TextSummarizer
+	recommender       service.RSSRecommender
+	dialogue          service.ConversationAssistant
+	history           service.ConversationStore
+	conversationLocks [64]sync.Mutex
+	client            slackThreadMessageClient
+	timezone          *time.Location
 }
 
 type slackThreadMessageClient interface {
 	PostMessageInThread(ctx context.Context, token, channel, threadTS, text string) error
 }
 
-func NewSlackEventHandler(signingSecret string, installations repository.InstallationRepository, bookmarks service.BookmarkService, feedbinDigest *service.FeedbinDigestService, ai service.TextSummarizer, classifier service.RSSIntentClassifier, recommender service.RSSRecommender, assistant service.AssistantResponder, client slackThreadMessageClient, timezone *time.Location) *SlackEventHandler {
-	return &SlackEventHandler{signingSecret: signingSecret, installations: installations, bookmarks: bookmarks, feedbinDigest: feedbinDigest, ai: ai, classifier: classifier, recommender: recommender, assistant: assistant, client: client, timezone: timezone}
+func NewSlackEventHandler(signingSecret string, installations repository.InstallationRepository, bookmarks service.BookmarkService, feedbinDigest *service.FeedbinDigestService, ai service.TextSummarizer, recommender service.RSSRecommender, dialogue service.ConversationAssistant, history service.ConversationStore, client slackThreadMessageClient, timezone *time.Location) *SlackEventHandler {
+	return &SlackEventHandler{signingSecret: signingSecret, installations: installations, bookmarks: bookmarks, feedbinDigest: feedbinDigest, ai: ai, recommender: recommender, dialogue: dialogue, history: history, client: client, timezone: timezone}
 }
 
 func (h *SlackEventHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -81,30 +85,20 @@ func (h *SlackEventHandler) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	// Acknowledge immediately; Slack requires event responses within three seconds.
 	w.WriteHeader(http.StatusOK)
-	go h.replyWithSummary(envelope, wantsRSSSummary(strings.ToLower(envelope.Event.Text)))
+	go h.replyWithSummary(envelope)
 }
 
-func wantsRSSSummary(text string) bool {
-	return strings.Contains(text, "özet") || strings.Contains(text, "analiz") || strings.Contains(text, "önemli")
-}
-
-func wantsRSSStats(text string) bool {
-	return strings.Contains(text, "kaç") ||
-		strings.Contains(text, "toplam") ||
-		strings.Contains(text, "ne zamandır") ||
-		strings.Contains(text, "hangi günden") ||
-		strings.Contains(text, "okumadığım")
-}
-
-func wantsRSSRecommendation(text string) bool {
-	return strings.Contains(text, "hangisini") ||
-		strings.Contains(text, "sadece bir") ||
-		strings.Contains(text, "bir tane") ||
-		strings.Contains(text, "en önemlisi") ||
-		strings.Contains(text, "öner")
-}
-
-func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope, summarizeRSS bool) {
+func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
+	threadTS := event.Event.ThreadTS
+	if threadTS == "" {
+		threadTS = event.Event.TS
+	}
+	key := service.ConversationKey{Team: event.TeamID, Channel: event.Event.Channel, Thread: threadTS, User: event.Event.User}
+	hash := fnv.New32a()
+	_, _ = hash.Write([]byte(key.Team + "\x00" + key.Channel + "\x00" + key.Thread + "\x00" + key.User))
+	lock := &h.conversationLocks[hash.Sum32()%uint32(len(h.conversationLocks))]
+	lock.Lock()
+	defer lock.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
 	defer cancel()
 	userID, err := h.installations.GetUserIDBySlackUserID(ctx, event.TeamID, event.Event.User)
@@ -126,67 +120,68 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope, summarize
 		return
 	}
 	now := time.Now()
-	from := lastDailyStart(now, h.timezone).UTC()
-	threadTS := event.Event.ThreadTS
-	if threadTS == "" {
-		threadTS = event.Event.TS
+	state, err := h.history.Load(ctx, key)
+	message := "Konuşma geçmişine şu anda erişemedim. Biraz sonra tekrar deneyebilir misin?"
+	action := ""
+	if err == nil {
+		message, action, err = h.conversationReply(ctx, state, event.Event.Text, userID, now)
+	}
+	success := err == nil
+	if err != nil {
+		log.Printf("Slack conversation response failed: %v", err)
+	}
+	// Generation timeout must not prevent a clear error response being delivered.
+	sendCtx, sendCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer sendCancel()
+	if err := h.client.PostMessageInThread(sendCtx, installation.BotToken, event.Event.Channel, threadTS, message); err != nil {
+		log.Printf("send Slack thread summary: %v", err)
+		return
+	}
+	if success {
+		state.Remember(event.Event.Text, message, action)
+		if err := h.history.Save(sendCtx, key, state); err != nil {
+			log.Printf("save Slack conversation: %v", err)
+		}
+	}
+}
+
+func (h *SlackEventHandler) conversationReply(ctx context.Context, state service.ConversationState, request string, userID int64, now time.Time) (string, string, error) {
+	failure := "Yanıtını şu anda tamamlayamadım. Biraz sonra tekrar deneyebilir misin?"
+	if h.dialogue == nil {
+		return failure, "", fmt.Errorf("conversation assistant unavailable")
+	}
+	decision, err := h.dialogue.Converse(ctx, state, request)
+	if err != nil {
+		return failure, "", err
+	}
+	if err = decision.Validate(state); err != nil {
+		return failure, "", err
 	}
 	var message string
-	if strings.Contains(strings.ToLower(event.Event.Text), "rss") {
-		if h.feedbinDigest == nil {
-			return
-		}
-		request := strings.ToLower(event.Event.Text)
-		rssIntent := "TITLES"
-		if summarizeRSS {
-			rssIntent = "SUMMARY"
-		} else if wantsRSSStats(request) {
-			rssIntent = "STATS"
-		} else if wantsRSSRecommendation(request) {
-			rssIntent = "RECOMMENDATION"
-		}
-		if rssIntent == "TITLES" && h.classifier != nil && !strings.Contains(request, "başlık") && !strings.Contains(request, "liste") {
-			if intent, classifyErr := h.classifier.ClassifyRSSRequest(ctx, request); classifyErr == nil {
-				rssIntent = intent
-			} else {
-				log.Printf("classify Slack RSS mention: %v", classifyErr)
-			}
-		}
-		if rssIntent == "STATS" {
-			message, err = h.feedbinDigest.BuildUnreadStats(ctx, userID)
-		} else if rssIntent == "RECOMMENDATION" {
-			message, err = h.feedbinDigest.BuildRecommendation(ctx, userID, lastFeedbinStart(now, h.timezone), h.recommender)
-			if err != nil {
-				log.Printf("Feedbin recommendation failed: %v", err)
-				message, err = "RSS’ler arasından şu anda tek bir öneri seçemedim. Lütfen biraz sonra tekrar sorar mısın?", nil
-			}
-		} else if rssIntent == "SUMMARY" {
-			message, err = h.feedbinDigest.BuildSummary(ctx, userID, lastFeedbinStart(now, h.timezone), h.ai)
-			if err != nil {
-				log.Printf("Feedbin summary request failed: %v", err)
-				message, err = service.SummaryUnavailable, nil
-			}
-		} else {
-			message, err = h.feedbinDigest.BuildAnalysisInput(ctx, userID, lastFeedbinStart(now, h.timezone))
-		}
-	} else if strings.Contains(strings.ToLower(event.Event.Text), "bookmark") || strings.Contains(strings.ToLower(event.Event.Text), "kaydettiğim") || strings.Contains(strings.ToLower(event.Event.Text), "özetimi ver") {
-		bookmarks, listErr := h.bookmarks.ListByDate(ctx, userID, from, now.UTC())
+	switch decision.Action {
+	case service.ConversationReply:
+		message = decision.Reply
+	case service.ConversationSelect:
+		message, err = state.RenderSelection(decision)
+	case service.ConversationRSSSummary:
+		message, err = h.feedbinDigest.BuildSummary(ctx, userID, lastFeedbinStart(now, h.timezone), h.ai)
+	case service.ConversationRSSTitles:
+		message, err = h.feedbinDigest.BuildDigest(ctx, userID, lastFeedbinStart(now, h.timezone))
+	case service.ConversationRSSStats:
+		message, err = h.feedbinDigest.BuildUnreadStats(ctx, userID)
+	case service.ConversationRSSRecommend:
+		message, err = h.feedbinDigest.BuildRecommendation(ctx, userID, lastFeedbinStart(now, h.timezone), h.recommender)
+	case service.ConversationBookmarks:
+		bookmarks, listErr := h.bookmarks.ListByDate(ctx, userID, lastDailyStart(now, h.timezone).UTC(), now.UTC())
 		err = listErr
 		if err == nil {
 			message = formatThreadSummary(bookmarks)
 		}
-	} else if h.assistant != nil {
-		message, err = h.assistant.Respond(ctx, event.Event.Text)
-	} else {
-		message = "Buradayım 🙂 RSS ve bookmark özetlerinde yardımcı olabilirim."
 	}
 	if err != nil {
-		log.Printf("build Slack mention summary: %v", err)
-		return
+		return failure, decision.Action, err
 	}
-	if err := h.client.PostMessageInThread(ctx, installation.BotToken, event.Event.Channel, threadTS, message); err != nil {
-		log.Printf("send Slack thread summary: %v", err)
-	}
+	return message, decision.Action, nil
 }
 
 func lastFeedbinStart(now time.Time, location *time.Location) time.Time {

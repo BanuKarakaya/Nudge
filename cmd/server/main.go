@@ -113,9 +113,8 @@ func main() {
 		HTTPClient: &http.Client{Timeout: 15 * time.Second},
 	})
 	var textSummarizer service.TextSummarizer
-	var rssClassifier service.RSSIntentClassifier
 	var rssRecommender service.RSSRecommender
-	var assistant service.AssistantResponder
+	var dialogue service.ConversationAssistant
 	if apiKey := os.Getenv("GEMINI_API_KEY"); apiKey != "" {
 		log.Printf("Gemini summaries enabled (model=%s)", os.Getenv("GEMINI_MODEL"))
 		geminiClient := ai.GeminiClient{
@@ -124,9 +123,8 @@ func main() {
 			HTTPClient: &http.Client{Timeout: 60 * time.Second},
 		}
 		textSummarizer = geminiClient
-		rssClassifier = geminiClient
 		rssRecommender = geminiClient
-		assistant = geminiClient
+		dialogue = geminiClient
 	} else {
 		log.Printf("Gemini summaries disabled: GEMINI_API_KEY is not configured")
 	}
@@ -148,15 +146,21 @@ func main() {
 	onboardingHandler := handler.NewOnboardingHandler(onboardingService, os.Getenv("NUDGE_TEST_TOKEN"))
 	onboardingHandler.RegisterRoutes(mux)
 	_, appTimezone := reminderConfig()
+	conversationCtx, conversationCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	conversationRepository, err := postgres.NewConversationRepository(conversationCtx, db)
+	conversationCancel()
+	if err != nil {
+		log.Fatalf("initialize conversation history: %v", err)
+	}
 	slackEventHandler := handler.NewSlackEventHandler(
 		os.Getenv("SLACK_SIGNING_SECRET"),
 		installationRepository,
 		bookmarkService,
 		feedbinDigestService,
 		textSummarizer,
-		rssClassifier,
 		rssRecommender,
-		assistant,
+		dialogue,
+		conversationRepository,
 		slackAPIClient,
 		appTimezone,
 	)
