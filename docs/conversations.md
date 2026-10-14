@@ -6,6 +6,11 @@ summary/recommendation. Routing is model-based, not keyword-based. The action
 enum describes supported backend data operations; ordinary conversation,
 explanations and comparisons use a direct reply.
 
+RSS intent is split by the requested output: `RSS_STATS` answers total unread
+count and oldest unread date, while `RSS_CATEGORIES` answers which Feedbin
+folders exist and how many unread entries each folder contains. Category counts
+use the complete unread Feedbin inventory rather than the nightly 23:00 window.
+
 ## General assistance and web research
 
 `WEB_SEARCH` is a backend capability, not a phrase users have to memorize. The

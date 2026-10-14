@@ -183,11 +183,13 @@ SELECT_PREVIOUS: Daha önce önerilen makaleler arasından birini seçme. articl
 RSS_SUMMARY: Kullanıcı yeni/güncel bir Feedbin özeti istiyor; yalnız bu durumda yeniden veri çekilecek.
 RSS_TITLES: Kullanıcı açıkça RSS başlıklarını/listesini istiyor.
 RSS_STATS: Kullanıcı okunmamış sayısını/en eski okunmamış tarihi soruyor.
+RSS_CATEGORIES: Kullanıcı Feedbin klasörlerini/kategorilerini, hangi kategorilerde RSS bulunduğunu veya her kategoride kaç okunmamış RSS olduğunu soruyor. "Hangi kategorilerde RSS'im var?", "Kategorize edersen her kategoride ne kadar var?" bu işlemdir.
 RSS_RECOMMEND: Önceki önerilere atıf yapmadan güncel RSS'lerden tek öneri istiyor.
 BOOKMARKS: Kullanıcı Raindrop'taki kaydettiklerini görmek istiyor.
 WEB_SEARCH: İnternetten makale/kaynak/bağlantı önerisi, araştırma, doğrulama veya güncel bilgi gerekiyor. Google Search aracın var. search_request alanına bağlamdan çözdüğün kendi başına anlaşılır araştırma isteğini yaz; konu, dil, adet ve istenen açıklama korunsun.
 
 "RSS'lerimden olmayan AI agent hakkında internetten bir makale öner" WEB_SEARCH'tür, RSS_RECOMMEND veya SELECT_PREVIOUS değildir. Önceki konuşma RSS hakkında olsa bile en son istekte belirtilen kaynağı ve konuyu esas al. Sadece RSS ile ilgili yardım edebildiğini veya internette arama yeteneğin olmadığını söyleme.
+RSS_CATEGORIES ile RSS_STATS'i karıştırma: "kategori/klasör/grup" geçiyorsa RSS_CATEGORIES seç; yalnızca toplam sayı veya en eski tarih soruluyorsa RSS_STATS seç. RSS_CATEGORIES tam okunmamış envanteri, gece 23.00 penceresini değil Feedbin klasörlerini kullanır.
 Kaynak belirtilmeden bir konuda makale/bağlantı istendiğinde WEB_SEARCH kullan. Genel açıklama, fikir üretme, yazı yazma ve sohbet REPLY olabilir; her soruyu RSS işlemine zorlama. Gerçek URL gereken yeni önerileri hafızadan uydurma.
 search_request içine Slack kullanıcı kimlikleri, e-posta, şifre, token, özel konuşma dökümü veya özel RSS içeriklerini kopyalama. Yalnızca webde aranması istenen kamusal konu ve gerekli tercihleri aktar.
 
@@ -206,7 +208,7 @@ Konuşma verisi (JSON):
 	config := generationConfig{Temperature: 0, MaxOutputTokens: 4096, ResponseMimeType: "application/json", ResponseSchema: map[string]any{
 		"type": "OBJECT", "required": []string{"action", "reply", "article_id", "search_request"},
 		"properties": map[string]any{
-			"action": map[string]any{"type": "STRING", "enum": []string{service.ConversationReply, service.ConversationSelect, service.ConversationRSSSummary, service.ConversationRSSTitles, service.ConversationRSSStats, service.ConversationRSSRecommend, service.ConversationBookmarks, service.ConversationWebSearch}},
+			"action": map[string]any{"type": "STRING", "enum": []string{service.ConversationReply, service.ConversationSelect, service.ConversationRSSSummary, service.ConversationRSSTitles, service.ConversationRSSStats, service.ConversationRSSCategories, service.ConversationRSSRecommend, service.ConversationBookmarks, service.ConversationWebSearch}},
 			"reply":  map[string]any{"type": "STRING"}, "article_id": map[string]any{"type": "STRING"},
 			"search_request": map[string]any{"type": "STRING"},
 		},

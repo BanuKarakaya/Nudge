@@ -45,6 +45,18 @@ func TestConverseSendsHistoryAndValidatesPriorArticleSelection(t *testing.T) {
 	}
 }
 
+func TestConverseRoutesCategoryQuestionsSeparatelyFromUnreadStats(t *testing.T) {
+	client := GeminiClient{APIKey: "test", HTTPClient: &http.Client{Transport: testTransport(func(r *http.Request) (*http.Response, error) {
+		answer, _ := json.Marshal(service.ConversationDecision{Action: service.ConversationRSSCategories})
+		payload, _ := json.Marshal(map[string]any{"candidates": []any{map[string]any{"finishReason": "STOP", "content": map[string]any{"parts": []any{map[string]any{"text": string(answer)}}}}}})
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(string(payload))), Header: make(http.Header)}, nil
+	})}}
+	decision, err := client.Converse(context.Background(), service.ConversationState{}, "RSS'lerimi kategorilere ayırsan her kategoride ne kadar RSS var?")
+	if err != nil || decision.Action != service.ConversationRSSCategories {
+		t.Fatalf("category intent was not preserved: %+v %v", decision, err)
+	}
+}
+
 func TestSummaryRequestsJSONSchema(t *testing.T) {
 	client := GeminiClient{APIKey: "test", HTTPClient: &http.Client{Transport: testTransport(func(r *http.Request) (*http.Response, error) {
 		var request generateRequest

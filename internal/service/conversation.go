@@ -34,14 +34,15 @@ type ConversationStore interface {
 // Actions are data capabilities. Gemini interprets the whole conversation,
 // rather than the handler assigning intent from words in the latest message.
 const (
-	ConversationReply        = "REPLY"
-	ConversationSelect       = "SELECT_PREVIOUS"
-	ConversationRSSSummary   = "RSS_SUMMARY"
-	ConversationRSSTitles    = "RSS_TITLES"
-	ConversationRSSStats     = "RSS_STATS"
-	ConversationRSSRecommend = "RSS_RECOMMEND"
-	ConversationBookmarks    = "BOOKMARKS"
-	ConversationWebSearch    = "WEB_SEARCH"
+	ConversationReply         = "REPLY"
+	ConversationSelect        = "SELECT_PREVIOUS"
+	ConversationRSSSummary    = "RSS_SUMMARY"
+	ConversationRSSTitles     = "RSS_TITLES"
+	ConversationRSSStats      = "RSS_STATS"
+	ConversationRSSCategories = "RSS_CATEGORIES"
+	ConversationRSSRecommend  = "RSS_RECOMMEND"
+	ConversationBookmarks     = "BOOKMARKS"
+	ConversationWebSearch     = "WEB_SEARCH"
 )
 
 type ConversationDecision struct {
@@ -79,7 +80,7 @@ func (d ConversationDecision) Validate(state ConversationState) error {
 			}
 		}
 		return fmt.Errorf("selection is not in the previously recommended articles")
-	case ConversationRSSSummary, ConversationRSSTitles, ConversationRSSStats, ConversationRSSRecommend, ConversationBookmarks:
+	case ConversationRSSSummary, ConversationRSSTitles, ConversationRSSStats, ConversationRSSCategories, ConversationRSSRecommend, ConversationBookmarks:
 	default:
 		return fmt.Errorf("unknown conversation action %q", d.Action)
 	}

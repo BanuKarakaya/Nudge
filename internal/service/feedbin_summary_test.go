@@ -60,3 +60,22 @@ func TestRenderFeedbinSummaryRejectsIncompleteOutput(t *testing.T) {
 		t.Fatalf("invalid rendering: %s", output)
 	}
 }
+
+func TestFormatFeedbinCategoryStatsShowsEachFolderAndTotal(t *testing.T) {
+	groups := feedbinGroups{
+		"AI":      {{ID: 1, Title: "one"}, {ID: 2, Title: "two"}},
+		"Backend": {{ID: 3, Title: "three"}},
+		"Diğer":   {{ID: 4, Title: "four"}, {ID: 5, Title: "five"}, {ID: 6, Title: "six"}},
+	}
+	output := formatFeedbinCategoryStats(groups)
+	for _, expected := range []string{
+		"*AI*: 2 okunmamış RSS",
+		"*Backend*: 1 okunmamış RSS",
+		"*Diğer*: 3 okunmamış RSS",
+		"*Toplam benzersiz*: 6 okunmamış RSS",
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("missing %q in %s", expected, output)
+		}
+	}
+}

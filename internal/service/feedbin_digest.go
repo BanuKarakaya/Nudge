@@ -162,6 +162,17 @@ func (s *FeedbinDigestService) BuildUnreadStats(ctx context.Context, userID int6
 	return fmt.Sprintf("📊 *RSS durumun Beybi*\n\n• Toplam okunmamış RSS: *%d*\n• Okumadığın dönem: *%s* tarihinden beri", len(entries), oldest.In(time.FixedZone("Europe/Istanbul", 3*60*60)).Format("02.01.2006")), nil
 }
 
+// BuildCategoryStats groups the complete unread Feedbin inventory by the
+// user's existing folders. It intentionally does not use the nightly window:
+// this answers how much is currently unread in each category.
+func (s *FeedbinDigestService) BuildCategoryStats(ctx context.Context, userID int64) (string, error) {
+	groups, err := s.loadGroups(ctx, userID, time.Time{})
+	if err != nil {
+		return "", err
+	}
+	return formatFeedbinCategoryStats(groups), nil
+}
+
 func sortedFolders(groups feedbinGroups) []string {
 	folders := make([]string, 0, len(groups))
 	for folder := range groups {
@@ -190,6 +201,33 @@ func formatFeedbinList(groups feedbinGroups) string {
 		}
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+func formatFeedbinCategoryStats(groups feedbinGroups) string {
+	if len(groups) == 0 {
+		return "📊 *RSS kategorilerin Beybi*\n\nŞu anda okunmamış RSS’in yok."
+	}
+	total := 0
+	seen := make(map[string]struct{})
+	var b strings.Builder
+	b.WriteString("📊 *RSS kategorilerin Beybi*\n\n")
+	for _, folder := range sortedFolders(groups) {
+		count := len(groups[folder])
+		for _, item := range groups[folder] {
+			key := fmt.Sprintf("id:%d", item.ID)
+			if item.ID == 0 {
+				key = "url:" + item.URL + "|title:" + item.Title
+			}
+			if _, exists := seen[key]; !exists {
+				seen[key] = struct{}{}
+				total++
+			}
+		}
+		fmt.Fprintf(&b, "• *%s*: %d okunmamış RSS\n", folder, count)
+	}
+	fmt.Fprintf(&b, "\n*Toplam benzersiz*: %d okunmamış RSS", total)
+	b.WriteString("\n_Not: Bir RSS birden fazla Feedbin klasöründeyse ilgili kategori satırlarında görünebilir._")
+	return b.String()
 }
 
 func formatFeedbinAIInput(groups feedbinGroups) string {

@@ -179,6 +179,8 @@ func (h *SlackEventHandler) conversationReply(ctx context.Context, state service
 		message, err = h.feedbinDigest.BuildDigest(ctx, userID, lastFeedbinStart(now, h.timezone))
 	case service.ConversationRSSStats:
 		message, err = h.feedbinDigest.BuildUnreadStats(ctx, userID)
+	case service.ConversationRSSCategories:
+		message, err = h.feedbinDigest.BuildCategoryStats(ctx, userID)
 	case service.ConversationRSSRecommend:
 		message, err = h.feedbinDigest.BuildRecommendation(ctx, userID, lastFeedbinStart(now, h.timezone), h.recommender)
 	case service.ConversationBookmarks:
