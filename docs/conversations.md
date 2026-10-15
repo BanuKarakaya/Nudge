@@ -1,6 +1,6 @@
 # Contextual Slack conversations
 
-App mentions are interpreted by DeepSeek with the current request, the last 12
+App mentions are interpreted by the configured OpenAI-compatible model with the current request, the last 12
 successful exchanges, and the articles linked in the most recent delivered RSS
 summary/recommendation. Routing is model-based, not keyword-based. The action
 enum describes supported backend data operations; ordinary conversation,
@@ -21,7 +21,7 @@ General explanations, writing help and conversation do not require Feedbin or
 Raindrop accounts. The assistant must not claim unsupported actions were done.
 
 Search runs in a separate Gemini `generateContent` request with `google_search` enabled,
-without the JSON routing schema (for Gemini 2.5 compatibility). DeepSeek handles
+without the JSON routing schema (for Gemini 2.5 compatibility). The core model handles
 the assistant and data reasoning; the router creates
 a self-contained public research request; private thread history and the RSS
 inventory are not passed to the search call. This is a model instruction, not a
@@ -36,8 +36,12 @@ errors, unsupported models, quotas and incomplete output produce an explicit
 error, not an RSS fallback. Search does not compare a result against the user's
 entire Feedbin inventory and must not promise that it is absent from that account.
 
-`DEEPSEEK_API_KEY` and optional `DEEPSEEK_MODEL=deepseek-flash` power the core
-assistant, summaries and recommendations. `GEMINI_API_KEY` and `GEMINI_MODEL`
+When `OPENAI_API_KEY` is set, `OPENAI_MODEL` (default `gpt-6-luna`) and
+`OPENAI_BASE_URL` (default `https://api.openai.com/v1`) power the core assistant,
+summaries and recommendations. This is the paid OpenAI API path; usage is billed
+by input and output tokens. If `OPENAI_API_KEY` is absent, the application falls
+back to OpenCode and then direct DeepSeek according to the existing variables.
+`GEMINI_API_KEY` and `GEMINI_MODEL`
 remain optional and are used only for live Google Search because DeepSeek's API
 does not provide Google's built-in Search grounding. Use a model supporting Google Search;
 `gemini-2.5-flash` supports it. Google's pricing page currently lists up to 500
@@ -64,8 +68,8 @@ Mocked tests cover tool configuration, routing dispatch, history propagation,
 source/suggestion rendering, invalid URLs, API quota errors and truncation.
 Live intent accuracy and the account's actual search quota require this Slack test.
 
-For a selection from an earlier summary, Gemini returns an article ID and a
-reason. Nudge verifies that ID against the delivered recommendations and renders
+For a selection from an earlier summary, the core model returns an article ID and
+a reason. Nudge verifies that ID against the delivered recommendations and renders
 the stored title/URL itself. It does not fetch a new Feedbin inventory for that
 follow-up. Invalid or unavailable model output produces an explicit failure
 message, never a silent replacement with titles or another summary.
@@ -82,8 +86,9 @@ Conversation rows currently have no automatic retention expiry.
 The server idempotently creates `nudge_conversations` from embedded migration
 `004_conversations.sql` on startup. The database role needs CREATE permission;
 otherwise an administrator must apply the migration before deployment. Existing
-tables are not changed. No new environment variables or Slack history scopes
-are needed; the existing Gemini key/model configuration is used.
+tables are not changed. No Slack history scopes are needed. For the OpenAI path,
+configure `OPENAI_API_KEY` in Railway; the existing Gemini key/model configuration
+is still used for live Google Search.
 
 Old Slack messages are not imported, and scheduled DM digests are not currently
 seeded into mention history. After deployment, ask for a new RSS summary with an

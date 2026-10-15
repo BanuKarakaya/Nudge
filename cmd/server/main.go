@@ -116,7 +116,26 @@ func main() {
 	var rssRecommender service.RSSRecommender
 	var dialogue service.ConversationAssistant
 	var webAssistant service.WebAssistant
-	if apiKey := os.Getenv("OPENCODE_API_KEY"); apiKey != "" {
+	if apiKey := os.Getenv("OPENAI_API_KEY"); apiKey != "" {
+		model := os.Getenv("OPENAI_MODEL")
+		if model == "" {
+			model = "gpt-6-luna"
+		}
+		baseURL := os.Getenv("OPENAI_BASE_URL")
+		if baseURL == "" {
+			baseURL = "https://api.openai.com/v1"
+		}
+		log.Printf("OpenAI AI enabled (model=%s, base_url=%s)", model, baseURL)
+		openAIClient := ai.OpenAICompatibleClient{
+			APIKey:     apiKey,
+			Model:      model,
+			BaseURL:    baseURL,
+			HTTPClient: &http.Client{Timeout: 90 * time.Second},
+		}
+		textSummarizer = openAIClient
+		rssRecommender = openAIClient
+		dialogue = openAIClient
+	} else if apiKey := os.Getenv("OPENCODE_API_KEY"); apiKey != "" {
 		model := os.Getenv("OPENCODE_MODEL")
 		if model == "" {
 			model = "deepseek-v4.1-flash-free"
@@ -126,7 +145,7 @@ func main() {
 			baseURL = "https://opencode.ai/inference/v1"
 		}
 		log.Printf("OpenCode AI enabled (model=%s, base_url=%s)", model, baseURL)
-		openCodeClient := ai.DeepSeekClient{
+		openCodeClient := ai.OpenAICompatibleClient{
 			APIKey:     apiKey,
 			Model:      model,
 			BaseURL:    baseURL,
@@ -142,7 +161,7 @@ func main() {
 			model = "deepseek-flash"
 		}
 		log.Printf("Direct DeepSeek summaries enabled (model=%s)", model)
-		deepSeekClient := ai.DeepSeekClient{
+		deepSeekClient := ai.OpenAICompatibleClient{
 			APIKey:     apiKey,
 			Model:      model,
 			HTTPClient: &http.Client{Timeout: 90 * time.Second},

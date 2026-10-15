@@ -12,9 +12,9 @@ import (
 	"nudge/internal/service"
 )
 
-// DeepSeekClient is the OpenAI-compatible DeepSeek Chat Completions client.
-// deepseek-flash is the API model identifier for the V4.1 Flash family.
-type DeepSeekClient struct {
+// OpenAICompatibleClient calls providers that expose the Chat Completions API.
+// It is used for OpenAI, OpenCode and direct DeepSeek deployments.
+type OpenAICompatibleClient struct {
 	APIKey     string
 	Model      string
 	BaseURL    string
@@ -31,6 +31,7 @@ type deepSeekRequest struct {
 	Messages       []deepSeekMessage `json:"messages"`
 	Temperature    float64           `json:"temperature,omitempty"`
 	MaxTokens      int               `json:"max_tokens,omitempty"`
+	MaxCompletions int               `json:"max_completion_tokens,omitempty"`
 	ResponseFormat *deepSeekJSONMode `json:"response_format,omitempty"`
 }
 
@@ -57,7 +58,7 @@ type deepSeekConversationOutput struct {
 	SearchRequest string `json:"search_request"`
 }
 
-func (c DeepSeekClient) Converse(ctx context.Context, state service.ConversationState, request string) (service.ConversationDecision, error) {
+func (c OpenAICompatibleClient) Converse(ctx context.Context, state service.ConversationState, request string) (service.ConversationDecision, error) {
 	stateJSON, err := json.Marshal(state)
 	if err != nil {
 		return service.ConversationDecision{}, fmt.Errorf("marshal conversation state: %w", err)
@@ -107,7 +108,7 @@ article_id yalnızca SELECT_PREVIOUS için kullanılır. WEB_SEARCH için search
 	}, nil
 }
 
-func (c DeepSeekClient) Summarize(ctx context.Context, input string) (string, error) {
+func (c OpenAICompatibleClient) Summarize(ctx context.Context, input string) (string, error) {
 	prompt := `Aşağıdaki Feedbin RSS kayıtlarını Türkçe ve anlaşılır bir gün sonu özeti olarak düzenle.
 En fazla 5 öne çıkan makale seç. Her biri için başlık, çalışan kaynak linki, “Konu” ve “Neden önemli” alanlarını yaz. Kalan içerikleri tek tek listeleme; gerekirse kısa bir “Diğer” bölümüyle eğilimleri belirt. Yalnızca verilen kayıtları kullan, linkleri değiştirme ve cevabı yarım bırakma. Slack Markdown kullan.
 
@@ -119,7 +120,7 @@ RSS kayıtları:
 	}, false)
 }
 
-func (c DeepSeekClient) Recommend(ctx context.Context, input string) (string, error) {
+func (c OpenAICompatibleClient) Recommend(ctx context.Context, input string) (string, error) {
 	prompt := `Aşağıdaki RSS kayıtları içinden kullanıcının isteğine en uygun makaleyi seç. Başlık, çalışan kaynak linki, kısa konu açıklaması ve neden bu makaleyi seçtiğini Türkçe olarak belirt. Sadece verilen kayıtları kullan; konu dışı veya rastgele seçim yapma. Cevabı tamamla ve Slack Markdown kullan.
 
 RSS kayıtları ve kullanıcı isteği:
@@ -130,7 +131,7 @@ RSS kayıtları ve kullanıcı isteği:
 	}, false)
 }
 
-func (c DeepSeekClient) chat(ctx context.Context, messages []deepSeekMessage, jsonMode bool) (string, error) {
+func (c OpenAICompatibleClient) chat(ctx context.Context, messages []deepSeekMessage, jsonMode bool) (string, error) {
 	model := c.Model
 	if model == "" {
 		model = "deepseek-flash"
@@ -154,6 +155,10 @@ func (c DeepSeekClient) chat(ctx context.Context, messages []deepSeekMessage, js
 		Messages:    messages,
 		Temperature: 0.2,
 		MaxTokens:   4000,
+	}
+	if strings.Contains(baseURL, "api.openai.com") {
+		payload.MaxTokens = 0
+		payload.MaxCompletions = 4000
 	}
 	if jsonMode {
 		payload.ResponseFormat = &deepSeekJSONMode{Type: "json_object"}
