@@ -1,6 +1,6 @@
 # Contextual Slack conversations
 
-App mentions are interpreted by Gemini with the current request, the last 12
+App mentions are interpreted by DeepSeek with the current request, the last 12
 successful exchanges, and the articles linked in the most recent delivered RSS
 summary/recommendation. Routing is model-based, not keyword-based. The action
 enum describes supported backend data operations; ordinary conversation,
@@ -20,8 +20,9 @@ routes to Google Search instead of reusing an unrelated Feedbin recommendation.
 General explanations, writing help and conversation do not require Feedbin or
 Raindrop accounts. The assistant must not claim unsupported actions were done.
 
-Search runs in a separate `generateContent` request with `google_search` enabled,
-without the JSON routing schema (for Gemini 2.5 compatibility). The router creates
+Search runs in a separate Gemini `generateContent` request with `google_search` enabled,
+without the JSON routing schema (for Gemini 2.5 compatibility). DeepSeek handles
+the assistant and data reasoning; the router creates
 a self-contained public research request; private thread history and the RSS
 inventory are not passed to the search call. This is a model instruction, not a
 guarantee of automatic sensitive-data redaction; users should not send secrets.
@@ -35,8 +36,10 @@ errors, unsupported models, quotas and incomplete output produce an explicit
 error, not an RSS fallback. Search does not compare a result against the user's
 entire Feedbin inventory and must not promise that it is absent from that account.
 
-The existing `GEMINI_API_KEY` and `GEMINI_MODEL` are used. No new key, migration,
-Slack scope or billing upgrade is performed. Use a model supporting Google Search;
+`DEEPSEEK_API_KEY` and optional `DEEPSEEK_MODEL=deepseek-flash` power the core
+assistant, summaries and recommendations. `GEMINI_API_KEY` and `GEMINI_MODEL`
+remain optional and are used only for live Google Search because DeepSeek's API
+does not provide Google's built-in Search grounding. Use a model supporting Google Search;
 `gemini-2.5-flash` supports it. Google's pricing page currently lists up to 500
 grounded requests/day on that model's free tier, shared with Flash-Lite, subject
 to other project/model quotas. Paid-tier token costs and grounding overages can
@@ -94,7 +97,7 @@ app mention, then continue in that same thread as the same user:
 Step 3 should return one of the earlier linked articles and a reason, not a new
 summary. A different thread or user does not inherit that private history.
 
-Automated tests mock Gemini and Slack, exercising context propagation, validated
+Automated tests mock the AI provider and Slack, exercising context propagation, validated
 selection, persistence across handler recreation, scope separation and failed
 delivery. They do not certify live model intent accuracy or a production database
 migration; run the above Slack check after deployment.

@@ -116,19 +116,57 @@ func main() {
 	var rssRecommender service.RSSRecommender
 	var dialogue service.ConversationAssistant
 	var webAssistant service.WebAssistant
+	if apiKey := os.Getenv("OPENCODE_API_KEY"); apiKey != "" {
+		model := os.Getenv("OPENCODE_MODEL")
+		if model == "" {
+			model = "deepseek-v4.1-flash-free"
+		}
+		baseURL := os.Getenv("OPENCODE_BASE_URL")
+		if baseURL == "" {
+			baseURL = "https://opencode.ai/inference/v1"
+		}
+		log.Printf("OpenCode AI enabled (model=%s, base_url=%s)", model, baseURL)
+		openCodeClient := ai.DeepSeekClient{
+			APIKey:     apiKey,
+			Model:      model,
+			BaseURL:    baseURL,
+			HTTPClient: &http.Client{Timeout: 90 * time.Second},
+		}
+		textSummarizer = openCodeClient
+		rssRecommender = openCodeClient
+		dialogue = openCodeClient
+	} else if apiKey := os.Getenv("DEEPSEEK_API_KEY"); apiKey != "" {
+		// Optional fallback for direct DeepSeek API usage.
+		model := os.Getenv("DEEPSEEK_MODEL")
+		if model == "" {
+			model = "deepseek-flash"
+		}
+		log.Printf("Direct DeepSeek summaries enabled (model=%s)", model)
+		deepSeekClient := ai.DeepSeekClient{
+			APIKey:     apiKey,
+			Model:      model,
+			HTTPClient: &http.Client{Timeout: 90 * time.Second},
+		}
+		textSummarizer = deepSeekClient
+		rssRecommender = deepSeekClient
+		dialogue = deepSeekClient
+	} else {
+		log.Printf("AI summaries disabled: OPENCODE_API_KEY is not configured")
+	}
+
+	// DeepSeek handles the assistant, RSS and bookmark reasoning. Its API does
+	// not provide Google's live Search grounding, so keep that capability as an
+	// optional, separate provider until a dedicated search provider is added.
 	if apiKey := os.Getenv("GEMINI_API_KEY"); apiKey != "" {
-		log.Printf("Gemini summaries enabled (model=%s)", os.Getenv("GEMINI_MODEL"))
+		log.Printf("Google web search enabled separately (model=%s)", os.Getenv("GEMINI_MODEL"))
 		geminiClient := ai.GeminiClient{
 			APIKey:     apiKey,
 			Model:      os.Getenv("GEMINI_MODEL"),
 			HTTPClient: &http.Client{Timeout: 60 * time.Second},
 		}
-		textSummarizer = geminiClient
-		rssRecommender = geminiClient
-		dialogue = geminiClient
 		webAssistant = geminiClient
 	} else {
-		log.Printf("Gemini summaries disabled: GEMINI_API_KEY is not configured")
+		log.Printf("Google web search disabled: GEMINI_API_KEY is not configured")
 	}
 	_, feedbinTimezone := reminderConfig()
 	feedbinDigestHandler := handler.NewFeedbinDigestHandler(
