@@ -53,7 +53,7 @@ type deepSeekResponse struct {
 type deepSeekConversationOutput struct {
 	Action        string `json:"action"`
 	Reply         string `json:"reply"`
-	ArticleID     int64  `json:"article_id"`
+	ArticleID     string `json:"article_id"`
 	SearchRequest string `json:"search_request"`
 }
 
