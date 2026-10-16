@@ -52,10 +52,28 @@ type deepSeekResponse struct {
 }
 
 type deepSeekConversationOutput struct {
-	Action        string `json:"action"`
-	Reply         string `json:"reply"`
-	ArticleID     string `json:"article_id"`
-	SearchRequest string `json:"search_request"`
+	Action        string         `json:"action"`
+	Reply         string         `json:"reply"`
+	ArticleID     flexibleString `json:"article_id"`
+	SearchRequest string         `json:"search_request"`
+}
+
+// flexibleString keeps routing compatible with providers that emit an ID as
+// either a JSON string ("RSS-3") or a JSON number (3).
+type flexibleString string
+
+func (s *flexibleString) UnmarshalJSON(data []byte) error {
+	var text string
+	if err := json.Unmarshal(data, &text); err == nil {
+		*s = flexibleString(text)
+		return nil
+	}
+	var number json.Number
+	if err := json.Unmarshal(data, &number); err != nil {
+		return err
+	}
+	*s = flexibleString(number.String())
+	return nil
 }
 
 func (c OpenAICompatibleClient) Converse(ctx context.Context, state service.ConversationState, request string) (service.ConversationDecision, error) {
@@ -93,7 +111,7 @@ article_id yalnızca SELECT_PREVIOUS için kullanılır. WEB_SEARCH için search
 
 	var output deepSeekConversationOutput
 	if err := json.Unmarshal([]byte(content), &output); err != nil {
-		return service.ConversationDecision{}, fmt.Errorf("DeepSeek returned invalid conversation JSON: %w", err)
+		return service.ConversationDecision{}, fmt.Errorf("AI provider returned invalid conversation JSON: %w", err)
 	}
 	action := strings.ToUpper(strings.TrimSpace(output.Action))
 	if action == "" {
@@ -103,7 +121,7 @@ article_id yalnızca SELECT_PREVIOUS için kullanılır. WEB_SEARCH için search
 	return service.ConversationDecision{
 		Action:        action,
 		Reply:         strings.TrimSpace(output.Reply),
-		ArticleID:     output.ArticleID,
+		ArticleID:     string(output.ArticleID),
 		SearchRequest: strings.TrimSpace(output.SearchRequest),
 	}, nil
 }
