@@ -88,11 +88,16 @@ func (h *SlackEventHandler) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Acknowledge immediately; Slack requires event responses within three seconds.
+	log.Printf("slack_request=%s stage=received", slackRequestID(envelope))
 	w.WriteHeader(http.StatusOK)
+	log.Printf("slack_request=%s stage=acknowledged", slackRequestID(envelope))
 	go h.replyWithSummary(envelope)
 }
 
 func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
+	requestID := slackRequestID(event)
+	started := time.Now()
+	log.Printf("slack_request=%s stage=processing_started", requestID)
 	threadTS := event.Event.ThreadTS
 	if threadTS == "" {
 		threadTS = event.Event.TS
@@ -101,8 +106,10 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 	hash := fnv.New32a()
 	_, _ = hash.Write([]byte(key.Team + "\x00" + key.Channel + "\x00" + key.Thread + "\x00" + key.User))
 	lock := &h.conversationLocks[hash.Sum32()%uint32(len(h.conversationLocks))]
+	lockStarted := time.Now()
 	lock.Lock()
 	defer lock.Unlock()
+	log.Printf("slack_request=%s stage=thread_lock_acquired wait_ms=%d", requestID, time.Since(lockStarted).Milliseconds())
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
 	defer cancel()
 	userID, err := h.installations.GetUserIDBySlackUserID(ctx, event.TeamID, event.Event.User)
@@ -110,67 +117,87 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 		if err == pgx.ErrNoRows {
 			userID, err = h.installations.UpsertUser(ctx, event.TeamID, event.Event.User)
 			if err != nil {
-				log.Printf("save Slack mention user: %v", err)
+				log.Printf("slack_request=%s stage=user_create_failed elapsed_ms=%d error=%q", requestID, time.Since(started).Milliseconds(), err)
 				return
 			}
 		} else {
-			log.Printf("find Slack mention user: %v", err)
+			log.Printf("slack_request=%s stage=user_lookup_failed elapsed_ms=%d error=%q", requestID, time.Since(started).Milliseconds(), err)
 			return
 		}
 	}
+	log.Printf("slack_request=%s stage=user_resolved elapsed_ms=%d", requestID, time.Since(started).Milliseconds())
 	installation, err := h.installations.GetByUserID(ctx, userID)
 	if err != nil {
-		log.Printf("get Slack installation for mention: %v", err)
+		log.Printf("slack_request=%s stage=installation_lookup_failed elapsed_ms=%d error=%q", requestID, time.Since(started).Milliseconds(), err)
 		return
 	}
+	log.Printf("slack_request=%s stage=installation_loaded elapsed_ms=%d", requestID, time.Since(started).Milliseconds())
 	now := time.Now()
 	state, err := h.history.Load(ctx, key)
 	message := "Konuşma geçmişine şu anda erişemedim. Biraz sonra tekrar deneyebilir misin?"
 	action := ""
 	if err == nil {
-		message, action, err = h.conversationReplyWithState(ctx, &state, event.Event.Text, userID, now)
+		log.Printf("slack_request=%s stage=history_loaded turns=%d prior_articles=%d elapsed_ms=%d", requestID, len(state.Turns), len(state.Articles), time.Since(started).Milliseconds())
+		message, action, err = h.conversationReplyWithState(ctx, &state, event.Event.Text, userID, now, requestID)
+	} else {
+		log.Printf("slack_request=%s stage=history_load_failed elapsed_ms=%d error=%q", requestID, time.Since(started).Milliseconds(), err)
 	}
 	success := err == nil
 	if err != nil {
-		log.Printf("Slack conversation response failed: %v", err)
+		log.Printf("slack_request=%s stage=conversation_failed elapsed_ms=%d error=%q", requestID, time.Since(started).Milliseconds(), err)
+	} else {
+		log.Printf("slack_request=%s stage=response_ready action=%s chars=%d elapsed_ms=%d", requestID, action, len(message), time.Since(started).Milliseconds())
 	}
 	// Generation timeout must not prevent a clear error response being delivered.
 	sendCtx, sendCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer sendCancel()
+	log.Printf("slack_request=%s stage=slack_send_started elapsed_ms=%d", requestID, time.Since(started).Milliseconds())
 	if err := h.client.PostMessageInThread(sendCtx, installation.BotToken, event.Event.Channel, threadTS, message); err != nil {
-		log.Printf("send Slack thread summary: %v", err)
+		log.Printf("slack_request=%s stage=slack_send_failed elapsed_ms=%d error=%q", requestID, time.Since(started).Milliseconds(), err)
 		return
 	}
+	log.Printf("slack_request=%s stage=slack_send_complete elapsed_ms=%d", requestID, time.Since(started).Milliseconds())
 	if success {
 		state.Remember(event.Event.Text, message, action)
 		if err := h.history.Save(sendCtx, key, state); err != nil {
-			log.Printf("save Slack conversation: %v", err)
+			log.Printf("slack_request=%s stage=history_save_failed elapsed_ms=%d error=%q", requestID, time.Since(started).Milliseconds(), err)
+		} else {
+			log.Printf("slack_request=%s stage=history_saved elapsed_ms=%d", requestID, time.Since(started).Milliseconds())
 		}
 	}
+	log.Printf("slack_request=%s stage=done success=%t total_ms=%d", requestID, success, time.Since(started).Milliseconds())
 }
 
 func (h *SlackEventHandler) conversationReply(ctx context.Context, state service.ConversationState, request string, userID int64, now time.Time) (string, string, error) {
-	return h.conversationReplyWithState(ctx, &state, request, userID, now)
+	return h.conversationReplyWithState(ctx, &state, request, userID, now, "local")
 }
 
-func (h *SlackEventHandler) conversationReplyWithState(ctx context.Context, state *service.ConversationState, request string, userID int64, now time.Time) (string, string, error) {
+func (h *SlackEventHandler) conversationReplyWithState(ctx context.Context, state *service.ConversationState, request string, userID int64, now time.Time, requestID string) (string, string, error) {
 	failure := "Yanıtını şu anda tamamlayamadım. Biraz sonra tekrar deneyebilir misin?"
 	if h.dialogue == nil {
 		return failure, "", fmt.Errorf("conversation assistant unavailable")
 	}
 	request = strings.TrimSpace(slackUserMention.ReplaceAllString(request, ""))
+	modelStarted := time.Now()
+	log.Printf("slack_request=%s stage=model_started", requestID)
 	decision, err := h.dialogue.Converse(ctx, *state, request)
 	if err != nil {
+		log.Printf("slack_request=%s stage=model_failed duration_ms=%d error=%q", requestID, time.Since(modelStarted).Milliseconds(), err)
 		var providerErr *ai.ProviderError
 		if errors.As(err, &providerErr) && providerErr.Status == http.StatusTooManyRequests {
 			failure = "AI hizmetinin kullanım sınırına takıldım. Biraz sonra tekrar deneyebilir misin?"
 		}
 		return failure, "", fmt.Errorf("conversation decision: %w", err)
 	}
+	log.Printf("slack_request=%s stage=model_complete duration_ms=%d action=%s", requestID, time.Since(modelStarted).Milliseconds(), decision.Action)
 	if err = decision.Validate(*state); err != nil {
 		return failure, "", err
 	}
 	var message string
+	operationStarted := time.Now()
+	if decision.Action != service.ConversationReply && decision.Action != service.ConversationSelect {
+		log.Printf("slack_request=%s stage=operation_started action=%s", requestID, decision.Action)
+	}
 	switch decision.Action {
 	case service.ConversationWebSearch:
 		if h.web == nil {
@@ -236,12 +263,24 @@ func (h *SlackEventHandler) conversationReplyWithState(ctx context.Context, stat
 		}
 	}
 	if err != nil {
+		if decision.Action != service.ConversationReply && decision.Action != service.ConversationSelect {
+			log.Printf("slack_request=%s stage=operation_failed action=%s duration_ms=%d error=%q", requestID, decision.Action, time.Since(operationStarted).Milliseconds(), err)
+		}
 		if errors.Is(err, pgx.ErrNoRows) && strings.HasPrefix(decision.Action, "RSS_") {
 			failure = "Feedbin hesabın henüz bağlı görünmüyor. Nudge'dan gelen Feedbin bağlantı mesajıyla hesabını bağladıktan sonra tekrar deneyebilirsin."
 		}
 		return failure, decision.Action, fmt.Errorf("execute %s: %w", decision.Action, err)
 	}
+	if decision.Action != service.ConversationReply && decision.Action != service.ConversationSelect {
+		log.Printf("slack_request=%s stage=operation_complete action=%s duration_ms=%d", requestID, decision.Action, time.Since(operationStarted).Milliseconds())
+	}
 	return message, decision.Action, nil
+}
+
+func slackRequestID(event slackEventEnvelope) string {
+	hash := fnv.New32a()
+	_, _ = hash.Write([]byte(event.TeamID + "\x00" + event.Event.Channel + "\x00" + event.Event.ThreadTS + "\x00" + event.Event.User + "\x00" + event.Event.TS))
+	return fmt.Sprintf("%08x", hash.Sum32())
 }
 
 var slackUserMention = regexp.MustCompile(`<@[A-Z0-9]+>`)
