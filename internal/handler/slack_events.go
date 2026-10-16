@@ -128,7 +128,7 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 	message := "Konuşma geçmişine şu anda erişemedim. Biraz sonra tekrar deneyebilir misin?"
 	action := ""
 	if err == nil {
-		message, action, err = h.conversationReply(ctx, state, event.Event.Text, userID, now)
+		message, action, err = h.conversationReplyWithState(ctx, &state, event.Event.Text, userID, now)
 	}
 	success := err == nil
 	if err != nil {
@@ -150,12 +150,16 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 }
 
 func (h *SlackEventHandler) conversationReply(ctx context.Context, state service.ConversationState, request string, userID int64, now time.Time) (string, string, error) {
+	return h.conversationReplyWithState(ctx, &state, request, userID, now)
+}
+
+func (h *SlackEventHandler) conversationReplyWithState(ctx context.Context, state *service.ConversationState, request string, userID int64, now time.Time) (string, string, error) {
 	failure := "Yanıtını şu anda tamamlayamadım. Biraz sonra tekrar deneyebilir misin?"
 	if h.dialogue == nil {
 		return failure, "", fmt.Errorf("conversation assistant unavailable")
 	}
 	request = strings.TrimSpace(slackUserMention.ReplaceAllString(request, ""))
-	decision, err := h.dialogue.Converse(ctx, state, request)
+	decision, err := h.dialogue.Converse(ctx, *state, request)
 	if err != nil {
 		var providerErr *ai.ProviderError
 		if errors.As(err, &providerErr) && providerErr.Status == http.StatusTooManyRequests {
@@ -163,7 +167,7 @@ func (h *SlackEventHandler) conversationReply(ctx context.Context, state service
 		}
 		return failure, "", fmt.Errorf("conversation decision: %w", err)
 	}
-	if err = decision.Validate(state); err != nil {
+	if err = decision.Validate(*state); err != nil {
 		return failure, "", err
 	}
 	var message string
@@ -182,7 +186,38 @@ func (h *SlackEventHandler) conversationReply(ctx context.Context, state service
 	case service.ConversationSelect:
 		message, err = state.RenderSelection(decision)
 	case service.ConversationRSSSummary:
-		message, err = h.feedbinDigest.BuildSummary(ctx, userID, lastFeedbinStart(now, h.timezone), h.ai)
+		progress := service.RSSSummaryProgress{Scope: "today", Since: lastFeedbinStart(now, h.timezone)}
+		if decision.RSSContinue && state.RSS != nil {
+			progress = *state.RSS
+		}
+		if decision.RSSScope != "" {
+			progress.Scope = decision.RSSScope
+			if state.RSS != nil && state.RSS.Scope != decision.RSSScope {
+				// A new scope starts a fresh inventory, so entries from the prior
+				// scope must not be silently skipped.
+				progress.ShownKeys = nil
+				progress.Total = 0
+			}
+		}
+		if progress.Scope == "all_unread" {
+			progress.Since = time.Time{}
+		}
+		if progress.Scope == "today" && (progress.Since.IsZero() || (state.RSS != nil && state.RSS.Scope != progress.Scope)) {
+			progress.Since = lastFeedbinStart(now, h.timezone)
+		}
+		if decision.RSSContinue && state.RSS == nil {
+			// Upgrade threads created before paginated summaries existed.
+			for _, article := range state.Articles {
+				if article.URL != "" {
+					progress.ShownKeys = append(progress.ShownKeys, "url:"+article.URL)
+				}
+			}
+		}
+		var next service.RSSSummaryProgress
+		message, next, err = h.feedbinDigest.BuildSummaryPage(ctx, userID, progress, h.ai)
+		if err == nil {
+			state.RSS = &next
+		}
 	case service.ConversationRSSTitles:
 		message, err = h.feedbinDigest.BuildDigest(ctx, userID, lastFeedbinStart(now, h.timezone))
 	case service.ConversationRSSStats:

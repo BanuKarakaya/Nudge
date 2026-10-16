@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 )
 
 type ConversationKey struct{ Team, Channel, Thread, User string }
@@ -24,6 +25,16 @@ type ConversationArticle struct {
 type ConversationState struct {
 	Turns    []ConversationExchange `json:"turns"`
 	Articles []ConversationArticle  `json:"previously_recommended_articles"`
+	RSS      *RSSSummaryProgress    `json:"rss_progress,omitempty"`
+}
+
+// Progress belongs to one user's thread and advances only after Slack delivery.
+// URLs are source identities, not model-generated offsets that can skip records.
+type RSSSummaryProgress struct {
+	Scope     string    `json:"scope"`
+	Since     time.Time `json:"since"`
+	ShownKeys []string  `json:"shown_keys"`
+	Total     int       `json:"total"`
 }
 
 type ConversationStore interface {
@@ -51,6 +62,8 @@ type ConversationDecision struct {
 	Reply         string `json:"reply"`
 	ArticleID     string `json:"article_id"`
 	SearchRequest string `json:"search_request,omitempty"`
+	RSSScope      string `json:"rss_scope,omitempty"`
+	RSSContinue   bool   `json:"rss_continue,omitempty"`
 }
 
 type ConversationAssistant interface {
@@ -62,6 +75,9 @@ type WebAssistant interface {
 }
 
 func (d ConversationDecision) Validate(state ConversationState) error {
+	if d.RSSScope != "" && d.RSSScope != "today" && d.RSSScope != "all_unread" {
+		return fmt.Errorf("invalid RSS scope")
+	}
 	switch d.Action {
 	case ConversationWebSearch:
 		if strings.TrimSpace(d.SearchRequest) == "" || len([]rune(d.SearchRequest)) > 1500 {
