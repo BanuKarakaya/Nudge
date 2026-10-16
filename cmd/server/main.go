@@ -116,7 +116,26 @@ func main() {
 	var rssRecommender service.RSSRecommender
 	var dialogue service.ConversationAssistant
 	var webAssistant service.WebAssistant
-	if apiKey := os.Getenv("OPENAI_API_KEY"); apiKey != "" {
+	if apiKey := os.Getenv("OPENROUTER_API_KEY"); apiKey != "" {
+		model := os.Getenv("OPENROUTER_MODEL")
+		if model == "" {
+			model = "openrouter/free"
+		}
+		baseURL := os.Getenv("OPENROUTER_BASE_URL")
+		if baseURL == "" {
+			baseURL = "https://openrouter.ai/api/v1"
+		}
+		log.Printf("OpenRouter AI enabled (model=%s, base_url=%s)", model, baseURL)
+		openRouterClient := ai.OpenAICompatibleClient{
+			APIKey:     apiKey,
+			Model:      model,
+			BaseURL:    baseURL,
+			HTTPClient: &http.Client{Timeout: 90 * time.Second},
+		}
+		textSummarizer = openRouterClient
+		rssRecommender = openRouterClient
+		dialogue = openRouterClient
+	} else if apiKey := os.Getenv("OPENAI_API_KEY"); apiKey != "" {
 		model := os.Getenv("OPENAI_MODEL")
 		if model == "" {
 			model = "gpt-6-luna"

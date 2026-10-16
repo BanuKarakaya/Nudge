@@ -185,7 +185,7 @@ func (c OpenAICompatibleClient) chat(ctx context.Context, messages []deepSeekMes
 		return "", fmt.Errorf("read DeepSeek response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("DeepSeek returned %s: %s", resp.Status, strings.TrimSpace(string(responseBody)))
+		return "", fmt.Errorf("AI provider returned %s: %s", resp.Status, strings.TrimSpace(string(responseBody)))
 	}
 
 	var decoded deepSeekResponse
@@ -193,10 +193,10 @@ func (c OpenAICompatibleClient) chat(ctx context.Context, messages []deepSeekMes
 		return "", fmt.Errorf("decode DeepSeek response: %w", err)
 	}
 	if decoded.Error != nil {
-		return "", fmt.Errorf("DeepSeek error: %s", decoded.Error.Message)
+		return "", fmt.Errorf("AI provider error: %s", decoded.Error.Message)
 	}
 	if len(decoded.Choices) == 0 || strings.TrimSpace(decoded.Choices[0].Message.Content) == "" {
-		return "", fmt.Errorf("DeepSeek returned an empty response")
+		return "", fmt.Errorf("AI provider returned an empty response")
 	}
 	return strings.TrimSpace(decoded.Choices[0].Message.Content), nil
 }

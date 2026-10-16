@@ -36,7 +36,11 @@ errors, unsupported models, quotas and incomplete output produce an explicit
 error, not an RSS fallback. Search does not compare a result against the user's
 entire Feedbin inventory and must not promise that it is absent from that account.
 
-When `OPENAI_API_KEY` is set, `OPENAI_MODEL` (default `gpt-6-luna`) and
+When `OPENROUTER_API_KEY` is set, `OPENROUTER_MODEL` (default `openrouter/free`)
+and `OPENROUTER_BASE_URL` (default `https://openrouter.ai/api/v1`) power the core
+assistant, summaries and recommendations. OpenRouter is tried first so it can be
+tested without changing the OpenAI configuration. When `OPENAI_API_KEY` is set,
+`OPENAI_MODEL` (default `gpt-6-luna`) and
 `OPENAI_BASE_URL` (default `https://api.openai.com/v1`) power the core assistant,
 summaries and recommendations. This is the paid OpenAI API path; usage is billed
 by input and output tokens. If `OPENAI_API_KEY` is absent, the application falls
