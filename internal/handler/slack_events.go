@@ -3,17 +3,20 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 
+	"nudge/internal/ai"
 	"nudge/internal/domain"
 	"nudge/internal/repository"
 	"nudge/internal/service"
@@ -151,9 +154,14 @@ func (h *SlackEventHandler) conversationReply(ctx context.Context, state service
 	if h.dialogue == nil {
 		return failure, "", fmt.Errorf("conversation assistant unavailable")
 	}
+	request = strings.TrimSpace(slackUserMention.ReplaceAllString(request, ""))
 	decision, err := h.dialogue.Converse(ctx, state, request)
 	if err != nil {
-		return failure, "", err
+		var providerErr *ai.ProviderError
+		if errors.As(err, &providerErr) && providerErr.Status == http.StatusTooManyRequests {
+			failure = "AI hizmetinin kullanım sınırına takıldım. Biraz sonra tekrar deneyebilir misin?"
+		}
+		return failure, "", fmt.Errorf("conversation decision: %w", err)
 	}
 	if err = decision.Validate(state); err != nil {
 		return failure, "", err
@@ -179,10 +187,12 @@ func (h *SlackEventHandler) conversationReply(ctx context.Context, state service
 		message, err = h.feedbinDigest.BuildDigest(ctx, userID, lastFeedbinStart(now, h.timezone))
 	case service.ConversationRSSStats:
 		message, err = h.feedbinDigest.BuildUnreadStats(ctx, userID)
+	case service.ConversationRSSTodayStats:
+		message, err = h.feedbinDigest.BuildTodayStats(ctx, userID, lastFeedbinStart(now, h.timezone), now)
 	case service.ConversationRSSCategories:
 		message, err = h.feedbinDigest.BuildCategoryStats(ctx, userID)
 	case service.ConversationRSSRecommend:
-		message, err = h.feedbinDigest.BuildRecommendation(ctx, userID, lastFeedbinStart(now, h.timezone), h.recommender)
+		message, err = h.feedbinDigest.BuildRecommendation(ctx, userID, lastFeedbinStart(now, h.timezone), h.recommender, request)
 	case service.ConversationBookmarks:
 		bookmarks, listErr := h.bookmarks.ListByDate(ctx, userID, lastDailyStart(now, h.timezone).UTC(), now.UTC())
 		err = listErr
@@ -191,10 +201,15 @@ func (h *SlackEventHandler) conversationReply(ctx context.Context, state service
 		}
 	}
 	if err != nil {
-		return failure, decision.Action, err
+		if errors.Is(err, pgx.ErrNoRows) && strings.HasPrefix(decision.Action, "RSS_") {
+			failure = "Feedbin hesabın henüz bağlı görünmüyor. Nudge'dan gelen Feedbin bağlantı mesajıyla hesabını bağladıktan sonra tekrar deneyebilirsin."
+		}
+		return failure, decision.Action, fmt.Errorf("execute %s: %w", decision.Action, err)
 	}
 	return message, decision.Action, nil
 }
+
+var slackUserMention = regexp.MustCompile(`<@[A-Z0-9]+>`)
 
 func lastFeedbinStart(now time.Time, location *time.Location) time.Time {
 	localNow := now.In(location)

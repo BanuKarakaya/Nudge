@@ -98,7 +98,7 @@ func summarizeFeedbinInput(ctx context.Context, ai TextSummarizer, input string)
 	return "", fmt.Errorf("RSS summary validation failed after retry")
 }
 
-func (s *FeedbinDigestService) BuildRecommendation(ctx context.Context, userID int64, since time.Time, ai RSSRecommender) (string, error) {
+func (s *FeedbinDigestService) BuildRecommendation(ctx context.Context, userID int64, since time.Time, ai RSSRecommender, preferences ...string) (string, error) {
 	groups, err := s.loadGroups(ctx, userID, since)
 	if err != nil {
 		return "", err
@@ -111,7 +111,11 @@ func (s *FeedbinDigestService) BuildRecommendation(ctx context.Context, userID i
 	}
 	input := formatFeedbinAIInput(groups)
 	for attempt := 0; attempt < 2; attempt++ {
-		raw, recommendErr := ai.Recommend(ctx, input)
+		request := input
+		if len(preferences) > 0 {
+			request += "\nKullanıcının tercihi: " + strings.Join(preferences, " ")
+		}
+		raw, recommendErr := ai.Recommend(ctx, request)
 		if recommendErr != nil {
 			return "", recommendErr
 		}
@@ -159,7 +163,29 @@ func (s *FeedbinDigestService) BuildUnreadStats(ctx context.Context, userID int6
 			oldest = entry.CreatedAt
 		}
 	}
-	return fmt.Sprintf("📊 *RSS durumun Beybi*\n\n• Toplam okunmamış RSS: *%d*\n• Okumadığın dönem: *%s* tarihinden beri", len(entries), oldest.In(time.FixedZone("Europe/Istanbul", 3*60*60)).Format("02.01.2006")), nil
+	return fmt.Sprintf("📊 *RSS durumun Beybi*\n\n• Toplam okunmamış RSS: *%d*\n• En eski okunmamış kaydın tarihi: *%s*", len(entries), oldest.In(time.FixedZone("Europe/Istanbul", 3*60*60)).Format("02.01.2006")), nil
+}
+
+// Count entries in the daily window without fetching folders or calling AI.
+func (s *FeedbinDigestService) BuildTodayStats(ctx context.Context, userID int64, since, until time.Time) (string, error) {
+	connection, err := s.connections.GetByUserID(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+	entries, err := s.client.ListUnreadSince(ctx, connection.Email, connection.Password, since)
+	if err != nil {
+		return "", err
+	}
+	count := 0
+	seen := make(map[int64]bool)
+	for _, entry := range entries {
+		if entry.CreatedAt.Before(since) || entry.CreatedAt.After(until) || seen[entry.ID] {
+			continue
+		}
+		seen[entry.ID] = true
+		count++
+	}
+	return fmt.Sprintf("📊 *Bugünkü RSS durumun Beybi*\n\n%s – %s arasında gelen ve hâlâ okunmamış *%d RSS'in* var.", since.Format("02.01.2006 15:04"), until.In(since.Location()).Format("02.01.2006 15:04"), count), nil
 }
 
 // BuildCategoryStats groups the complete unread Feedbin inventory by the

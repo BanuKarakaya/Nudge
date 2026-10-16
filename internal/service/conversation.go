@@ -39,6 +39,7 @@ const (
 	ConversationRSSSummary    = "RSS_SUMMARY"
 	ConversationRSSTitles     = "RSS_TITLES"
 	ConversationRSSStats      = "RSS_STATS"
+	ConversationRSSTodayStats = "RSS_TODAY_STATS"
 	ConversationRSSCategories = "RSS_CATEGORIES"
 	ConversationRSSRecommend  = "RSS_RECOMMEND"
 	ConversationBookmarks     = "BOOKMARKS"
@@ -80,7 +81,7 @@ func (d ConversationDecision) Validate(state ConversationState) error {
 			}
 		}
 		return fmt.Errorf("selection is not in the previously recommended articles")
-	case ConversationRSSSummary, ConversationRSSTitles, ConversationRSSStats, ConversationRSSCategories, ConversationRSSRecommend, ConversationBookmarks:
+	case ConversationRSSSummary, ConversationRSSTitles, ConversationRSSStats, ConversationRSSTodayStats, ConversationRSSCategories, ConversationRSSRecommend, ConversationBookmarks:
 	default:
 		return fmt.Errorf("unknown conversation action %q", d.Action)
 	}
