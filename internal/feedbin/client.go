@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -41,17 +42,41 @@ func (c Client) ListUnreadSince(ctx context.Context, email, password string, sin
 	if err != nil || len(ids) == 0 {
 		return nil, err
 	}
+	// Fetch independent pages concurrently, with a small fixed worker pool.
+	// Keep page order stable and never return partial counts on a failed page.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	pages := make([][]Entry, (len(ids)+99)/100)
+	var wg sync.WaitGroup
+	var firstErr error
+	var failOnce sync.Once
+	workers := min(4, len(pages))
+	for worker := 0; worker < workers; worker++ {
+		wg.Add(1)
+		go func(worker int) {
+			defer wg.Done()
+			for index := worker; index < len(pages); index += workers {
+				if ctx.Err() != nil {
+					return
+				}
+				start := index * 100
+				params := url.Values{"ids": {joinIDs(ids[start:min(start+100, len(ids))])}}
+				if err := c.getJSON(ctx, email, password, apiBaseURL+"/entries.json?"+params.Encode(), &pages[index]); err != nil {
+					failOnce.Do(func() { firstErr = err; cancel() })
+					return
+				}
+			}
+		}(worker)
+	}
+	wg.Wait()
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var entries []Entry
-	for start := 0; start < len(ids); start += 100 {
-		end := start + 100
-		if end > len(ids) {
-			end = len(ids)
-		}
-		params := url.Values{"ids": {joinIDs(ids[start:end])}}
-		var page []Entry
-		if err := c.getJSON(ctx, email, password, apiBaseURL+"/entries.json?"+params.Encode(), &page); err != nil {
-			return nil, err
-		}
+	for _, page := range pages {
 		for _, entry := range page {
 			if !entry.CreatedAt.Before(since) {
 				entries = append(entries, entry)

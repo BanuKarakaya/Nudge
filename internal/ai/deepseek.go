@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"nudge/internal/service"
 )
@@ -50,7 +51,8 @@ type outputSchema struct {
 }
 
 type providerPreferences struct {
-	RequireParameters bool `json:"require_parameters"`
+	RequireParameters bool   `json:"require_parameters"`
+	Sort              string `json:"sort,omitempty"`
 }
 
 type deepSeekResponse struct {
@@ -219,6 +221,11 @@ func (c OpenAICompatibleClient) chatOnce(ctx context.Context, messages []deepSee
 	}
 	if endpoint.Hostname() == "openrouter.ai" {
 		payload.Provider = &providerPreferences{RequireParameters: true}
+		// Prefer responsive endpoints without changing the chosen model or
+		// introducing a paid fallback. Leave paid routes' price policy unchanged.
+		if model == "openrouter/free" || strings.HasSuffix(model, ":free") {
+			payload.Provider.Sort = "latency"
+		}
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -231,6 +238,7 @@ func (c OpenAICompatibleClient) chatOnce(ctx context.Context, messages []deepSee
 	}
 	req.Header.Set("Authorization", "Bearer "+c.APIKey)
 	req.Header.Set("Content-Type", "application/json")
+	started := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("call AI provider: %w", err)
@@ -255,7 +263,7 @@ func (c OpenAICompatibleClient) chatOnce(ctx context.Context, messages []deepSee
 	}
 	if len(decoded.Choices) > 0 {
 		choice := decoded.Choices[0]
-		log.Printf("AI response model=%q finish=%q", decoded.Model, choice.FinishReason)
+		log.Printf("AI response model=%q finish=%q duration_ms=%d request_bytes=%d", decoded.Model, choice.FinishReason, time.Since(started).Milliseconds(), len(body))
 		if choice.FinishReason == "length" {
 			return "", errIncompleteAIResponse
 		}

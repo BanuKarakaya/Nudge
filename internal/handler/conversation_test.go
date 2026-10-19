@@ -176,6 +176,7 @@ func TestWebRequestDoesNotFetchRSSAndIsRememberedForFollowUp(t *testing.T) {
 	h.replyWithSummary(event)
 	event.Event.ThreadTS = "1.0"
 	event.Event.Text = "Bu makale neden önemli?"
+	event.Event.TS = "2.0" // A new Slack reply has its own event timestamp.
 	h.dialogue = dialogueFunc(func(_ context.Context, s service.ConversationState, _ string) (service.ConversationDecision, error) {
 		if len(s.Turns) != 1 || !strings.Contains(s.Turns[0].Reply, "example.com/agents") {
 			t.Fatalf("missing web context: %+v", s)

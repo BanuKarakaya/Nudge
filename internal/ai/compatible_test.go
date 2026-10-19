@@ -30,6 +30,9 @@ func TestOpenRouterDecisionSchemaAndCompatibility(t *testing.T) {
 				if payload.Model != "openrouter/free" || payload.Provider == nil || !payload.Provider.RequireParameters {
 					t.Fatal("missing free route/parameter enforcement")
 				}
+				if payload.Provider.Sort != "latency" {
+					t.Fatal("free route must prefer low latency endpoints")
+				}
 				if payload.ResponseFormat.Type != "json_schema" || !payload.ResponseFormat.JSONSchema.Strict {
 					t.Fatal("missing strict decision schema")
 				}
@@ -44,6 +47,27 @@ func TestOpenRouterDecisionSchemaAndCompatibility(t *testing.T) {
 				t.Fatalf("%+v %v", decision, err)
 			}
 		})
+	}
+}
+
+func TestLatencyRoutingDoesNotChangePaidProviderPolicy(t *testing.T) {
+	for _, baseURL := range []string{"https://openrouter.ai/api/v1", "https://api.deepseek.com"} {
+		client := OpenAICompatibleClient{APIKey: "test", Model: "configured-paid-model", BaseURL: baseURL, HTTPClient: &http.Client{Transport: testTransport(func(r *http.Request) (*http.Response, error) {
+			var payload deepSeekRequest
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload.Model != "configured-paid-model" || (payload.Provider != nil && payload.Provider.Sort != "") {
+				t.Fatal("changed paid model or provider price policy")
+			}
+			if baseURL == "https://api.deepseek.com" && payload.Provider != nil {
+				t.Fatal("OpenRouter routing sent to another provider")
+			}
+			return completionResponse(`{"action":"REPLY","reply":"Merhaba!","article_id":"","search_request":""}`, "stop"), nil
+		})}}
+		if _, err := client.Converse(context.Background(), service.ConversationState{}, "selam"); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -33,7 +32,8 @@ type SlackEventHandler struct {
 	dialogue          service.ConversationAssistant
 	web               service.WebAssistant
 	history           service.ConversationStore
-	conversationLocks [64]sync.Mutex
+	conversationLocks conversationLocks
+	events            eventDeduplicator
 	client            slackThreadMessageClient
 	timezone          *time.Location
 }
@@ -54,6 +54,7 @@ type slackEventEnvelope struct {
 	Type      string `json:"type"`
 	Challenge string `json:"challenge"`
 	TeamID    string `json:"team_id"`
+	EventID   string `json:"event_id"`
 	Event     struct {
 		Type     string `json:"type"`
 		User     string `json:"user"`
@@ -96,6 +97,12 @@ func (h *SlackEventHandler) handle(w http.ResponseWriter, r *http.Request) {
 
 func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 	requestID := slackRequestID(event)
+	finish, fresh := h.events.begin(event, time.Now())
+	if !fresh {
+		log.Printf("slack_request=%s stage=duplicate_ignored", requestID)
+		return
+	}
+	defer finish()
 	started := time.Now()
 	log.Printf("slack_request=%s stage=processing_started", requestID)
 	threadTS := event.Event.ThreadTS
@@ -103,12 +110,9 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 		threadTS = event.Event.TS
 	}
 	key := service.ConversationKey{Team: event.TeamID, Channel: event.Event.Channel, Thread: threadTS, User: event.Event.User}
-	hash := fnv.New32a()
-	_, _ = hash.Write([]byte(key.Team + "\x00" + key.Channel + "\x00" + key.Thread + "\x00" + key.User))
-	lock := &h.conversationLocks[hash.Sum32()%uint32(len(h.conversationLocks))]
 	lockStarted := time.Now()
-	lock.Lock()
-	defer lock.Unlock()
+	unlock := h.conversationLocks.lock(key)
+	defer unlock()
 	log.Printf("slack_request=%s stage=thread_lock_acquired wait_ms=%d", requestID, time.Since(lockStarted).Milliseconds())
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
 	defer cancel()
