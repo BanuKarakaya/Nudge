@@ -47,6 +47,8 @@ type slackReactionClient interface {
 	RemoveReaction(ctx context.Context, token, channel, timestamp, name string) error
 }
 
+const processingReaction = "nudgethinking"
+
 func NewSlackEventHandler(signingSecret string, installations repository.InstallationRepository, bookmarks service.BookmarkService, feedbinDigest *service.FeedbinDigestService, ai service.TextSummarizer, recommender service.RSSRecommender, dialogue service.ConversationAssistant, web service.WebAssistant, history service.ConversationStore, client slackThreadMessageClient, timezone *time.Location) *SlackEventHandler {
 	return &SlackEventHandler{signingSecret: signingSecret, installations: installations, bookmarks: bookmarks, feedbinDigest: feedbinDigest, ai: ai, recommender: recommender, dialogue: dialogue, web: web, history: history, client: client, timezone: timezone}
 }
@@ -144,7 +146,7 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 	var removeProcessing func()
 	if reactionClient, ok := h.client.(slackReactionClient); ok && event.Event.TS != "" {
 		reactionCtx, reactionCancel := context.WithTimeout(context.Background(), 3*time.Second)
-		err := reactionClient.AddReaction(reactionCtx, installation.BotToken, event.Event.Channel, event.Event.TS, "hourglass_flowing_sand")
+		err := reactionClient.AddReaction(reactionCtx, installation.BotToken, event.Event.Channel, event.Event.TS, processingReaction)
 		reactionCancel()
 		if err != nil {
 			log.Printf("slack_request=%s stage=processing_reaction_failed error=%q", requestID, err)
@@ -153,7 +155,7 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 			removeProcessing = func() {
 				removeCtx, removeCancel := context.WithTimeout(context.Background(), 3*time.Second)
 				defer removeCancel()
-				if err := reactionClient.RemoveReaction(removeCtx, installation.BotToken, event.Event.Channel, event.Event.TS, "hourglass_flowing_sand"); err != nil {
+				if err := reactionClient.RemoveReaction(removeCtx, installation.BotToken, event.Event.Channel, event.Event.TS, processingReaction); err != nil {
 					log.Printf("slack_request=%s stage=processing_reaction_remove_failed error=%q", requestID, err)
 				} else {
 					log.Printf("slack_request=%s stage=processing_reaction_removed", requestID)
