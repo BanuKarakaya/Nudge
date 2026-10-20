@@ -39,6 +39,8 @@ func abs(value int64) int64 {
 }
 
 const postMessageURL = "https://slack.com/api/chat.postMessage"
+const addReactionURL = "https://slack.com/api/reactions.add"
+const removeReactionURL = "https://slack.com/api/reactions.remove"
 
 type APIClient struct {
 	HTTPClient *http.Client
@@ -148,6 +150,51 @@ func (c APIClient) PostMessage(ctx context.Context, token, channel, text string)
 
 func (c APIClient) PostMessageInThread(ctx context.Context, token, channel, threadTS, text string) error {
 	return c.postText(ctx, token, postMessageRequest{Channel: channel, Text: text, ThreadTS: threadTS, UnfurlLinks: false, UnfurlMedia: false})
+}
+
+type reactionRequest struct {
+	Channel   string `json:"channel"`
+	Timestamp string `json:"timestamp"`
+	Name      string `json:"name"`
+}
+
+// AddReaction and RemoveReaction put a visible processing indicator on a
+// message while its assistant reply is being prepared.
+func (c APIClient) AddReaction(ctx context.Context, token, channel, timestamp, name string) error {
+	return c.setReaction(ctx, token, addReactionURL, reactionRequest{Channel: channel, Timestamp: timestamp, Name: name})
+}
+
+func (c APIClient) RemoveReaction(ctx context.Context, token, channel, timestamp, name string) error {
+	return c.setReaction(ctx, token, removeReactionURL, reactionRequest{Channel: channel, Timestamp: timestamp, Name: name})
+}
+
+func (c APIClient) setReaction(ctx context.Context, token, endpoint string, payload reactionRequest) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(string(body)))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	var result postMessageResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 || !result.OK {
+		if result.Error == "" {
+			result.Error = resp.Status
+		}
+		return fmt.Errorf("Slack reaction request failed: %s", result.Error)
+	}
+	return nil
 }
 
 func (c APIClient) postText(ctx context.Context, token string, payload postMessageRequest) error {
