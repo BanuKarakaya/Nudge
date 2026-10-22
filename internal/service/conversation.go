@@ -64,6 +64,7 @@ type ConversationDecision struct {
 	SearchRequest string `json:"search_request,omitempty"`
 	RSSScope      string `json:"rss_scope,omitempty"`
 	RSSContinue   bool   `json:"rss_continue,omitempty"`
+	NeedsDeepSeek bool   `json:"needs_deepseek,omitempty"`
 }
 
 type ConversationAssistant interface {

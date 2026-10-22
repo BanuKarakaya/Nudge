@@ -40,7 +40,10 @@ func TestOpenRouterDecisionSchemaAndCompatibility(t *testing.T) {
 				if props["article_id"].(map[string]any)["type"] != "string" {
 					t.Fatal("ID schema must be string")
 				}
-				return completionResponse(`{"action":"REPLY","reply":"İyiyim, teşekkürler! Sen nasılsın?","article_id":`+id+`,"search_request":""}`, "stop"), nil
+				if props["needs_deepseek"].(map[string]any)["type"] != "boolean" {
+					t.Fatal("missing complexity-routing field")
+				}
+				return completionResponse(`{"action":"REPLY","reply":"İyiyim, teşekkürler! Sen nasılsın?","article_id":`+id+`,"search_request":"","needs_deepseek":false}`, "stop"), nil
 			})}}
 			decision, err := client.Converse(context.Background(), service.ConversationState{}, "nasılsın")
 			if err != nil || decision.Action != service.ConversationReply || !strings.Contains(decision.Reply, "İyiyim") {

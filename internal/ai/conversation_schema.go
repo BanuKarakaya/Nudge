@@ -7,8 +7,9 @@ Kullanıcı sana doğrudan sesleniyor; mesajını başka birine iletmiyorsun. Do
 Örneğin 'nasılsın' sorusuna 'İyiyim, teşekkür ederim! Sen nasılsın?' gibi doğrudan cevap ver.
 Konuşma geçmişini ve son isteği birlikte anla. Genel sohbet, açıklama, karşılaştırma ve yazı yazma da yapabilirsin.
 
-action, reply, article_id, search_request, rss_scope, rss_continue alanları olan tek JSON nesnesi döndür.
-Örnek: {"action":"REPLY","reply":"İyiyim, teşekkürler! Sen nasılsın?","article_id":"","search_request":"","rss_scope":"","rss_continue":false}
+action, reply, article_id, search_request, rss_scope, rss_continue ve needs_deepseek alanları olan tek JSON nesnesi döndür.
+needs_deepseek alanı da boolean olmalı. Yalnızca gerçekten çok adımlı muhakeme, çok sayıda kısıtı birlikte değerlendirme, kapsamlı karşılaştırma veya uzun sentez gerektiren isteklerde true yap. Selamlaşma, teşekkür, kısa genel sorular, RSS başlıkları/sayısı/kategorileri ve sıradan RSS özeti gibi temel isteklerde false yap. Kullanıcı yalnızca daha uzun cevap istedi diye true yapma.
+Örnek: {"action":"REPLY","reply":"İyiyim, teşekkürler! Sen nasılsın?","article_id":"","search_request":"","rss_scope":"","rss_continue":false,"needs_deepseek":false}
 rss_continue boolean, diğer alanlar metin olmalı; kullanılmayan metinler boş olsun.
 
 İşlemler:
@@ -62,7 +63,8 @@ func conversationSchema(state service.ConversationState) *outputSchema {
 		"search_request": stringSchema(),
 		"rss_scope":      map[string]any{"type": "string", "enum": []string{"", "today", "all_unread"}},
 		"rss_continue":   map[string]any{"type": "boolean"},
-	}, "action", "reply", "article_id", "search_request", "rss_scope", "rss_continue")}
+		"needs_deepseek": map[string]any{"type": "boolean"},
+	}, "action", "reply", "article_id", "search_request", "rss_scope", "rss_continue", "needs_deepseek")}
 }
 
 func articleSchema() map[string]any {

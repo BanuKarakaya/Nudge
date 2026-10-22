@@ -125,16 +125,27 @@ func main() {
 		if baseURL == "" {
 			baseURL = "https://openrouter.ai/api/v1"
 		}
-		log.Printf("OpenRouter AI enabled (model=%s, base_url=%s)", model, baseURL)
+		complexModel := os.Getenv("OPENROUTER_COMPLEX_MODEL")
+		if complexModel == "" {
+			complexModel = "deepseek/deepseek-v4.1-flash"
+		}
+		log.Printf("OpenRouter AI enabled (model=%s, complex_model=%s, base_url=%s)", model, complexModel, baseURL)
 		openRouterClient := ai.OpenAICompatibleClient{
 			APIKey:     apiKey,
 			Model:      model,
 			BaseURL:    baseURL,
 			HTTPClient: &http.Client{Timeout: 90 * time.Second},
 		}
-		textSummarizer = openRouterClient
-		rssRecommender = openRouterClient
-		dialogue = openRouterClient
+		complexClient := ai.OpenAICompatibleClient{
+			APIKey:     apiKey,
+			Model:      complexModel,
+			BaseURL:    baseURL,
+			HTTPClient: &http.Client{Timeout: 90 * time.Second},
+		}
+		modelRouter := ai.OpenRouterModelRouter{Free: openRouterClient, DeepSeek: complexClient}
+		textSummarizer = modelRouter
+		rssRecommender = modelRouter
+		dialogue = modelRouter
 	} else if apiKey := os.Getenv("OPENAI_API_KEY"); apiKey != "" {
 		model := os.Getenv("OPENAI_MODEL")
 		if model == "" {
@@ -192,9 +203,8 @@ func main() {
 		log.Printf("AI summaries disabled: OPENCODE_API_KEY is not configured")
 	}
 
-	// DeepSeek handles the assistant, RSS and bookmark reasoning. Its API does
-	// not provide Google's live Search grounding, so keep that capability as an
-	// optional, separate provider until a dedicated search provider is added.
+	// Google Search grounding remains a separate provider; OpenRouter models do
+	// not provide Google's live Search grounding as a capability here.
 	if apiKey := os.Getenv("GEMINI_API_KEY"); apiKey != "" {
 		log.Printf("Google web search enabled separately (model=%s)", os.Getenv("GEMINI_MODEL"))
 		geminiClient := ai.GeminiClient{

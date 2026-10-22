@@ -76,6 +76,7 @@ type deepSeekConversationOutput struct {
 	SearchRequest string         `json:"search_request"`
 	RSSScope      string         `json:"rss_scope"`
 	RSSContinue   bool           `json:"rss_continue"`
+	NeedsDeepSeek bool           `json:"needs_deepseek"`
 }
 
 // flexibleString keeps routing compatible with providers that emit an ID as
@@ -124,6 +125,7 @@ func (c OpenAICompatibleClient) Converse(ctx context.Context, state service.Conv
 				Reply:  strings.TrimSpace(output.Reply), ArticleID: string(output.ArticleID),
 				SearchRequest: strings.TrimSpace(output.SearchRequest),
 				RSSScope:      strings.TrimSpace(output.RSSScope), RSSContinue: output.RSSContinue,
+				NeedsDeepSeek: output.NeedsDeepSeek,
 			}
 			err = decision.Validate(state)
 			if err == nil {

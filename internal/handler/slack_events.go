@@ -273,7 +273,7 @@ func (h *SlackEventHandler) conversationReplyWithState(ctx context.Context, stat
 			}
 		}
 		var next service.RSSSummaryProgress
-		message, next, err = h.feedbinDigest.BuildSummaryPage(ctx, userID, progress, h.ai)
+		message, next, err = h.feedbinDigest.BuildSummaryPage(ctx, userID, progress, selectedSummarizer(h.ai, decision.NeedsDeepSeek))
 		if err == nil {
 			state.RSS = &next
 		}
@@ -286,7 +286,7 @@ func (h *SlackEventHandler) conversationReplyWithState(ctx context.Context, stat
 	case service.ConversationRSSCategories:
 		message, err = h.feedbinDigest.BuildCategoryStats(ctx, userID)
 	case service.ConversationRSSRecommend:
-		message, err = h.feedbinDigest.BuildRecommendation(ctx, userID, lastFeedbinStart(now, h.timezone), h.recommender, request)
+		message, err = h.feedbinDigest.BuildRecommendation(ctx, userID, lastFeedbinStart(now, h.timezone), selectedRecommender(h.recommender, decision.NeedsDeepSeek), request)
 	case service.ConversationBookmarks:
 		bookmarks, listErr := h.bookmarks.ListByDate(ctx, userID, lastDailyStart(now, h.timezone).UTC(), now.UTC())
 		err = listErr
@@ -307,6 +307,28 @@ func (h *SlackEventHandler) conversationReplyWithState(ctx context.Context, stat
 		log.Printf("slack_request=%s stage=operation_complete action=%s duration_ms=%d", requestID, decision.Action, time.Since(operationStarted).Milliseconds())
 	}
 	return message, decision.Action, nil
+}
+
+type complexitySummarizerSelector interface {
+	SummarizerFor(bool) service.TextSummarizer
+}
+
+type complexityRecommenderSelector interface {
+	RecommenderFor(bool) service.RSSRecommender
+}
+
+func selectedSummarizer(summarizer service.TextSummarizer, complex bool) service.TextSummarizer {
+	if selector, ok := summarizer.(complexitySummarizerSelector); ok {
+		return selector.SummarizerFor(complex)
+	}
+	return summarizer
+}
+
+func selectedRecommender(recommender service.RSSRecommender, complex bool) service.RSSRecommender {
+	if selector, ok := recommender.(complexityRecommenderSelector); ok {
+		return selector.RecommenderFor(complex)
+	}
+	return recommender
 }
 
 func slackRequestID(event slackEventEnvelope) string {
