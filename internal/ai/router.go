@@ -23,7 +23,25 @@ func (r OpenRouterModelRouter) Converse(ctx context.Context, state service.Conve
 
 func routeConversation(ctx context.Context, state service.ConversationState, request string, free, deep service.ConversationAssistant, complexModelConfigured bool) (service.ConversationDecision, error) {
 	decision, err := free.Converse(ctx, state, request)
-	if err != nil || !decision.NeedsDeepSeek {
+	if err != nil {
+		if !complexModelConfigured {
+			return service.ConversationDecision{}, err
+		}
+		log.Printf("AI complexity route=deepseek reason=free-request-failed")
+		deepDecision, deepErr := deep.Converse(ctx, state, request)
+		if deepErr == nil {
+			deepDecision.NeedsDeepSeek = true
+			return deepDecision, nil
+		}
+		log.Printf("AI complexity route fallback=free reason=deepseek-recovery-failed")
+		fallbackDecision, fallbackErr := free.Converse(ctx, state, request)
+		if fallbackErr != nil {
+			return service.ConversationDecision{}, fmt.Errorf("free model, DeepSeek recovery, and free retry failed: %w", fallbackErr)
+		}
+		fallbackDecision.NeedsDeepSeek = false
+		return fallbackDecision, nil
+	}
+	if !decision.NeedsDeepSeek {
 		return decision, err
 	}
 	if !complexModelConfigured {

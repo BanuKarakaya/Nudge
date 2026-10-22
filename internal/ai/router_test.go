@@ -40,6 +40,42 @@ func TestOpenRouterModelRouterKeepsBasicRequestsOnFreeModel(t *testing.T) {
 	}
 }
 
+func TestOpenRouterModelRouterUsesDeepSeekWhenFreeModelFails(t *testing.T) {
+	freeCalls, deepCalls := 0, 0
+	freeErr := errors.New("free model returned invalid JSON")
+	free := conversationAssistantFunc(func(context.Context, service.ConversationState, string) (service.ConversationDecision, error) {
+		freeCalls++
+		return service.ConversationDecision{}, freeErr
+	})
+	deep := conversationAssistantFunc(func(context.Context, service.ConversationState, string) (service.ConversationDecision, error) {
+		deepCalls++
+		return service.ConversationDecision{Action: service.ConversationReply, Reply: "İyiyim!"}, nil
+	})
+	decision, err := routeConversation(context.Background(), service.ConversationState{}, "nasılsın", free, deep, true)
+	if err != nil || decision.Reply != "İyiyim!" || !decision.NeedsDeepSeek || freeCalls != 1 || deepCalls != 1 {
+		t.Fatalf("DeepSeek recovery failed: %+v err=%v free=%d deep=%d", decision, err, freeCalls, deepCalls)
+	}
+}
+
+func TestOpenRouterModelRouterRetriesFreeIfRecoveryModelFails(t *testing.T) {
+	freeCalls, deepCalls := 0, 0
+	free := conversationAssistantFunc(func(context.Context, service.ConversationState, string) (service.ConversationDecision, error) {
+		freeCalls++
+		if freeCalls == 1 {
+			return service.ConversationDecision{}, errors.New("temporary free-model failure")
+		}
+		return service.ConversationDecision{Action: service.ConversationReply, Reply: "Tekrar denedim."}, nil
+	})
+	deep := conversationAssistantFunc(func(context.Context, service.ConversationState, string) (service.ConversationDecision, error) {
+		deepCalls++
+		return service.ConversationDecision{}, errors.New("DeepSeek unavailable")
+	})
+	decision, err := routeConversation(context.Background(), service.ConversationState{}, "nasılsın", free, deep, true)
+	if err != nil || decision.Reply != "Tekrar denedim." || decision.NeedsDeepSeek || freeCalls != 2 || deepCalls != 1 {
+		t.Fatalf("free retry failed: %+v err=%v free=%d deep=%d", decision, err, freeCalls, deepCalls)
+	}
+}
+
 func TestOpenRouterModelRouterEscalatesComplexRequests(t *testing.T) {
 	freeCalls, deepCalls := 0, 0
 	free := conversationAssistantFunc(func(context.Context, service.ConversationState, string) (service.ConversationDecision, error) {
