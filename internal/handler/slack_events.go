@@ -143,10 +143,30 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 		return
 	}
 	log.Printf("slack_request=%s stage=installation_loaded elapsed_ms=%d", requestID, time.Since(started).Milliseconds())
+	var removeProcessingReaction func()
 	if reactionClient, ok := h.client.(slackReactionClient); ok && event.Event.TS != "" {
-		indicator := newProcessingReactionIndicator(reactionClient, installation.BotToken, event.Event.Channel, event.Event.TS, requestID)
-		go indicator.run()
-		defer indicator.finish()
+		reactionCtx, reactionCancel := context.WithTimeout(ctx, 3*time.Second)
+		err := reactionClient.AddReaction(reactionCtx, installation.BotToken, event.Event.Channel, event.Event.TS, processingReaction)
+		reactionCancel()
+		if err != nil {
+			log.Printf("slack_request=%s stage=processing_reaction_failed error=%q", requestID, err)
+		} else {
+			log.Printf("slack_request=%s stage=processing_reaction_added", requestID)
+			removeProcessingReaction = func() {
+				removeCtx, removeCancel := context.WithTimeout(context.Background(), 3*time.Second)
+				defer removeCancel()
+				if err := reactionClient.RemoveReaction(removeCtx, installation.BotToken, event.Event.Channel, event.Event.TS, processingReaction); err != nil {
+					log.Printf("slack_request=%s stage=processing_reaction_remove_failed error=%q", requestID, err)
+				} else {
+					log.Printf("slack_request=%s stage=processing_reaction_removed", requestID)
+				}
+			}
+			defer func() {
+				if removeProcessingReaction != nil {
+					removeProcessingReaction()
+				}
+			}()
+		}
 	}
 	now := time.Now()
 	state, err := h.history.Load(ctx, key)
@@ -173,6 +193,10 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 		return
 	}
 	log.Printf("slack_request=%s stage=slack_send_complete elapsed_ms=%d", requestID, time.Since(started).Milliseconds())
+	if removeProcessingReaction != nil {
+		removeProcessingReaction()
+		removeProcessingReaction = nil
+	}
 	if success {
 		state.Remember(event.Event.Text, message, action)
 		if err := h.history.Save(sendCtx, key, state); err != nil {
