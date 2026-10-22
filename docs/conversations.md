@@ -44,8 +44,10 @@ request as requiring substantial multi-step reasoning, the assistant and any
 RSS summary/recommendation for that request are routed to
 `OPENROUTER_COMPLEX_MODEL` (default `deepseek/deepseek-v4.1-flash`). This model
 is usage-billed; OpenRouter may route it across multiple providers and prices
-vary by provider. Basic requests do not invoke the complex model. OpenRouter is
-tried first so it can be tested without changing the OpenAI configuration.
+vary by provider. If the complex model is unavailable or returns an error,
+Nudge retries the request with the free model and records the fallback in logs.
+Basic requests do not invoke the complex model. OpenRouter is tried first so it
+can be tested without changing the OpenAI configuration.
 When `OPENAI_API_KEY` is set,
 `OPENAI_MODEL` (default `gpt-6-luna`) and
 `OPENAI_BASE_URL` (default `https://api.openai.com/v1`) power the core assistant,

@@ -27,12 +27,19 @@ func routeConversation(ctx context.Context, state service.ConversationState, req
 		return decision, err
 	}
 	if !complexModelConfigured {
-		return service.ConversationDecision{}, fmt.Errorf("complex-task model is not configured")
+		log.Printf("AI complexity route fallback=free reason=complex-model-not-configured action=%s", decision.Action)
+		return free.Converse(ctx, state, request)
 	}
 	log.Printf("AI complexity route=deepseek action=%s", decision.Action)
 	deepDecision, err := deep.Converse(ctx, state, request)
 	if err != nil {
-		return service.ConversationDecision{}, err
+		log.Printf("AI complexity route fallback=free reason=deepseek-request-failed action=%s", decision.Action)
+		fallbackDecision, fallbackErr := free.Converse(ctx, state, request)
+		if fallbackErr != nil {
+			return service.ConversationDecision{}, fmt.Errorf("DeepSeek and free model fallback both failed: %w", fallbackErr)
+		}
+		fallbackDecision.NeedsDeepSeek = false
+		return fallbackDecision, nil
 	}
 	// Keep the selected tier on the decision so data-backed RSS work triggered
 	// by the same request is analyzed by the same model tier too.
@@ -50,14 +57,56 @@ func (r OpenRouterModelRouter) Recommend(ctx context.Context, input string) (str
 
 func (r OpenRouterModelRouter) SummarizerFor(complex bool) service.TextSummarizer {
 	if complex {
-		return r.DeepSeek
+		if r.DeepSeek.APIKey == "" || r.DeepSeek.Model == "" {
+			return r.Free
+		}
+		return fallbackSummarizer{primary: r.DeepSeek, fallback: r.Free}
 	}
 	return r.Free
 }
 
 func (r OpenRouterModelRouter) RecommenderFor(complex bool) service.RSSRecommender {
 	if complex {
-		return r.DeepSeek
+		if r.DeepSeek.APIKey == "" || r.DeepSeek.Model == "" {
+			return r.Free
+		}
+		return fallbackRecommender{primary: r.DeepSeek, fallback: r.Free}
 	}
 	return r.Free
+}
+
+type fallbackSummarizer struct {
+	primary  service.TextSummarizer
+	fallback service.TextSummarizer
+}
+
+func (s fallbackSummarizer) Summarize(ctx context.Context, input string) (string, error) {
+	result, err := s.primary.Summarize(ctx, input)
+	if err == nil {
+		return result, nil
+	}
+	log.Printf("AI complexity route fallback=free task=rss_summary")
+	result, fallbackErr := s.fallback.Summarize(ctx, input)
+	if fallbackErr != nil {
+		return "", fmt.Errorf("DeepSeek and free RSS summary both failed: %w", fallbackErr)
+	}
+	return result, nil
+}
+
+type fallbackRecommender struct {
+	primary  service.RSSRecommender
+	fallback service.RSSRecommender
+}
+
+func (r fallbackRecommender) Recommend(ctx context.Context, input string) (string, error) {
+	result, err := r.primary.Recommend(ctx, input)
+	if err == nil {
+		return result, nil
+	}
+	log.Printf("AI complexity route fallback=free task=rss_recommendation")
+	result, fallbackErr := r.fallback.Recommend(ctx, input)
+	if fallbackErr != nil {
+		return "", fmt.Errorf("DeepSeek and free RSS recommendation both failed: %w", fallbackErr)
+	}
+	return result, nil
 }

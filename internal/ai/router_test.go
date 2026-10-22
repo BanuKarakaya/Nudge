@@ -9,9 +9,19 @@ import (
 )
 
 type conversationAssistantFunc func(context.Context, service.ConversationState, string) (service.ConversationDecision, error)
+type summarizerFunc func(context.Context, string) (string, error)
+type recommenderFunc func(context.Context, string) (string, error)
 
 func (f conversationAssistantFunc) Converse(ctx context.Context, state service.ConversationState, request string) (service.ConversationDecision, error) {
 	return f(ctx, state, request)
+}
+
+func (f summarizerFunc) Summarize(ctx context.Context, input string) (string, error) {
+	return f(ctx, input)
+}
+
+func (f recommenderFunc) Recommend(ctx context.Context, input string) (string, error) {
+	return f(ctx, input)
 }
 
 func TestOpenRouterModelRouterKeepsBasicRequestsOnFreeModel(t *testing.T) {
@@ -49,35 +59,81 @@ func TestOpenRouterModelRouterEscalatesComplexRequests(t *testing.T) {
 	}
 }
 
-func TestOpenRouterModelRouterDoesNotSilentlyDowngradeComplexRequest(t *testing.T) {
+func TestOpenRouterModelRouterFallsBackToFreeWhenDeepSeekFails(t *testing.T) {
+	freeCalls := 0
 	free := conversationAssistantFunc(func(context.Context, service.ConversationState, string) (service.ConversationDecision, error) {
-		return service.ConversationDecision{Action: service.ConversationReply, Reply: "Free answer", NeedsDeepSeek: true}, nil
+		freeCalls++
+		if freeCalls == 1 {
+			return service.ConversationDecision{Action: service.ConversationReply, NeedsDeepSeek: true}, nil
+		}
+		return service.ConversationDecision{Action: service.ConversationReply, Reply: "Ücretsiz model yanıtı.", NeedsDeepSeek: true}, nil
 	})
 	deepErr := errors.New("DeepSeek unavailable")
 	deep := conversationAssistantFunc(func(context.Context, service.ConversationState, string) (service.ConversationDecision, error) {
 		return service.ConversationDecision{}, deepErr
 	})
-	_, err := routeConversation(context.Background(), service.ConversationState{}, "complex", free, deep, true)
-	if !errors.Is(err, deepErr) {
-		t.Fatalf("expected DeepSeek failure rather than free downgrade, got %v", err)
+	decision, err := routeConversation(context.Background(), service.ConversationState{}, "complex", free, deep, true)
+	if err != nil || decision.Reply != "Ücretsiz model yanıtı." || decision.NeedsDeepSeek || freeCalls != 2 {
+		t.Fatalf("free fallback not returned: %+v err=%v freeCalls=%d", decision, err, freeCalls)
+	}
+}
+
+func TestOpenRouterModelRouterFallsBackToFreeWhenComplexModelIsUnconfigured(t *testing.T) {
+	freeCalls := 0
+	free := conversationAssistantFunc(func(context.Context, service.ConversationState, string) (service.ConversationDecision, error) {
+		freeCalls++
+		if freeCalls == 1 {
+			return service.ConversationDecision{Action: service.ConversationReply, NeedsDeepSeek: true}, nil
+		}
+		return service.ConversationDecision{Action: service.ConversationReply, Reply: "Ücretsiz yanıt."}, nil
+	})
+	deep := conversationAssistantFunc(func(context.Context, service.ConversationState, string) (service.ConversationDecision, error) {
+		t.Fatal("unconfigured DeepSeek model should not be called")
+		return service.ConversationDecision{}, nil
+	})
+	decision, err := routeConversation(context.Background(), service.ConversationState{}, "complex", free, deep, false)
+	if err != nil || decision.Reply != "Ücretsiz yanıt." || freeCalls != 2 {
+		t.Fatalf("free fallback not returned: %+v err=%v freeCalls=%d", decision, err, freeCalls)
 	}
 }
 
 func TestOpenRouterModelRouterSelectsMatchingRSSModelTier(t *testing.T) {
 	router := OpenRouterModelRouter{
-		Free:     OpenAICompatibleClient{Model: "openrouter/free"},
-		DeepSeek: OpenAICompatibleClient{Model: "deepseek/deepseek-v4.1-flash"},
+		Free:     OpenAICompatibleClient{APIKey: "test", Model: "openrouter/free"},
+		DeepSeek: OpenAICompatibleClient{APIKey: "test", Model: "deepseek/deepseek-v4.1-flash"},
 	}
 	if got := router.SummarizerFor(false).(OpenAICompatibleClient).Model; got != "openrouter/free" {
 		t.Fatalf("basic summary used %q", got)
 	}
-	if got := router.SummarizerFor(true).(OpenAICompatibleClient).Model; got != "deepseek/deepseek-v4.1-flash" {
+	if got := router.SummarizerFor(true).(fallbackSummarizer).primary.(OpenAICompatibleClient).Model; got != "deepseek/deepseek-v4.1-flash" {
 		t.Fatalf("complex summary used %q", got)
 	}
 	if got := router.RecommenderFor(false).(OpenAICompatibleClient).Model; got != "openrouter/free" {
 		t.Fatalf("basic recommendation used %q", got)
 	}
-	if got := router.RecommenderFor(true).(OpenAICompatibleClient).Model; got != "deepseek/deepseek-v4.1-flash" {
+	if got := router.RecommenderFor(true).(fallbackRecommender).primary.(OpenAICompatibleClient).Model; got != "deepseek/deepseek-v4.1-flash" {
 		t.Fatalf("complex recommendation used %q", got)
+	}
+}
+
+func TestComplexRSSWorkFallsBackToFreeOnDeepSeekError(t *testing.T) {
+	primaryErr := errors.New("DeepSeek unavailable")
+	summary := fallbackSummarizer{
+		primary: summarizerFunc(func(context.Context, string) (string, error) { return "", primaryErr }),
+		fallback: summarizerFunc(func(_ context.Context, input string) (string, error) {
+			return "free summary: " + input, nil
+		}),
+	}
+	if got, err := summary.Summarize(context.Background(), "RSS data"); err != nil || got != "free summary: RSS data" {
+		t.Fatalf("summary fallback: %q, %v", got, err)
+	}
+	recommender := fallbackRecommender{
+		primary: recommenderFunc(func(context.Context, string) (string, error) { return "", primaryErr }),
+		fallback: recommenderFunc(func(_ context.Context, input string) (string, error) {
+			return "free recommendation: " + input, nil
+		}),
+	}
+	if got, err := recommender.Recommend(context.Background(), "RSS data"); err != nil || got != "free recommendation: RSS data" {
+		t.Fatalf("recommendation fallback: %q, %v", got, err)
 	}
 }
