@@ -143,26 +143,10 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 		return
 	}
 	log.Printf("slack_request=%s stage=installation_loaded elapsed_ms=%d", requestID, time.Since(started).Milliseconds())
-	var removeProcessing func()
 	if reactionClient, ok := h.client.(slackReactionClient); ok && event.Event.TS != "" {
-		reactionCtx, reactionCancel := context.WithTimeout(context.Background(), 3*time.Second)
-		err := reactionClient.AddReaction(reactionCtx, installation.BotToken, event.Event.Channel, event.Event.TS, processingReaction)
-		reactionCancel()
-		if err != nil {
-			log.Printf("slack_request=%s stage=processing_reaction_failed error=%q", requestID, err)
-		} else {
-			log.Printf("slack_request=%s stage=processing_reaction_added", requestID)
-			removeProcessing = func() {
-				removeCtx, removeCancel := context.WithTimeout(context.Background(), 3*time.Second)
-				defer removeCancel()
-				if err := reactionClient.RemoveReaction(removeCtx, installation.BotToken, event.Event.Channel, event.Event.TS, processingReaction); err != nil {
-					log.Printf("slack_request=%s stage=processing_reaction_remove_failed error=%q", requestID, err)
-				} else {
-					log.Printf("slack_request=%s stage=processing_reaction_removed", requestID)
-				}
-			}
-			defer func() { removeProcessing() }()
-		}
+		indicator := newProcessingReactionIndicator(reactionClient, installation.BotToken, event.Event.Channel, event.Event.TS, requestID)
+		go indicator.run()
+		defer indicator.finish()
 	}
 	now := time.Now()
 	state, err := h.history.Load(ctx, key)
