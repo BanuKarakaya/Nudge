@@ -298,7 +298,7 @@ func main() {
 	}
 
 	addr := ":" + port
-	log.Printf("Nudge server listening on %s", addr)
+	log.Printf("Nudgy server listening on %s", addr)
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatal(err)
 	}

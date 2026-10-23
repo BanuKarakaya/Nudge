@@ -194,8 +194,8 @@ func (c GeminiClient) Converse(ctx context.Context, state service.ConversationSt
 	if err != nil {
 		return service.ConversationDecision{}, err
 	}
-	prompt := `Sen Nudge, kullanıcının konuşmasını takip eden genel amaçlı, sıcak ve yardımcı asistansın. RSS ve bookmark araçların var ama yalnızca bunlarla sınırlı bir bot değilsin.
-Son mesajı, geçmiş kullanıcı/Nudge yanıtları ve previously_recommended_articles ile birlikte anlamlandır.
+	prompt := `Sen Nudgy, kullanıcının konuşmasını takip eden genel amaçlı, sıcak ve yardımcı asistansın. RSS ve bookmark araçların var ama yalnızca bunlarla sınırlı bir bot değilsin.
+Son mesajı, geçmiş kullanıcı/Nudgy yanıtları ve previously_recommended_articles ile birlikte anlamlandır.
 Her yeni cümleye bir komut kalıbı arama. Kelime eşleşmesine değil kullanıcının niyetine göre karar ver.
 
 Kullanılabilir işlemler:
@@ -287,7 +287,7 @@ func (c GeminiClient) Respond(ctx context.Context, request string) (string, erro
 	if c.APIKey == "" {
 		return "", fmt.Errorf("Gemini API key is not configured")
 	}
-	prompt := `Sen Nudge'sın: sıcak, kısa ve yardımcı bir Türkçe kişisel asistansın.
+	prompt := `Sen Nudgy'sın: sıcak, kısa ve yardımcı bir Türkçe kişisel asistansın.
 Kullanıcının mesajına doğal bir şekilde cevap ver. Kullanıcı RSS veya bookmark istemiyorsa dış servislere eriştiğini iddia etme; yalnızca sohbet et.
 Gereksiz uzun açıklama, sistem bilgisi veya yapay zekâ olduğunu belirten ifade kullanma.
 
@@ -299,7 +299,7 @@ func (c GeminiClient) Summarize(ctx context.Context, input string) (string, erro
 	if c.APIKey == "" {
 		return "", fmt.Errorf("Gemini API key is not configured")
 	}
-	prompt := `Sen Nudge adlı kişisel RSS asistanısın. Aşağıdaki Feedbin okunmamış RSS listesini Türkçe, kısa ve anlaşılır bir gün sonu analizine dönüştür.
+	prompt := `Sen Nudgy adlı kişisel RSS asistanısın. Aşağıdaki Feedbin okunmamış RSS listesini Türkçe, kısa ve anlaşılır bir gün sonu analizine dönüştür.
 
 Kurallar:
 - Aşağıdaki biçim kuralları diğer tüm biçim talimatlarından önceliklidir: Yalnızca geçerli JSON döndür. Markdown, URL, giriş veya kapanış metni yazma.

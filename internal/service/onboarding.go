@@ -37,7 +37,7 @@ func (s *OnboardingService) Send(ctx context.Context, userID int64) error {
 	}
 	raindropLink := fmt.Sprintf("%s/raindrop/install?user_id=%d", s.publicURL, userID)
 	feedbinLink := fmt.Sprintf("%s/feedbin/install?user_id=%d", s.publicURL, userID)
-	message := "Nudge’yi kullanmak için hesaplarını bağla:\n\n" +
+	message := "Nudgy’yi kullanmak için hesaplarını bağla:\n\n" +
 		"• Raindrop: " + raindropLink + "\n" +
 		"• Feedbin: " + feedbinLink
 	return s.client.PostMessage(ctx, installation.BotToken, dmChannel, message)
