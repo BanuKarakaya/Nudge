@@ -61,7 +61,7 @@ func TestSlackReplayDoesNotRepeatAIOrSuppressNewUserMessage(t *testing.T) {
 		}),
 	}
 	event := slackEventEnvelope{TeamID: "T", EventID: "Ev1"}
-	event.Event.Channel, event.Event.User, event.Event.TS, event.Event.Text = "C", "U", "1.0", "selam"
+	event.Event.Channel, event.Event.User, event.Event.TS, event.Event.Text = "C", "U", "1.0", "bana bir fikir ver"
 	h.replyWithSummary(event)
 	h.replyWithSummary(event)
 	event.EventID, event.Event.TS, event.Event.ThreadTS = "Ev2", "2.0", "1.0"

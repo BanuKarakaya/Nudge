@@ -55,7 +55,6 @@ func TestProviderToSlackConversationFlow(t *testing.T) {
 		{ID: 3, Title: "Üç", URL: "https://example.com/3", CreatedAt: clock},
 	}}
 	outputs := []string{
-		`{"action":"REPLY","reply":"İyiyim, teşekkürler! Sen nasılsın?","article_id":"","search_request":""}`,
 		`{"action":"RSS_TODAY_STATS","reply":"","article_id":"","search_request":""}`,
 		`{"action":"RSS_SUMMARY","reply":"" a}`, // exact production failure shape
 		`{"action":"RSS_SUMMARY","reply":"","article_id":"","search_request":""}`,
@@ -80,7 +79,7 @@ func TestProviderToSlackConversationFlow(t *testing.T) {
 		if calls == 0 && strings.Contains(payload.Messages[len(payload.Messages)-1].Content, "<@") {
 			t.Fatal("mention leaked into request")
 		}
-		if calls == 5 {
+		if calls == 4 {
 			found := false
 			for _, m := range payload.Messages {
 				if m.Role == "assistant" && strings.Contains(m.Content, "https://example.com/2") {
@@ -104,7 +103,7 @@ func TestProviderToSlackConversationFlow(t *testing.T) {
 		event.Event.Text = request
 		h.replyWithSummary(event)
 	}
-	if calls != 6 || len(sender.messages) != 4 {
+	if calls != 5 || len(sender.messages) != 4 {
 		t.Fatalf("model calls=%d, replies=%v", calls, sender.messages)
 	}
 	if !strings.Contains(sender.messages[0], "İyiyim") || !strings.Contains(sender.messages[1], "*3 RSS'in*") {

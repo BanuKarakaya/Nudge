@@ -199,10 +199,21 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 		}
 	}
 	now := time.Now()
-	state, err := h.history.Load(ctx, key)
+	quickReply, quick := service.ImmediateSocialReply(analyticsRecord.RequestText)
+	historyCtx := ctx
+	if quick {
+		var historyCancel context.CancelFunc
+		historyCtx, historyCancel = context.WithTimeout(ctx, 2*time.Second)
+		defer historyCancel()
+	}
+	state, err := h.history.Load(historyCtx, key)
+	historyLoaded := err == nil
 	message := "Konuşma geçmişine şu anda erişemedim. Biraz sonra tekrar deneyebilir misin?"
 	action := ""
-	if err == nil {
+	if quick {
+		message, action, err = quickReply, service.ConversationReply, nil
+		log.Printf("slack_request=%s stage=local_social_reply elapsed_ms=%d", requestID, time.Since(started).Milliseconds())
+	} else if err == nil {
 		log.Printf("slack_request=%s stage=history_loaded turns=%d prior_articles=%d elapsed_ms=%d", requestID, len(state.Turns), len(state.Articles), time.Since(started).Milliseconds())
 		message, action, err = h.conversationReplyWithState(ctx, &state, event.Event.Text, userID, now, requestID)
 	} else {
@@ -235,7 +246,7 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 		removeProcessingReaction()
 		removeProcessingReaction = nil
 	}
-	if success {
+	if success && historyLoaded {
 		state.Remember(event.Event.Text, message, action)
 		if err := h.history.Save(sendCtx, key, state); err != nil {
 			log.Printf("slack_request=%s stage=history_save_failed elapsed_ms=%d error=%q", requestID, time.Since(started).Milliseconds(), err)
@@ -252,10 +263,13 @@ func (h *SlackEventHandler) conversationReply(ctx context.Context, state service
 
 func (h *SlackEventHandler) conversationReplyWithState(ctx context.Context, state *service.ConversationState, request string, userID int64, now time.Time, requestID string) (string, string, error) {
 	failure := "Yanıtını şu anda tamamlayamadım. Biraz sonra tekrar deneyebilir misin?"
+	request = strings.TrimSpace(slackUserMention.ReplaceAllString(request, ""))
+	if reply, ok := service.ImmediateSocialReply(request); ok {
+		return reply, service.ConversationReply, nil
+	}
 	if h.dialogue == nil {
 		return failure, "", fmt.Errorf("conversation assistant unavailable")
 	}
-	request = strings.TrimSpace(slackUserMention.ReplaceAllString(request, ""))
 	modelStarted := time.Now()
 	log.Printf("slack_request=%s stage=model_started", requestID)
 	decision, err := h.dialogue.Converse(ctx, *state, request)
