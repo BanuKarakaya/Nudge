@@ -69,10 +69,10 @@ function renderChart(days) {
 
 function renderModels(models) {
   const legend = $("model-legend"), total = models.reduce((sum, m) => sum + Number(m.messages || 0), 0); setText("model-total", total || 0); setText("top-model", models[0]?.model || "—");
-  if (!models.length) { $("model-donut").style.background = "conic-gradient(#243247 0 100%)"; legend.innerHTML = `<div class="empty-mini">Henüz model verisi yok.</div>`; return; }
-  const colors = ["#65e2d6", "#9c8cff", "#b8e76d", "#f3a66c", "#ee7891"], stops = []; let cursor = 0;
+  if (!models.length) { $("model-donut").style.background = "conic-gradient(#f0e6df 0 100%)"; legend.innerHTML = `<div class="empty-mini">Henüz model verisi yok.</div>`; return; }
+  const colors = ["#a82a19", "#d49a50", "#9bac71", "#c87843", "#78483a"], stops = []; let cursor = 0;
   legend.innerHTML = models.slice(0, 5).map((model, i) => { const percentage = total ? model.messages / total * 100 : 0; const start = cursor; cursor += percentage; stops.push(`${colors[i]} ${start}% ${cursor}%`); return `<div class="model-row"><i style="background:${colors[i]}"></i><strong title="${esc(model.model)}">${esc(model.model || "Bilinmeyen model")}</strong><small>${Math.round(percentage)}%</small></div>`; }).join("");
-  if (cursor < 100) stops.push(`#243247 ${cursor}% 100%`); $("model-donut").style.background = `conic-gradient(${stops.join(",")})`;
+  if (cursor < 100) stops.push(`#f0e6df ${cursor}% 100%`); $("model-donut").style.background = `conic-gradient(${stops.join(",")})`;
 }
 
 function renderRows(rows) {

@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f8f7f2">
+  <meta name="theme-color" content="#a82a19">
   <title>Nudgy · AI Dashboard</title>
   <link rel="stylesheet" href="/dashboard/styles.css">
 </head>
 <body>
   <div class="app-shell">
     <aside class="sidebar">
-      <div class="brand"><span class="brand-mark" aria-label="Nudgy mascot"><i class="mascot-eye mascot-eye-left"></i><i class="mascot-eye mascot-eye-right"></i><i class="mascot-mouth"></i><b class="mascot-spark">✦</b></span><span>Nudgy</span><span class="brand-badge">AI</span></div>
+      <div class="brand"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 100 100"><path class="mascot-body" d="M18 57c-7-7-7-19-1-27 5-7 13-9 21-7 4-11 15-17 27-15 12 2 19 10 20 21 10 4 15 14 12 25-1 7-6 12-12 15 2 10-4 18-13 18-6 0-10-3-13-8-4 8-13 11-20 7-5-3-7-8-6-14-10 1-17-5-15-15z"/><ellipse cx="39" cy="43" rx="13" ry="16" fill="#fff"/><ellipse cx="65" cy="38" rx="13" ry="16" fill="#fff"/><ellipse cx="43" cy="43" rx="6" ry="8" fill="#241c18"/><ellipse cx="69" cy="37" rx="6" ry="8" fill="#241c18"/><circle cx="45" cy="40" r="2.6" fill="#fff"/><circle cx="71" cy="34" r="2.6" fill="#fff"/><path d="M48 61q8 7 16-1" fill="none" stroke="#612017" stroke-width="3" stroke-linecap="round"/></svg></span><span>Nudgy</span><span class="brand-badge">AI</span></div>
       <div class="workspace"><span class="workspace-dot"></span><div><strong>Personal workspace</strong><small>Slack · Connected</small></div><span class="chevron">⌄</span></div>
       <nav class="nav" aria-label="Dashboard navigation">
         <p class="nav-label">Workspace</p>
@@ -29,10 +29,10 @@
 
     <main class="main" id="overview">
       <header class="topbar"><div class="breadcrumbs"><span>Workspace</span><b>/</b><strong>Overview</strong></div><div class="top-actions"><button class="icon-button" title="Notifications">♧<span class="notification-dot"></span></button><span class="top-divider"></span><span class="date-label" id="today-label"></span></div></header>
-      <section class="page-heading"><div><div class="eyebrow"><span class="eyebrow-line"></span> AI OPERATIONS</div><h1>Nudgy intelligence</h1><p>Mesajlarını, model performansını ve AI maliyetini tek bakışta takip et.</p></div><div class="heading-actions"><label class="select-wrap"><span class="sr-only">Tarih aralığı</span><select id="range-select"><option value="24h">Son 24 saat</option><option value="7d" selected>Son 7 gün</option><option value="30d">Son 30 gün</option><option value="all">Tüm zamanlar</option></select></label><button class="refresh-button" id="refresh-button"><span class="refresh-icon">↻</span> Yenile</button></div></section>
+      <section class="page-heading"><div><div class="eyebrow"><span class="eyebrow-line"></span> NUDGY ANALYTICS</div><h1>Nudgy overview</h1><p>Mesajlarını, model performansını ve AI maliyetini tek bakışta takip et.</p></div><div class="heading-actions"><label class="select-wrap"><span class="sr-only">Tarih aralığı</span><select id="range-select"><option value="24h">Son 24 saat</option><option value="7d" selected>Son 7 gün</option><option value="30d">Son 30 gün</option><option value="all">Tüm zamanlar</option></select></label><button class="refresh-button" id="refresh-button"><span class="refresh-icon">↻</span> Yenile</button></div></section>
       <div class="notice hidden" id="notice"><span>!</span><div><strong>Veriye erişim gerekiyor</strong><p>Dashboard token’ını aşağıya girerek canlı metrikleri yükleyebilirsin.</p></div><div class="token-entry"><input id="token-input" type="password" placeholder="NUDGE_DASHBOARD_TOKEN"><button id="save-token">Bağlan</button></div></div>
 
-      <section class="nudgy-note" aria-label="Nudgy özeti"><div class="mascot-large" aria-hidden="true"><i class="mascot-eye mascot-eye-left"></i><i class="mascot-eye mascot-eye-right"></i><i class="mascot-mouth"></i><b class="mascot-spark">✦</b></div><div><span class="note-kicker">NUDGY'NİN RADARINDA</span><h2>Bugün neler oluyor?</h2><p>Nudgy mesajlarını izliyor, önemli sinyalleri yakalıyor ve sana kısa bir özet bırakıyor.</p></div><span class="note-spark">✦</span></section>
+      <section class="nudgy-note" aria-label="Nudgy marka mesajı"><div class="mascot-large" aria-hidden="true"><svg viewBox="0 0 100 100"><path class="mascot-body" d="M18 57c-7-7-7-19-1-27 5-7 13-9 21-7 4-11 15-17 27-15 12 2 19 10 20 21 10 4 15 14 12 25-1 7-6 12-12 15 2 10-4 18-13 18-6 0-10-3-13-8-4 8-13 11-20 7-5-3-7-8-6-14-10 1-17-5-15-15z"/><ellipse cx="39" cy="43" rx="13" ry="16" fill="#fff"/><ellipse cx="65" cy="38" rx="13" ry="16" fill="#fff"/><ellipse cx="43" cy="43" rx="6" ry="8" fill="#241c18"/><ellipse cx="69" cy="37" rx="6" ry="8" fill="#241c18"/><circle cx="45" cy="40" r="2.6" fill="#fff"/><circle cx="71" cy="34" r="2.6" fill="#fff"/><path d="M48 61q8 7 16-1" fill="none" stroke="#612017" stroke-width="3" stroke-linecap="round"/></svg></div><div><span class="note-kicker">MEET NUDGY</span><h2>Don't miss what you've saved.</h2><p>Mesajlarını, yanıtları ve kullandığın modelleri tek bir yerde takip et.</p></div><span class="note-spark" aria-hidden="true">✳</span></section>
 
       <section class="metric-grid" aria-label="Özet metrikler">
         <article class="metric-card"><div class="metric-top"><span>Toplam mesaj</span><span class="metric-icon cyan">↗</span></div><strong class="metric-value" id="total-messages">—</strong><div class="metric-foot"><span class="trend up">●</span><span id="success-rate">— başarıyla işlendi</span></div></article>
