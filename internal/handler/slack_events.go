@@ -49,7 +49,7 @@ type slackReactionClient interface {
 	RemoveReaction(ctx context.Context, token, channel, timestamp, name string) error
 }
 
-const processingReaction = "nudgethinking"
+const processingReaction = "nudgythinking"
 
 func NewSlackEventHandler(signingSecret string, installations repository.InstallationRepository, bookmarks service.BookmarkService, feedbinDigest *service.FeedbinDigestService, ai service.TextSummarizer, recommender service.RSSRecommender, dialogue service.ConversationAssistant, web service.WebAssistant, history service.ConversationStore, client slackThreadMessageClient, timezone *time.Location, analytics ...repository.AnalyticsRepository) *SlackEventHandler {
 	var analyticsRepository repository.AnalyticsRepository
