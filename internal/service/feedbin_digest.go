@@ -30,7 +30,7 @@ func NewFeedbinDigestService(connections repository.FeedbinConnectionRepository,
 
 type feedbinGroups map[string][]feedbin.Entry
 
-func (s *FeedbinDigestService) loadGroups(ctx context.Context, userID int64, since time.Time) (feedbinGroups, error) {
+func (s *FeedbinDigestService) loadGroups(ctx context.Context, userID int64, since time.Time, until ...time.Time) (feedbinGroups, error) {
 	connection, err := s.connections.GetByUserID(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -49,6 +49,9 @@ func (s *FeedbinDigestService) loadGroups(ctx context.Context, userID int64, sin
 	}
 	groups := make(feedbinGroups)
 	for _, entry := range entries {
+		if len(until) > 0 && !entry.CreatedAt.Before(until[0]) {
+			continue
+		}
 		folders := foldersByFeed[entry.FeedID]
 		if len(folders) == 0 {
 			folders = []string{"Diğer"}
@@ -67,8 +70,8 @@ func (s *FeedbinDigestService) BuildDigest(ctx context.Context, userID int64, si
 const SummaryUnavailable = "RSS özetini şu anda tamamlayamadım. Biraz sonra tekrar deneyebilir misin?"
 
 // BuildSummary loads one snapshot and never substitutes a title list for a summary.
-func (s *FeedbinDigestService) BuildSummary(ctx context.Context, userID int64, since time.Time, ai TextSummarizer) (string, error) {
-	groups, err := s.loadGroups(ctx, userID, since)
+func (s *FeedbinDigestService) BuildSummary(ctx context.Context, userID int64, since time.Time, ai TextSummarizer, until ...time.Time) (string, error) {
+	groups, err := s.loadGroups(ctx, userID, since, until...)
 	if err != nil {
 		return "", err
 	}

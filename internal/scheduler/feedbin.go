@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -22,13 +21,12 @@ type FeedbinReminder struct {
 	connections   repository.FeedbinConnectionRepository
 	digest        *service.FeedbinDigestService
 	ai            service.TextSummarizer
-	messages      *service.SlackMessagingService
 	notifications repository.NotificationRepository
 	slack         SlackWorkspaceClient
 }
 
-func NewFeedbinReminder(seedUserID int64, timezone *time.Location, installations repository.InstallationRepository, connections repository.FeedbinConnectionRepository, digest *service.FeedbinDigestService, ai service.TextSummarizer, messages *service.SlackMessagingService, notifications repository.NotificationRepository, slack SlackWorkspaceClient) *FeedbinReminder {
-	return &FeedbinReminder{seedUserID: seedUserID, timezone: timezone, installations: installations, connections: connections, digest: digest, ai: ai, messages: messages, notifications: notifications, slack: slack}
+func NewFeedbinReminder(seedUserID int64, timezone *time.Location, installations repository.InstallationRepository, connections repository.FeedbinConnectionRepository, digest *service.FeedbinDigestService, ai service.TextSummarizer, notifications repository.NotificationRepository, slack SlackWorkspaceClient) *FeedbinReminder {
+	return &FeedbinReminder{seedUserID: seedUserID, timezone: timezone, installations: installations, connections: connections, digest: digest, ai: ai, notifications: notifications, slack: slack}
 }
 
 func (r *FeedbinReminder) Run(ctx context.Context) {
@@ -40,9 +38,7 @@ func (r *FeedbinReminder) Run(ctx context.Context) {
 			timer.Stop()
 			return
 		case <-timer.C:
-			if err := r.RunOnce(ctx, time.Now()); err != nil {
-				log.Printf("Feedbin reminder failed: %v", err)
-			}
+			prepareWithRetry(ctx, func(jobCtx context.Context) error { return r.RunOnce(jobCtx, next) })
 		}
 	}
 }
@@ -56,20 +52,21 @@ func (r *FeedbinReminder) RunOnce(ctx context.Context, now time.Time) error {
 	if err != nil {
 		return fmt.Errorf("list workspace members: %w", err)
 	}
-	since := lastFeedbinStart(now, r.timezone)
-	periodKey := now.In(r.timezone).Format("2006-01-02")
+	since, until := feedbinWindow(now, r.timezone)
+	periodKey := until.Format("2006-01-02")
+	var failures []error
 	for _, member := range members {
 		if member.ID == "" || member.Deleted || member.IsBot {
 			continue
 		}
-		if err := r.processMember(ctx, installation.TeamID, installation.BotToken, member.ID, since, periodKey); err != nil {
-			log.Printf("Feedbin reminder for Slack user %s failed: %v", member.ID, err)
+		if err := r.processMember(ctx, installation.TeamID, installation.BotToken, member.ID, since, until, periodKey); err != nil {
+			failures = append(failures, fmt.Errorf("Feedbin reminder user %s: %w", member.ID, err))
 		}
 	}
-	return nil
+	return errors.Join(failures...)
 }
 
-func (r *FeedbinReminder) processMember(ctx context.Context, teamID, botToken, slackUserID string, since time.Time, periodKey string) error {
+func (r *FeedbinReminder) processMember(ctx context.Context, teamID, botToken, slackUserID string, since, until time.Time, periodKey string) error {
 	userID, err := r.installations.UpsertUser(ctx, teamID, slackUserID)
 	if err != nil {
 		return fmt.Errorf("save workspace user: %w", err)
@@ -80,35 +77,36 @@ func (r *FeedbinReminder) processMember(ctx context.Context, teamID, botToken, s
 		}
 		return fmt.Errorf("check Feedbin connection: %w", err)
 	}
-	digest, err := r.digest.BuildSummary(ctx, userID, since, r.ai)
+	exists, err := r.notifications.Exists(ctx, userID, feedbinNotificationType, periodKey)
+	if err != nil || exists {
+		return err
+	}
+	digest, err := r.digest.BuildSummary(ctx, userID, since, r.ai, until)
 	if err != nil {
 		return fmt.Errorf("build Feedbin digest: %w", err)
-	}
-	claimed, err := r.notifications.Claim(ctx, userID, feedbinNotificationType, periodKey)
-	if err != nil || !claimed {
-		return err
 	}
 	dmChannel, err := r.slack.OpenDirectMessage(ctx, botToken, slackUserID)
 	if err != nil {
 		return fmt.Errorf("open direct message: %w", err)
 	}
-	return r.messages.SendMessage(ctx, userID, dmChannel, digest)
+	return r.notifications.Enqueue(ctx, userID, feedbinNotificationType, periodKey, repository.NotificationMessage{Channel: dmChannel, Text: digest})
 }
 
 func (r *FeedbinReminder) nextEvent(now time.Time) time.Time {
 	localNow := now.In(r.timezone)
 	next := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 23, 0, 0, 0, r.timezone)
 	if !next.After(localNow) {
-		next = next.Add(24 * time.Hour)
+		next = next.AddDate(0, 0, 1)
 	}
 	return next
 }
 
-func lastFeedbinStart(now time.Time, location *time.Location) time.Time {
+// Most recent completed 23:00-to-23:00 window, in the configured timezone.
+func feedbinWindow(now time.Time, location *time.Location) (time.Time, time.Time) {
 	localNow := now.In(location)
-	start := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 23, 0, 0, 0, location)
-	if localNow.Before(start) {
-		start = start.Add(-24 * time.Hour)
+	end := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 23, 0, 0, 0, location)
+	if localNow.Before(end) {
+		end = end.AddDate(0, 0, -1)
 	}
-	return start
+	return end.AddDate(0, 0, -1), end
 }

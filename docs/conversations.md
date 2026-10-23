@@ -119,3 +119,84 @@ Automated tests mock the AI provider and Slack, exercising context propagation, 
 selection, persistence across handler recreation, scope separation and failed
 delivery. They do not certify live model intent accuracy or a production database
 migration; run the above Slack check after deployment.
+
+
+## Administrative API and account connections
+
+All `/api/v1/` routes require `Authorization: Bearer <NUDGE_API_TOKEN>`.
+An empty `NUDGE_API_TOKEN` disables these routes with `503`. `X-User-ID`
+selects the target user only after administrator authentication; it is not
+an identity credential. Do not distribute this administrative token to end
+users. Test-onboarding and test-digest additionally require `X-Test-Token`.
+Slack event and interaction routes authenticate with Slack request signatures,
+including URL verification challenges. Bookmark interactions also verify the
+clicking Slack user's workspace and ownership.
+
+Set `NUDGE_LINK_SIGNING_KEY` to a dedicated, random 32-byte base64 key, separate
+from `FEEDBIN_ENCRYPTION_KEY`, `NUDGE_API_TOKEN` and `NUDGE_DASHBOARD_TOKEN`.
+Generate each independently (`openssl rand -base64 32`) and supply them through
+your deployment's secret environment. Keep the existing Feedbin encryption key:
+changing it makes previously encrypted credentials unreadable. The server fails
+startup if the signing or encryption key is invalid. The Go server does not
+load `.env` automatically; the process manager must supply these variables.
+
+Account links now include a signed, user-specific, service-specific capability
+valid for eight days. Bare `?user_id=...` links from older messages no longer
+work. The Feedbin form carries the capability into its POST request; changing
+the user ID or using a Raindrop token is rejected. Treat these links as private
+bearer credentials and do not log their query strings in a reverse proxy.
+Connection pages use no-store/no-referrer headers. OAuth callbacks additionally
+require the initiating browser's HttpOnly, SameSite=Lax state cookie. In HTTPS
+proxy deployments, forward `X-Forwarded-Proto: https` from a trusted proxy.
+
+The 13:45 onboarding job sends new invitations at most once per ISO week for
+accounts still missing a connection, so expired invitations can be replaced.
+An administrator can immediately resend signed links using the protected
+`POST /api/v1/reminders/test-onboarding` endpoint and `X-User-ID`.
+Rotating the signing key invalidates outstanding links. OAuth state remains
+process-local, so installation/callback requests need the same server instance.
+
+## Scheduled summaries and reliable delivery
+
+The 23:00 RSS job summarizes the completed local-calendar window
+`[previous day 23:00, scheduled day 23:00)`. For example, the October 23 job
+covers October 22 23:00 through October 23 22:59:59. Entries at the ending
+boundary belong to the next job. Preparation retries keep the original scheduled
+instant, including after midnight. On-demand Slack RSS requests continue to use
+the current window starting at the most recent 23:00.
+
+Scheduled onboarding, RSS digests and bookmark messages are first persisted in
+`notifications`. A worker claims pending deliveries atomically with
+`FOR UPDATE SKIP LOCKED`, a two-minute lease and a unique claim token. It sets
+`sent_at` only after Slack confirms delivery. Failures are rescheduled after
+30 seconds, then 1, 2, 4, 8, 16, 32 minutes, capped at one hour. Delivery retries
+continue without a fixed attempt limit. A crashed worker's expired lease can be
+claimed after restart. The worker runs even if new scheduled reminders are
+disabled. It polls at most every 15 seconds when idle or after an error.
+
+Each bookmark has its own durable delivery key; one failed bookmark does not
+resend the already completed part of the batch. Feedbin digest payloads are
+stored once, so delivery retries do not regenerate summaries or incur AI calls.
+Preparation errors (Feedbin/AI, Slack DM lookup, enqueue failures) are aggregated
+and retried up to five times in the same process. These pre-enqueue attempts are
+not durable across restart. A schedule missed while the server is down is not
+backfilled automatically.
+
+Delivery is at-least-once: if Slack accepts a message but its response is lost,
+or the process dies before recording success, a retry can duplicate that one
+message. No cross-system exactly-once guarantee is claimed.
+
+Migration `006_notification_delivery.sql` is applied idempotently on server
+startup and needs ALTER/CREATE privileges. Apply migrations 001–003 before
+initial startup; 004–006 are embedded startup migrations. Existing notification
+rows remain marked sent, so deployment does not replay historical notifications.
+The older code did not distinguish failed claims from delivered messages;
+historical failures cannot be identified automatically. Stop old application
+instances before upgrading, since they do not use the delivery queue.
+
+Validation: `go test -race ./...` and `go vet ./...`. To exercise real PostgreSQL
+migration, concurrent claims, backoff, lease recovery and stale-worker fencing,
+point `NUDGE_TEST_DATABASE_URL` at a disposable database and run
+`go test -race ./internal/repository/postgres -run TestNotificationDeliveryPostgres`.
+The integration test creates and removes its own isolated schema. Slack and AI
+calls in the other tests are mocked; no real messages or billable calls are sent.

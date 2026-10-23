@@ -3,9 +3,10 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
+	"time"
 
 	"nudge/internal/repository"
+	"nudge/internal/secure"
 )
 
 type SlackDirectMessageClient interface {
@@ -17,10 +18,11 @@ type OnboardingService struct {
 	installations repository.InstallationRepository
 	client        SlackDirectMessageClient
 	publicURL     string
+	links         secure.LinkSigner
 }
 
-func NewOnboardingService(installations repository.InstallationRepository, client SlackDirectMessageClient, publicURL string) *OnboardingService {
-	return &OnboardingService{installations: installations, client: client, publicURL: publicURL}
+func NewOnboardingService(installations repository.InstallationRepository, client SlackDirectMessageClient, publicURL string, links secure.LinkSigner) *OnboardingService {
+	return &OnboardingService{installations: installations, client: client, publicURL: publicURL, links: links}
 }
 
 func (s *OnboardingService) Send(ctx context.Context, userID int64) error {
@@ -35,8 +37,14 @@ func (s *OnboardingService) Send(ctx context.Context, userID int64) error {
 	if err != nil {
 		return err
 	}
-	raindropLink := fmt.Sprintf("%s/raindrop/install?user_id=%d", s.publicURL, userID)
-	feedbinLink := fmt.Sprintf("%s/feedbin/install?user_id=%d", s.publicURL, userID)
+	raindropLink, err := s.links.URL(s.publicURL, userID, "raindrop", time.Now())
+	if err != nil {
+		return err
+	}
+	feedbinLink, err := s.links.URL(s.publicURL, userID, "feedbin", time.Now())
+	if err != nil {
+		return err
+	}
 	message := "Nudgy’yi kullanmak için hesaplarını bağla:\n\n" +
 		"• Raindrop: " + raindropLink + "\n" +
 		"• Feedbin: " + feedbinLink

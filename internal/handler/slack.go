@@ -43,10 +43,16 @@ func (h *SlackHandler) install(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.states.add(state, 10*time.Minute)
+	setOAuthCookie(w, r, "nudge_slack_oauth", state, "/slack/oauth/callback")
 	http.Redirect(w, r, h.oauth.InstallURL(state), http.StatusFound)
 }
 
 func (h *SlackHandler) callback(w http.ResponseWriter, r *http.Request) {
+	privatePageHeaders(w)
+	if !consumeOAuthCookie(w, r, "nudge_slack_oauth", r.URL.Query().Get("state"), "/slack/oauth/callback") {
+		writeError(w, http.StatusBadRequest, "OAuth browser session mismatch")
+		return
+	}
 	state := r.URL.Query().Get("state")
 	if !h.states.consume(state) {
 		writeError(w, http.StatusBadRequest, "invalid or expired OAuth state")

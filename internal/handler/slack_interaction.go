@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"time"
 
+	"nudge/internal/repository"
 	"nudge/internal/service"
 	"nudge/internal/slack"
 )
@@ -16,10 +17,11 @@ import (
 type SlackInteractionHandler struct {
 	signingSecret string
 	bookmarks     service.BookmarkService
+	installations repository.InstallationRepository
 }
 
-func NewSlackInteractionHandler(signingSecret string, bookmarks service.BookmarkService) *SlackInteractionHandler {
-	return &SlackInteractionHandler{signingSecret: signingSecret, bookmarks: bookmarks}
+func NewSlackInteractionHandler(signingSecret string, bookmarks service.BookmarkService, installations repository.InstallationRepository) *SlackInteractionHandler {
+	return &SlackInteractionHandler{signingSecret: signingSecret, bookmarks: bookmarks, installations: installations}
 }
 
 func (h *SlackInteractionHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -27,7 +29,13 @@ func (h *SlackInteractionHandler) RegisterRoutes(mux *http.ServeMux) {
 }
 
 type slackInteractionPayload struct {
-	Type        string `json:"type"`
+	Type string `json:"type"`
+	Team struct {
+		ID string `json:"id"`
+	} `json:"team"`
+	User struct {
+		ID string `json:"id"`
+	} `json:"user"`
 	ResponseURL string `json:"response_url"`
 	Actions     []struct {
 		ActionID string `json:"action_id"`
@@ -69,6 +77,15 @@ func (h *SlackInteractionHandler) handle(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	if payload.Team.ID == "" || payload.User.ID == "" {
+		writeError(w, http.StatusForbidden, "bookmark owner required")
+		return
+	}
+	userID, lookupErr := h.installations.GetUserIDBySlackUserID(r.Context(), payload.Team.ID, payload.User.ID)
+	if lookupErr != nil || userID != action.UserID {
+		writeError(w, http.StatusForbidden, "bookmark owner mismatch")
+		return
+	}
 	switch payload.Actions[0].ActionID {
 	case "bookmark_read":
 		err = h.bookmarks.MarkRead(r.Context(), action.UserID, action.BookmarkID)

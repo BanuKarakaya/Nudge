@@ -31,6 +31,7 @@ func (h *DashboardHandler) RegisterRoutes(mux *http.ServeMux) {
 }
 
 func (h *DashboardHandler) index(w http.ResponseWriter, r *http.Request) {
+	privatePageHeaders(w)
 	// The shell is intentionally public so the dashboard can render its login-
 	// free empty state. Data access remains protected by the API token below.
 	clone := r.Clone(r.Context())
@@ -39,6 +40,11 @@ func (h *DashboardHandler) index(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *DashboardHandler) api(w http.ResponseWriter, r *http.Request) {
+	privatePageHeaders(w)
+	if strings.TrimSpace(h.token) == "" {
+		writeDashboardJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "dashboard is disabled"})
+		return
+	}
 	if !h.authorized(r) {
 		writeDashboardJSON(w, http.StatusUnauthorized, map[string]string{"error": "dashboard token required"})
 		return
@@ -72,17 +78,11 @@ func (h *DashboardHandler) api(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *DashboardHandler) authorized(r *http.Request) bool {
-	if strings.TrimSpace(h.token) == "" {
-		return true
-	}
 	provided := r.Header.Get("X-Dashboard-Token")
 	if provided == "" {
-		provided = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		provided, _ = strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	}
-	if provided == "" {
-		provided = r.URL.Query().Get("token")
-	}
-	return provided != "" && provided == h.token
+	return tokenMatches(h.token, provided)
 }
 
 func writeDashboardJSON(w http.ResponseWriter, status int, value any) {

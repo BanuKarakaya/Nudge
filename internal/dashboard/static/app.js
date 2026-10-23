@@ -9,7 +9,14 @@ const shortNumber = (value) => {
   return number.format(Math.round(n));
 };
 const esc = (value) => String(value ?? "").replace(/[&<>'"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;","\"":"&quot;"}[c]));
-const token = () => localStorage.getItem("nudge_dashboard_token") || new URLSearchParams(location.search).get("token") || "";
+let dashboardToken = "";
+const token = () => dashboardToken;
+// Remove tokens left by older dashboard versions; credentials stay in memory.
+localStorage.removeItem("nudge_dashboard_token");
+if (new URLSearchParams(location.search).has("token")) {
+  const cleanURL = new URL(location.href); cleanURL.searchParams.delete("token");
+  history.replaceState(null, "", cleanURL.pathname + cleanURL.search + cleanURL.hash);
+}
 const initials = (text) => text.trim().slice(0, 2).toUpperCase();
 
 function setText(id, value) { $(id).textContent = value; }
@@ -81,7 +88,7 @@ $("range-select").addEventListener("change", (event) => { state.range = event.ta
 $("refresh-button").addEventListener("click", loadDashboard);
 $("model-filter").addEventListener("change", (event) => { state.model = event.target.value.trim(); loadDashboard(); });
 $("clear-filter").addEventListener("click", () => { $("model-filter").value = ""; state.model = ""; loadDashboard(); });
-$("save-token").addEventListener("click", () => { const value = $("token-input").value.trim(); if (value) localStorage.setItem("nudge_dashboard_token", value); loadDashboard(); });
+$("save-token").addEventListener("click", () => { const value = $("token-input").value.trim(); if (value) dashboardToken = value; loadDashboard(); });
 $("token-input").addEventListener("keydown", (event) => { if (event.key === "Enter") $("save-token").click(); });
 $("today-label").textContent = new Date().toLocaleDateString("tr-TR", { day: "numeric", month: "long", year: "numeric" });
 loadDashboard();

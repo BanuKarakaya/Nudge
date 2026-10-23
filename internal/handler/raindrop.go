@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"nudge/internal/raindrop"
+	"nudge/internal/secure"
 	"nudge/internal/service"
 )
 
@@ -17,11 +18,13 @@ type RaindropHandler struct {
 	oauth   raindrop.OAuthClient
 	service *service.RaindropService
 	states  *raindropStateStore
+	links   secure.LinkSigner
 }
 
-func NewRaindropHandler(oauthClient raindrop.OAuthClient, raindropService *service.RaindropService) *RaindropHandler {
+func NewRaindropHandler(oauthClient raindrop.OAuthClient, raindropService *service.RaindropService, links secure.LinkSigner) *RaindropHandler {
 	return &RaindropHandler{
 		oauth:   oauthClient,
+		links:   links,
 		service: raindropService,
 		states:  &raindropStateStore{values: make(map[string]raindropState)},
 	}
@@ -33,9 +36,14 @@ func (h *RaindropHandler) RegisterRoutes(mux *http.ServeMux) {
 }
 
 func (h *RaindropHandler) install(w http.ResponseWriter, r *http.Request) {
+	privatePageHeaders(w)
 	userID, err := strconv.ParseInt(r.URL.Query().Get("user_id"), 10, 64)
 	if err != nil || userID <= 0 {
 		writeError(w, http.StatusBadRequest, "user_id must be a positive integer")
+		return
+	}
+	if !h.links.Verify(r.URL.Query().Get("token"), userID, "raindrop", time.Now()) {
+		writeError(w, http.StatusUnauthorized, "invalid or expired account link")
 		return
 	}
 	if h.oauth.ClientID == "" || h.oauth.RedirectURL == "" {
@@ -49,10 +57,16 @@ func (h *RaindropHandler) install(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.states.add(state, userID, 10*time.Minute)
+	setOAuthCookie(w, r, "nudge_raindrop_oauth", state, "/raindrop/oauth/callback")
 	http.Redirect(w, r, h.oauth.InstallURL(state), http.StatusFound)
 }
 
 func (h *RaindropHandler) callback(w http.ResponseWriter, r *http.Request) {
+	privatePageHeaders(w)
+	if !consumeOAuthCookie(w, r, "nudge_raindrop_oauth", r.URL.Query().Get("state"), "/raindrop/oauth/callback") {
+		writeError(w, http.StatusBadRequest, "OAuth browser session mismatch")
+		return
+	}
 	userID, ok := h.states.consume(r.URL.Query().Get("state"))
 	if !ok {
 		writeError(w, http.StatusBadRequest, "invalid or expired OAuth state")

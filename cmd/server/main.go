@@ -35,7 +35,13 @@ func main() {
 	}
 	defer db.Close()
 
+	links, err := secure.NewLinkSigner(os.Getenv("NUDGE_LINK_SIGNING_KEY"))
+	if err != nil {
+		log.Fatalf("account link signing is not configured: %v", err)
+	}
 	mux := http.NewServeMux()
+	privateMux := http.NewServeMux()
+	mux.Handle("/api/v1/", handler.RequireAPIToken(os.Getenv("NUDGE_API_TOKEN"), privateMux))
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
@@ -52,7 +58,7 @@ func main() {
 	bookmarkRepository := postgres.NewBookmarkRepository(db)
 	bookmarkService := service.NewBookmarkService(bookmarkRepository)
 	bookmarkHandler := handler.NewBookmarkHandler(bookmarkService)
-	bookmarkHandler.RegisterRoutes(mux)
+	bookmarkHandler.RegisterRoutes(privateMux)
 
 	installationRepository := postgres.NewInstallationRepository(db)
 	slackHandler := handler.NewSlackHandler(slack.OAuthClient{
@@ -65,7 +71,7 @@ func main() {
 	slackAPIClient := slack.APIClient{HTTPClient: &http.Client{Timeout: 15 * time.Second}}
 	slackMessageService := service.NewSlackMessagingService(installationRepository, slackAPIClient)
 	slackMessageHandler := handler.NewSlackMessageHandler(slackMessageService)
-	slackMessageHandler.RegisterRoutes(mux)
+	slackMessageHandler.RegisterRoutes(privateMux)
 
 	slackBookmarkService := service.NewSlackBookmarkMessagingService(
 		installationRepository,
@@ -73,11 +79,12 @@ func main() {
 		slackAPIClient,
 	)
 	slackBookmarkHandler := handler.NewSlackBookmarkHandler(slackBookmarkService)
-	slackBookmarkHandler.RegisterRoutes(mux)
+	slackBookmarkHandler.RegisterRoutes(privateMux)
 
 	slackInteractionHandler := handler.NewSlackInteractionHandler(
 		os.Getenv("SLACK_SIGNING_SECRET"),
 		bookmarkService,
+		installationRepository,
 	)
 	slackInteractionHandler.RegisterRoutes(mux)
 
@@ -89,7 +96,7 @@ func main() {
 		HTTPClient:   &http.Client{Timeout: 15 * time.Second},
 	}
 	raindropService := service.NewRaindropService(raindropRepository, raindropOAuth)
-	raindropHandler := handler.NewRaindropHandler(raindropOAuth, raindropService)
+	raindropHandler := handler.NewRaindropHandler(raindropOAuth, raindropService, links)
 	raindropHandler.RegisterRoutes(mux)
 
 	raindropSyncService := service.NewRaindropSyncService(
@@ -98,7 +105,7 @@ func main() {
 		raindropOAuth,
 	)
 	raindropSyncHandler := handler.NewRaindropSyncHandler(raindropSyncService)
-	raindropSyncHandler.RegisterRoutes(mux)
+	raindropSyncHandler.RegisterRoutes(privateMux)
 	feedbinCipher, err := secure.NewCipherFromBase64(os.Getenv("FEEDBIN_ENCRYPTION_KEY"))
 	if err != nil {
 		log.Fatalf("Feedbin encryption is not configured: %v", err)
@@ -107,7 +114,7 @@ func main() {
 	feedbinService := service.NewFeedbinService(feedbinRepository, feedbin.Client{
 		HTTPClient: &http.Client{Timeout: 15 * time.Second},
 	})
-	feedbinHandler := handler.NewFeedbinHandler(feedbinService)
+	feedbinHandler := handler.NewFeedbinHandler(feedbinService, links)
 	feedbinHandler.RegisterRoutes(mux)
 	feedbinDigestService := service.NewFeedbinDigestService(feedbinRepository, feedbin.Client{
 		HTTPClient: &http.Client{Timeout: 15 * time.Second},
@@ -225,14 +232,15 @@ func main() {
 		feedbinTimezone,
 		os.Getenv("NUDGE_TEST_TOKEN"),
 	)
-	feedbinDigestHandler.RegisterRoutes(mux)
+	feedbinDigestHandler.RegisterRoutes(privateMux)
 	onboardingService := service.NewOnboardingService(
 		installationRepository,
 		slackAPIClient,
 		os.Getenv("NUDGE_PUBLIC_URL"),
+		links,
 	)
 	onboardingHandler := handler.NewOnboardingHandler(onboardingService, os.Getenv("NUDGE_TEST_TOKEN"))
-	onboardingHandler.RegisterRoutes(mux)
+	onboardingHandler.RegisterRoutes(privateMux)
 	_, appTimezone := reminderConfig()
 	conversationCtx, conversationCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	conversationRepository, err := postgres.NewConversationRepository(conversationCtx, db)
@@ -262,8 +270,15 @@ func main() {
 	)
 	slackEventHandler.RegisterRoutes(mux)
 
+	notificationCtx, notificationCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	notificationRepository, err := postgres.NewNotificationRepository(notificationCtx, db)
+	notificationCancel()
+	if err != nil {
+		log.Fatalf("initialize notification deliveries: %v", err)
+	}
+	worker := scheduler.DeliveryWorker{Notifications: notificationRepository, Installations: installationRepository, Client: slackAPIClient}
+	go worker.Run(context.Background())
 	if reminderUserID, reminderTimezone := reminderConfig(); reminderUserID > 0 {
-		notificationRepository := postgres.NewNotificationRepository(db)
 		dailyReminder := scheduler.NewDailyReminder(
 			reminderUserID,
 			os.Getenv("NUDGE_PUBLIC_URL"),
@@ -273,8 +288,7 @@ func main() {
 			feedbinRepository,
 			raindropSyncService,
 			bookmarkService,
-			slackMessageService,
-			slackBookmarkService,
+			links,
 			notificationRepository,
 			slackAPIClient,
 		)
@@ -286,7 +300,6 @@ func main() {
 			feedbinRepository,
 			feedbinDigestService,
 			textSummarizer,
-			slackMessageService,
 			notificationRepository,
 			slackAPIClient,
 		)

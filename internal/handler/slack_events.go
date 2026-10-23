@@ -89,12 +89,12 @@ func (h *SlackEventHandler) handle(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid Slack event payload")
 		return
 	}
-	if envelope.Type == "url_verification" {
-		writeJSON(w, http.StatusOK, map[string]string{"challenge": envelope.Challenge})
-		return
-	}
 	if !slack.VerifySignature(h.signingSecret, r.Header.Get("X-Slack-Request-Timestamp"), r.Header.Get("X-Slack-Signature"), body) {
 		writeError(w, http.StatusUnauthorized, "invalid Slack signature")
+		return
+	}
+	if envelope.Type == "url_verification" {
+		writeJSON(w, http.StatusOK, map[string]string{"challenge": envelope.Challenge})
 		return
 	}
 	if envelope.Event.Type != "app_mention" {
