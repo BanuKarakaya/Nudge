@@ -240,6 +240,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("initialize conversation history: %v", err)
 	}
+	analyticsRepository, err := postgres.NewAnalyticsRepository(context.Background(), db)
+	if err != nil {
+		log.Fatalf("initialize analytics: %v", err)
+	}
+	dashboardHandler := handler.NewDashboardHandler(analyticsRepository, os.Getenv("NUDGE_DASHBOARD_TOKEN"))
+	dashboardHandler.RegisterRoutes(mux)
 	slackEventHandler := handler.NewSlackEventHandler(
 		os.Getenv("SLACK_SIGNING_SECRET"),
 		installationRepository,
@@ -252,6 +258,7 @@ func main() {
 		conversationRepository,
 		slackAPIClient,
 		appTimezone,
+		analyticsRepository,
 	)
 	slackEventHandler.RegisterRoutes(mux)
 

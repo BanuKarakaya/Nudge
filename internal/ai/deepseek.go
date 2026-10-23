@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"nudge/internal/analytics"
 	"nudge/internal/service"
 )
 
@@ -56,7 +57,12 @@ type providerPreferences struct {
 }
 
 type deepSeekResponse struct {
-	Model   string `json:"model"`
+	Model string `json:"model"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
 	Choices []struct {
 		Message struct {
 			Content string `json:"content"`
@@ -265,7 +271,19 @@ func (c OpenAICompatibleClient) chatOnce(ctx context.Context, messages []deepSee
 	}
 	if len(decoded.Choices) > 0 {
 		choice := decoded.Choices[0]
-		log.Printf("AI response model=%q finish=%q duration_ms=%d request_bytes=%d", decoded.Model, choice.FinishReason, time.Since(started).Milliseconds(), len(body))
+		modelName := decoded.Model
+		if modelName == "" {
+			modelName = model
+		}
+		providerName := providerNameForBaseURL(baseURL)
+		if tracker := analytics.UsageTrackerFromContext(ctx); tracker != nil {
+			tracker.Add(analytics.AIUsage{
+				Provider: providerName, Model: modelName,
+				PromptTokens: decoded.Usage.PromptTokens, CompletionTokens: decoded.Usage.CompletionTokens,
+				TotalTokens: decoded.Usage.TotalTokens, LatencyMS: time.Since(started).Milliseconds(),
+			})
+		}
+		log.Printf("AI response model=%q finish=%q duration_ms=%d request_bytes=%d", modelName, choice.FinishReason, time.Since(started).Milliseconds(), len(body))
 		if choice.FinishReason == "length" {
 			return "", errIncompleteAIResponse
 		}
@@ -280,6 +298,21 @@ func (c OpenAICompatibleClient) chatOnce(ctx context.Context, messages []deepSee
 		return "", fmt.Errorf("AI provider returned an empty response")
 	}
 	return strings.TrimSpace(decoded.Choices[0].Message.Content), nil
+}
+
+func providerNameForBaseURL(baseURL string) string {
+	switch strings.ToLower(baseURL) {
+	case "https://openrouter.ai":
+		return "OpenRouter"
+	case "https://api.openai.com":
+		return "OpenAI"
+	case "https://opencode.ai/inference":
+		return "OpenCode"
+	case "https://api.deepseek.com":
+		return "DeepSeek"
+	default:
+		return "OpenAI compatible"
+	}
 }
 
 // ProviderError distinguishes availability/quota failures from parsing errors.

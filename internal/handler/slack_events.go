@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"nudge/internal/ai"
+	"nudge/internal/analytics"
 	"nudge/internal/domain"
 	"nudge/internal/repository"
 	"nudge/internal/service"
@@ -36,6 +37,7 @@ type SlackEventHandler struct {
 	events            eventDeduplicator
 	client            slackThreadMessageClient
 	timezone          *time.Location
+	analytics         repository.AnalyticsRepository
 }
 
 type slackThreadMessageClient interface {
@@ -49,8 +51,12 @@ type slackReactionClient interface {
 
 const processingReaction = "nudgethinking"
 
-func NewSlackEventHandler(signingSecret string, installations repository.InstallationRepository, bookmarks service.BookmarkService, feedbinDigest *service.FeedbinDigestService, ai service.TextSummarizer, recommender service.RSSRecommender, dialogue service.ConversationAssistant, web service.WebAssistant, history service.ConversationStore, client slackThreadMessageClient, timezone *time.Location) *SlackEventHandler {
-	return &SlackEventHandler{signingSecret: signingSecret, installations: installations, bookmarks: bookmarks, feedbinDigest: feedbinDigest, ai: ai, recommender: recommender, dialogue: dialogue, web: web, history: history, client: client, timezone: timezone}
+func NewSlackEventHandler(signingSecret string, installations repository.InstallationRepository, bookmarks service.BookmarkService, feedbinDigest *service.FeedbinDigestService, ai service.TextSummarizer, recommender service.RSSRecommender, dialogue service.ConversationAssistant, web service.WebAssistant, history service.ConversationStore, client slackThreadMessageClient, timezone *time.Location, analytics ...repository.AnalyticsRepository) *SlackEventHandler {
+	var analyticsRepository repository.AnalyticsRepository
+	if len(analytics) > 0 {
+		analyticsRepository = analytics[0]
+	}
+	return &SlackEventHandler{signingSecret: signingSecret, installations: installations, bookmarks: bookmarks, feedbinDigest: feedbinDigest, ai: ai, recommender: recommender, dialogue: dialogue, web: web, history: history, client: client, timezone: timezone, analytics: analyticsRepository}
 }
 
 func (h *SlackEventHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -116,6 +122,28 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 	if threadTS == "" {
 		threadTS = event.Event.TS
 	}
+	tracker := analytics.NewUsageTracker()
+	analyticsRecord := repository.InteractionRecord{
+		RequestID: requestID, TeamID: event.TeamID, ChannelID: event.Event.Channel,
+		ThreadTS: threadTS, SlackUserID: event.Event.User,
+		RequestText: strings.TrimSpace(slackUserMention.ReplaceAllString(event.Event.Text, "")),
+		Status:      "processing", StartedAt: started,
+	}
+	defer func() {
+		if h.analytics == nil {
+			return
+		}
+		analyticsRecord.LatencyMS = time.Since(started).Milliseconds()
+		analyticsRecord.Usage = tracker.Snapshot()
+		if analyticsRecord.Status == "processing" {
+			analyticsRecord.Status = "failed"
+		}
+		persistCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := h.analytics.RecordInteraction(persistCtx, analyticsRecord); err != nil {
+			log.Printf("slack_request=%s stage=analytics_save_failed error=%q", requestID, err)
+		}
+	}()
 	key := service.ConversationKey{Team: event.TeamID, Channel: event.Event.Channel, Thread: threadTS, User: event.Event.User}
 	lockStarted := time.Now()
 	unlock := h.conversationLocks.lock(key)
@@ -123,6 +151,7 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 	log.Printf("slack_request=%s stage=thread_lock_acquired wait_ms=%d", requestID, time.Since(lockStarted).Milliseconds())
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
 	defer cancel()
+	ctx = analytics.WithUsageTracker(ctx, tracker)
 	userID, err := h.installations.GetUserIDBySlackUserID(ctx, event.TeamID, event.Event.User)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -136,6 +165,7 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 			return
 		}
 	}
+	analyticsRecord.UserID = userID
 	log.Printf("slack_request=%s stage=user_resolved elapsed_ms=%d", requestID, time.Since(started).Milliseconds())
 	installation, err := h.installations.GetByUserID(ctx, userID)
 	if err != nil {
@@ -179,6 +209,8 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 		log.Printf("slack_request=%s stage=history_load_failed elapsed_ms=%d error=%q", requestID, time.Since(started).Milliseconds(), err)
 	}
 	success := err == nil
+	analyticsRecord.ResponseText = message
+	analyticsRecord.Action = action
 	if err != nil {
 		log.Printf("slack_request=%s stage=conversation_failed elapsed_ms=%d error=%q", requestID, time.Since(started).Milliseconds(), err)
 	} else {
@@ -189,8 +221,14 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 	defer sendCancel()
 	log.Printf("slack_request=%s stage=slack_send_started elapsed_ms=%d", requestID, time.Since(started).Milliseconds())
 	if err := h.client.PostMessageInThread(sendCtx, installation.BotToken, event.Event.Channel, threadTS, message); err != nil {
+		analyticsRecord.Status = "failed"
 		log.Printf("slack_request=%s stage=slack_send_failed elapsed_ms=%d error=%q", requestID, time.Since(started).Milliseconds(), err)
 		return
+	}
+	if success {
+		analyticsRecord.Status = "success"
+	} else {
+		analyticsRecord.Status = "degraded"
 	}
 	log.Printf("slack_request=%s stage=slack_send_complete elapsed_ms=%d", requestID, time.Since(started).Milliseconds())
 	if removeProcessingReaction != nil {

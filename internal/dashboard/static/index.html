@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b111d">
+  <title>Nudge · AI Dashboard</title>
+  <link rel="stylesheet" href="/dashboard/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">N</span><span>Nudge</span><span class="brand-badge">AI</span></div>
+      <div class="workspace"><span class="workspace-dot"></span><div><strong>Personal workspace</strong><small>Slack · Connected</small></div><span class="chevron">⌄</span></div>
+      <nav class="nav" aria-label="Dashboard navigation">
+        <p class="nav-label">Workspace</p>
+        <a class="nav-item active" href="#overview"><span class="nav-icon">◩</span> Overview</a>
+        <a class="nav-item" href="#conversations"><span class="nav-icon">▤</span> Conversations <span class="nav-count" id="nav-count">—</span></a>
+        <a class="nav-item" href="#models"><span class="nav-icon">◒</span> Model analytics</a>
+        <p class="nav-label nav-label-spaced">Monitor</p>
+        <a class="nav-item" href="#latency"><span class="nav-icon">◷</span> Latency</a>
+        <a class="nav-item" href="#tokens"><span class="nav-icon">⌁</span> Token usage</a>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="system-status"><span class="pulse"></span><div><strong>All systems operational</strong><small>Updated just now</small></div></div>
+        <div class="user-mini"><span class="avatar">BK</span><div><strong>Workspace admin</strong><small>Dashboard access</small></div><span class="more">•••</span></div>
+      </div>
+    </aside>
+
+    <main class="main" id="overview">
+      <header class="topbar"><div class="breadcrumbs"><span>Workspace</span><b>/</b><strong>Overview</strong></div><div class="top-actions"><button class="icon-button" title="Notifications">♧<span class="notification-dot"></span></button><span class="top-divider"></span><span class="date-label" id="today-label"></span></div></header>
+      <section class="page-heading"><div><div class="eyebrow"><span class="eyebrow-line"></span> AI OPERATIONS</div><h1>Nudge intelligence</h1><p>Mesajlarını, model performansını ve AI maliyetini tek bakışta takip et.</p></div><div class="heading-actions"><label class="select-wrap"><span class="sr-only">Tarih aralığı</span><select id="range-select"><option value="24h">Son 24 saat</option><option value="7d" selected>Son 7 gün</option><option value="30d">Son 30 gün</option><option value="all">Tüm zamanlar</option></select></label><button class="refresh-button" id="refresh-button"><span class="refresh-icon">↻</span> Yenile</button></div></section>
+      <div class="notice hidden" id="notice"><span>!</span><div><strong>Veriye erişim gerekiyor</strong><p>Dashboard token’ını aşağıya girerek canlı metrikleri yükleyebilirsin.</p></div><div class="token-entry"><input id="token-input" type="password" placeholder="NUDGE_DASHBOARD_TOKEN"><button id="save-token">Bağlan</button></div></div>
+
+      <section class="metric-grid" aria-label="Özet metrikler">
+        <article class="metric-card"><div class="metric-top"><span>Toplam mesaj</span><span class="metric-icon cyan">↗</span></div><strong class="metric-value" id="total-messages">—</strong><div class="metric-foot"><span class="trend up">●</span><span id="success-rate">— başarıyla işlendi</span></div></article>
+        <article class="metric-card"><div class="metric-top"><span>Ortalama yanıt</span><span class="metric-icon violet">◷</span></div><strong class="metric-value" id="avg-latency">—</strong><div class="metric-foot"><span class="subtle-label">uçtan uca işlem süresi</span></div></article>
+        <article class="metric-card"><div class="metric-top"><span>Toplam token</span><span class="metric-icon lime">⌁</span></div><strong class="metric-value" id="total-tokens">—</strong><div class="metric-foot"><span class="subtle-label" id="token-split">prompt — · completion —</span></div></article>
+        <article class="metric-card"><div class="metric-top"><span>Hata oranı</span><span class="metric-icon orange">!</span></div><strong class="metric-value" id="error-rate">—</strong><div class="metric-foot"><span class="trend neutral" id="error-count">— hata kaydı</span></div></article>
+      </section>
+
+      <section class="dashboard-grid">
+        <article class="panel chart-panel" id="latency"><div class="panel-head"><div><h2>Mesaj aktivitesi</h2><p>Günlük mesaj hacmi ve ortalama yanıt süresi</p></div><div class="legend"><span><i class="legend-dot cyan-dot"></i> Mesaj</span><span><i class="legend-dot violet-dot"></i> Yanıt süresi</span></div></div><div class="chart-wrap"><svg id="activity-chart" viewBox="0 0 760 270" role="img" aria-label="Mesaj aktivitesi grafiği"></svg></div></article>
+        <article class="panel model-panel" id="models"><div class="panel-head"><div><h2>Model dağılımı</h2><p>İsteklerin hangi modelle yanıtlandığı</p></div><span class="panel-kebab">•••</span></div><div class="donut-area"><div class="donut" id="model-donut"><div class="donut-center"><strong id="model-total">—</strong><span>mesaj</span></div></div><div class="model-legend" id="model-legend"><div class="empty-mini">Henüz model verisi yok.</div></div></div><div class="model-foot"><span>En çok kullanılan</span><strong id="top-model">—</strong></div></article>
+      </section>
+
+      <section class="panel table-panel" id="conversations"><div class="panel-head table-head"><div><h2>Son konuşmalar</h2><p>Kullanıcı mesajı → Nudge yanıtı detayları</p></div><div class="table-tools"><label class="filter-wrap"><span>⌕</span><input id="model-filter" placeholder="Model filtrele" aria-label="Model filtrele"></label><button class="ghost-button" id="clear-filter">Temizle</button></div></div><div class="table-scroll"><table><thead><tr><th>MESAJ / YANIT</th><th>MODEL</th><th>DURUM</th><th>SÜRE</th><th>TOKEN</th><th>ZAMAN</th></tr></thead><tbody id="conversation-rows"></tbody></table></div><div class="table-footer"><span id="table-caption">Son 24 kayıt gösteriliyor</span><button class="view-all" id="view-all">Tümünü gör <span>→</span></button></div></section>
+
+      <section class="bottom-grid" id="tokens"><article class="panel insight-panel"><div class="panel-head"><div><h2>Token özeti</h2><p>Prompt ve completion kullanımının dağılımı</p></div></div><div class="token-bars"><div class="token-bar-row"><div><span>Prompt tokens</span><strong id="prompt-percent">—</strong></div><div class="bar-track"><i id="prompt-bar"></i></div><small id="prompt-value">—</small></div><div class="token-bar-row"><div><span>Completion tokens</span><strong id="completion-percent">—</strong></div><div class="bar-track violet-track"><i id="completion-bar"></i></div><small id="completion-value">—</small></div></div></article><article class="panel quick-panel"><div class="panel-head"><div><h2>Workspace özeti</h2><p>Bu aralığın kısa görünümü</p></div></div><div class="quick-list"><div><span>Aktif kullanıcı</span><strong id="active-users">—</strong></div><div><span>En hızlı yanıt</span><strong id="fastest-model">—</strong></div><div><span>Başarıyla tamamlanan</span><strong id="completed-count">—</strong></div></div></article></section>
+      <footer class="footer"><span>Nudge dashboard</span><span>Analytics · Private workspace</span></footer>
+    </main>
+  </div>
+  <script src="/dashboard/app.js"></script>
+</body>
+</html>

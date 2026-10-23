@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
+	"nudge/internal/analytics"
 	"nudge/internal/service"
 )
 
@@ -48,6 +50,11 @@ type generationConfig struct {
 }
 
 type generateResponse struct {
+	UsageMetadata struct {
+		PromptTokenCount     int `json:"promptTokenCount"`
+		CandidatesTokenCount int `json:"candidatesTokenCount"`
+		TotalTokenCount      int `json:"totalTokenCount"`
+	} `json:"usageMetadata"`
 	Candidates []struct {
 		Content           content           `json:"content"`
 		FinishReason      string            `json:"finishReason"`
@@ -128,6 +135,7 @@ func (c GeminiClient) callGenerate(ctx context.Context, payload generateRequest)
 	if client == nil {
 		client = http.DefaultClient
 	}
+	started := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {
 		return result, err
@@ -139,6 +147,19 @@ func (c GeminiClient) callGenerate(ctx context.Context, payload generateRequest)
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 2<<20)).Decode(&result); err != nil {
 		return result, err
+	}
+	if tracker := analytics.UsageTrackerFromContext(ctx); tracker != nil {
+		modelName := c.Model
+		if modelName == "" {
+			modelName = defaultModel
+		}
+		tracker.Add(analytics.AIUsage{
+			Provider: "Gemini", Model: modelName,
+			PromptTokens:     result.UsageMetadata.PromptTokenCount,
+			CompletionTokens: result.UsageMetadata.CandidatesTokenCount,
+			TotalTokens:      result.UsageMetadata.TotalTokenCount,
+			LatencyMS:        time.Since(started).Milliseconds(),
+		})
 	}
 	return result, nil
 }
