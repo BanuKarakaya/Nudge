@@ -135,7 +135,12 @@ func (c OpenAICompatibleClient) Converse(ctx context.Context, state service.Conv
 			}
 			err = decision.Validate(state)
 			if err == nil {
-				return decision, nil
+				return reviewConversationReply(ctx, state, request, decision, func(ctx context.Context, data string, schema *outputSchema) (string, error) {
+					return c.chatOnce(ctx, []deepSeekMessage{
+						{Role: "system", Content: replyReviewInstructions},
+						{Role: "user", Content: data},
+					}, schema, 1000)
+				})
 			}
 		}
 		// Retry a malformed decision once, without executing any data operation.

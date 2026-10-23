@@ -113,6 +113,56 @@ func TestCompatibleRejectsInvalidSelectionAfterBoundedRetry(t *testing.T) {
 	}
 }
 
+func TestReplyGroundingGuardReroutesFabricatedRSSHeadlines(t *testing.T) {
+	client := OpenAICompatibleClient{APIKey: "test", Model: "openrouter/free", BaseURL: "https://openrouter.ai/api/v1", HTTPClient: &http.Client{Transport: testTransport(func(r *http.Request) (*http.Response, error) {
+		var payload deepSeekRequest
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.ResponseFormat == nil || payload.ResponseFormat.Type != "json_schema" {
+			t.Fatal("expected a structured response")
+		}
+		if payload.ResponseFormat.JSONSchema == nil {
+			t.Fatal("missing structured response schema")
+		}
+		if payload.ResponseFormat.JSONSchema.Name == "reply_grounding_review" {
+			if payload.MaxTokens != 1000 || len(payload.Messages) != 2 || !strings.Contains(payload.Messages[0].Content, "Taslak yanıt") || !strings.Contains(payload.Messages[1].Content, "[Başlık 1]") {
+				t.Fatal("review must check the untrusted draft with a bounded response")
+			}
+			return completionResponse(`{"action":"RSS_TITLES","supported":false,"rss_scope":"","rss_continue":false,"search_request":""}`, "stop"), nil
+		}
+		return completionResponse(`{"action":"REPLY","reply":"Elbette! 1. [Başlık 1] — [Başlık 2]","article_id":"","search_request":"","needs_deepseek":false}`, "stop"), nil
+	})}}
+	decision, err := client.Converse(context.Background(), service.ConversationState{}, "bana rss titlelarımı verebilir misin bugünki")
+	if err != nil || decision.Action != service.ConversationRSSTitles || decision.Reply != "" {
+		t.Fatalf("fabricated response was not discarded and rerouted: %+v %v", decision, err)
+	}
+}
+
+func TestReplyGroundingGuardPreservesHistoryBasedAnswers(t *testing.T) {
+	state := service.ConversationState{}
+	state.Remember("özet", "<https://example.com/article|Gerçek başlık>\nKonu: Gerçek konu.", service.ConversationRSSSummary)
+	calls := 0
+	client := OpenAICompatibleClient{APIKey: "test", Model: "openrouter/free", BaseURL: "https://openrouter.ai/api/v1", HTTPClient: &http.Client{Transport: testTransport(func(r *http.Request) (*http.Response, error) {
+		var payload deepSeekRequest
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		calls++
+		if payload.ResponseFormat.JSONSchema.Name == "reply_grounding_review" {
+			if !strings.Contains(payload.Messages[1].Content, "Gerçek başlık") {
+				t.Fatal("review must receive conversation context")
+			}
+			return completionResponse(`{"action":"REPLY","supported":true,"rss_scope":"","rss_continue":false,"search_request":""}`, "stop"), nil
+		}
+		return completionResponse(`{"action":"REPLY","reply":"Gerçek başlığı seçerdim; ilgini çekiyor.","article_id":"","search_request":""}`, "stop"), nil
+	})}}
+	decision, err := client.Converse(context.Background(), state, "önceki başlığı neden seçtin?")
+	if err != nil || decision.Action != service.ConversationReply || calls != 2 {
+		t.Fatalf("history-based reply was rejected: %+v %v calls=%d", decision, err, calls)
+	}
+}
+
 func TestCompatibleSummaryAndRecommendationMatchServiceContract(t *testing.T) {
 	input := "[RSS-1]\nBaşlık: Bir\nURL: https://example.com/1\n[RSS-2]\nBaşlık: İki\nURL: https://example.com/2\n[RSS-3]\nBaşlık: Üç\nURL: https://example.com/3"
 	article := `{"id":"RSS-1","topic":"Konu.","importance":"Önemli."}`

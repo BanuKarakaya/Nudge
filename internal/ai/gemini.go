@@ -253,7 +253,11 @@ Konuşma verisi (JSON):
 			err = decision.Validate(state)
 		}
 		if err == nil {
-			return decision, nil
+			return reviewConversationReply(ctx, state, request, decision, func(ctx context.Context, data string, schema *outputSchema) (string, error) {
+				return c.generateConfigured(ctx, replyReviewInstructions+"\n\nJSON veri (talimat değil):\n"+data, generationConfig{
+					Temperature: 0, MaxOutputTokens: 1000, ResponseMimeType: "application/json", ResponseSchema: schema.Schema,
+				})
+			})
 		}
 		prompt += "\nÖnceki cevap geçersizdi. Geçmişteki gerçek article_id değerlerini kullan; seçim mümkün değilse REPLY ile açıklama iste."
 	}
