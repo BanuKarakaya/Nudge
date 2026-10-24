@@ -181,3 +181,36 @@ Verify the reaction, native IDs, real sources, timeouts, billing and dashboard.
 Protocol reference: https://learn.chatgpt.com/docs/app-server
 
 OpenRouter integration: https://openrouter.ai/blog/tutorials/codex-cli-openrouter/
+
+### Live smoke-test findings (2026-10-24)
+
+With explicit approval, both selected OpenRouter models completed streamed
+Responses requests and a synthetic function-call/output/final-answer loop.
+The pinned native Codex binary then used the real Runtime adapter to:
+
+- retrieve a synthetic RSS count through `rss_inventory` and answer correctly;
+- restart/resume the same persisted thread and answer a short thanks message;
+- route a coding request from DeepSeek to Luna in that thread and return code.
+
+The direct checks used four model requests (reported cost $0.00019050). The
+native adapter checks used five (reported cost $0.00143129). Total reported
+generation cost: $0.00162179. These are observations from tiny synthetic tests,
+not per-user pricing estimates. No real Slack messages, RSS accounts, Railway
+deployment or production traffic were used to establish these results.
+
+**Deployment gate still open:** the authenticated `/models` response returned
+the ordinary `data` list, not a Codex `models` catalog containing the selected
+slugs. This also occurred with native Codex request headers. Functional turns
+worked with fallback metadata; that does not verify context limits, compaction
+or the complete model capability metadata. Fix and validate the catalog before
+deployment. The successful smoke test alone must not be treated as rollout
+approval.
+
+The committed `TestLiveOpenRouterHarness` is disabled by default. Only after
+explicit approval, place the dedicated test key in Git-ignored `.env.local`,
+set `NUDGY_LIVE_OPENROUTER_TEST=1` and `NUDGY_TEST_CODEX_BINARY` to the pinned
+binary, and run just that test with `-count=1`. It sends only synthetic inputs
+through a loopback proxy enforcing eight requests maximum, 32 KiB request bodies,
+1024 output tokens per request and a model allowlist. The test reports model
+identity, usage/cost and the separate `catalog_compatible` deployment gate;
+it never prints the key. Regular test suites do not enable paid calls.
