@@ -27,7 +27,9 @@ type Credentials struct {
 }
 
 type Connection struct {
-	UserID       int64
+	UserID int64
+	// Resolved from the immutable Slack user record, never supplied by the model.
+	Team         string
 	GitHubUserID int64
 	Login        string
 	Credentials  Credentials
@@ -62,6 +64,7 @@ type OAuthState struct {
 }
 
 type Store interface {
+	SlackTeam(context.Context, int64) (string, error)
 	SaveConnection(context.Context, Connection) error
 	// WithConnection locks this user's credential across refresh and persistence.
 	WithConnection(context.Context, int64, func(*Connection) error) error

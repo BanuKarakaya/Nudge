@@ -17,6 +17,13 @@ type memoryStore struct {
 	tasks      map[string]Task
 }
 
+func (s *memoryStore) SlackTeam(_ context.Context, id int64) (string, error) {
+	if id == 1 || id == 2 {
+		return "T", nil
+	}
+	return "", ErrDenied
+}
+
 func (s *memoryStore) SaveConnection(_ context.Context, c Connection) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -103,9 +110,9 @@ func (*fakeProvider) User(context.Context, string) (int64, string, error) {
 
 func fixture(t *testing.T) (*Service, *memoryStore, *fakeProvider, Identity) {
 	t.Helper()
-	store := &memoryStore{connection: Connection{UserID: 1, Credentials: Credentials{Access: "ghu_secret"}}}
-	p := &fakeProvider{repos: []Repository{{ID: 10, FullName: "owner/repo", DefaultBranch: "master", InstallationID: 2}, {ID: 11, FullName: "owner/not-allowed", DefaultBranch: "main", InstallationID: 2}}}
-	s, err := New(store, p, map[string][]string{"T": {"owner/repo"}})
+	store := &memoryStore{connection: Connection{UserID: 1, Team: "T", Credentials: Credentials{Access: "ghu_secret"}}}
+	p := &fakeProvider{repos: []Repository{{ID: 10, FullName: "owner/repo", DefaultBranch: "master", InstallationID: 2}, {ID: 11, FullName: "owner/another", DefaultBranch: "main", InstallationID: 2}}}
+	s, err := New(store, p)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,8 +141,8 @@ func TestDraftIsBoundToOriginalMessageAndDeduplicated(t *testing.T) {
 func TestPermissionAndTaskOwnershipBoundaries(t *testing.T) {
 	s, _, p, i := fixture(t)
 	repos, err := s.Repositories(context.Background(), i)
-	if err != nil || len(repos) != 1 {
-		t.Fatalf("allowlist: %v %v", repos, err)
+	if err != nil || len(repos) != 2 {
+		t.Fatalf("GitHub permissions: %v %v", repos, err)
 	}
 	for _, name := range []string{"owner/not-allowed", "https://github.com/owner/repo", "owner/../../other", "repo"} {
 		if _, err := s.Prepare(context.Background(), i, name); err == nil {
@@ -214,6 +221,9 @@ func TestOAuthStateIsSingleUseHashedAndExpires(t *testing.T) {
 	if store.connection.GitHubUserID != 55 {
 		t.Fatal("identity not read from GitHub")
 	}
+	if store.connection.Team != "T" {
+		t.Fatal("OAuth did not bind GitHub to persisted Slack workspace")
+	}
 	if err := s.CompleteConnect(context.Background(), state, "code"); err == nil {
 		t.Fatal("OAuth replay accepted")
 	}
@@ -223,5 +233,49 @@ func TestOAuthStateIsSingleUseHashedAndExpires(t *testing.T) {
 	store.states[stateHash(state)] = v
 	if err := s.CompleteConnect(context.Background(), state, "code"); err == nil {
 		t.Fatal("expired OAuth accepted")
+	}
+}
+
+func TestGitHubRepositoryChangesApplyWithoutServerConfiguration(t *testing.T) {
+	s, _, p, i := fixture(t)
+	ctx := context.Background()
+	// This repository was never in any server list. GitHub's grant is enough.
+	if _, err := s.Prepare(ctx, i, "owner/another"); err != nil {
+		t.Fatal(err)
+	}
+	p.repos = append(p.repos, Repository{ID: 12, FullName: "other-org/new-repo", DefaultBranch: "main", InstallationID: 3})
+	i.Event = "new-event"
+	if _, err := s.Prepare(ctx, i, "other-org/new-repo"); err != nil {
+		t.Fatalf("new GitHub grant not visible: %v", err)
+	}
+	p.repos = p.repos[:2]
+	i.Event = "after-removal"
+	if _, err := s.Prepare(ctx, i, "other-org/new-repo"); !errors.Is(err, ErrDenied) {
+		t.Fatalf("removed GitHub grant retained: %v", err)
+	}
+}
+
+func TestWorkspaceMismatchCannotRefreshOrUseConnection(t *testing.T) {
+	s, store, p, i := fixture(t)
+	store.connection.Credentials.Expires = time.Now().Add(-time.Hour)
+	store.connection.Credentials.Refresh = "ghr_secret"
+	store.connection.Credentials.RefreshExpires = time.Now().Add(time.Hour)
+	i.Team = "OTHER"
+	if _, err := s.Repositories(context.Background(), i); !errors.Is(err, ErrDenied) {
+		t.Fatalf("cross-workspace listing: %v", err)
+	}
+	if p.refreshes != 0 {
+		t.Fatal("foreign workspace refreshed credentials")
+	}
+	i.Team = "T"
+	store.connection.Team = "OTHER"
+	if _, err := s.Repositories(context.Background(), i); !errors.Is(err, ErrDenied) {
+		t.Fatalf("mismatched stored connection used: %v", err)
+	}
+	if p.refreshes != 0 {
+		t.Fatal("mismatched stored connection refreshed")
+	}
+	if _, _, err := s.BeginConnect(context.Background(), 99); err == nil {
+		t.Fatal("unregistered Slack user started OAuth")
 	}
 }

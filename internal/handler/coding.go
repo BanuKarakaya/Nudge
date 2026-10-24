@@ -93,6 +93,9 @@ func (h *CodingHandler) Tools(base service.AgentTools, identity coding.Identity)
 		if err != nil {
 			return err
 		}
+		if installation.TeamID != identity.Team {
+			return coding.ErrDenied
+		}
 		// Check the Slack mapping again before delivering a private bearer link.
 		userID, err := h.installations.GetUserIDBySlackUserID(ctx, identity.Team, installation.SlackUserID)
 		if err != nil || userID != identity.UserID {

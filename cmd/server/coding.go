@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
@@ -38,10 +37,6 @@ func configureCoding(db *pgxpool.Pool, public, admin *http.ServeMux, events *han
 	if provider.Validate() != nil {
 		return errors.New("GitHub App configuration is incomplete")
 	}
-	var allowed map[string][]string
-	if json.Unmarshal([]byte(os.Getenv("NUDGY_GITHUB_ALLOWED_REPOS")), &allowed) != nil || len(allowed) == 0 {
-		return errors.New("NUDGY_GITHUB_ALLOWED_REPOS must map Slack workspace IDs to owner/name arrays")
-	}
 	cipher, err := secure.NewCipherFromBase64(os.Getenv("NUDGY_CODING_ENCRYPTION_KEY"))
 	if err != nil {
 		return errors.New("NUDGY_CODING_ENCRYPTION_KEY must be a separate 32-byte base64 key")
@@ -52,13 +47,13 @@ func configureCoding(db *pgxpool.Pool, public, admin *http.ServeMux, events *han
 	if err != nil {
 		return errors.New("coding database migration failed")
 	}
-	s, err := coding.New(store, provider, allowed)
+	s, err := coding.New(store, provider)
 	if err != nil {
-		return errors.New("invalid coding repo allowlist")
+		return errors.New("invalid coding service configuration")
 	}
 	h := handler.NewCodingHandler(s, installations, client, links, base)
 	h.RegisterRoutes(public, admin)
 	events.WithCoding(h)
-	onboarding.Register(service.ConnectionInvitation{Purpose: "github", Name: "GitHub", Description: "Erişebildiğin projeleri listelemek ve kod değişikliği görevleri hazırlamak için bağlayabilirsin. Kod çalıştırma ve PR açma henüz etkin değil.", Enabled: s.EnabledFor, Connected: s.Connected})
+	onboarding.Register(service.ConnectionInvitation{Purpose: "github", Name: "GitHub", Description: "Erişebildiğin projeleri listelemek ve kod değişikliği görevleri hazırlamak için bağlayabilirsin. Kod çalıştırma ve PR açma henüz etkin değil.", Connected: s.Connected})
 	return nil
 }

@@ -15,11 +15,18 @@ type codingTestStore struct {
 	task coding.Task
 }
 
+func (*codingTestStore) SlackTeam(_ context.Context, id int64) (string, error) {
+	if id == 7 {
+		return "T", nil
+	}
+	return "", coding.ErrDenied
+}
+
 func (*codingTestStore) WithConnection(_ context.Context, id int64, fn func(*coding.Connection) error) error {
 	if id != 7 {
 		return coding.ErrConnect
 	}
-	return fn(&coding.Connection{UserID: id, Credentials: coding.Credentials{Access: "ghu_private"}})
+	return fn(&coding.Connection{UserID: id, Team: "T", Credentials: coding.Credentials{Access: "ghu_private"}})
 }
 func (s *codingTestStore) CreateDraft(_ context.Context, t coding.Task) (coding.Task, error) {
 	s.task = t
@@ -34,7 +41,7 @@ func (codingTestProvider) Repositories(context.Context, string) ([]coding.Reposi
 
 func TestCodingToolsRejectIdentityInjectionAndExposeNoConnectionLink(t *testing.T) {
 	store := &codingTestStore{}
-	s, err := coding.New(store, codingTestProvider{}, map[string][]string{"T": {"owner/repo"}})
+	s, err := coding.New(store, codingTestProvider{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,9 +80,9 @@ func TestCodingToolsRejectIdentityInjectionAndExposeNoConnectionLink(t *testing.
 	}
 }
 
-func TestCodingToolsDisabledForUnapprovedWorkspace(t *testing.T) {
-	s, _ := coding.New(&codingTestStore{}, codingTestProvider{}, map[string][]string{"T": {"owner/repo"}})
-	tools := NewCodingTools(NewAgentTools(nil, nil, nil, 7, time.Now(), nil), s, coding.Identity{UserID: 7, Team: "OTHER"}, func(context.Context) error { t.Fatal("sent link to unapproved workspace"); return nil })
+func TestCodingToolsRejectMismatchedWorkspace(t *testing.T) {
+	s, _ := coding.New(&codingTestStore{}, codingTestProvider{})
+	tools := NewCodingTools(NewAgentTools(nil, nil, nil, 7, time.Now(), nil), s, coding.Identity{UserID: 7, Team: "OTHER"}, func(context.Context) error { t.Fatal("sent link to another workspace"); return nil })
 	for _, name := range []string{"github_connect", "repositories_list", "repository_task_prepare", "repository_task_cancel"} {
 		if _, err := tools.Call(context.Background(), name, json.RawMessage(`{}`)); err == nil {
 			t.Fatalf("allowed %s", name)

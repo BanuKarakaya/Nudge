@@ -68,9 +68,61 @@ func TestCodingStorePostgres(t *testing.T) {
 	if _, err := NewCodingStore(ctx, db, cipher); err != nil {
 		t.Fatal(err)
 	}
-	c := coding.Connection{UserID: 1, GitHubUserID: 42, Login: "test", Credentials: coding.Credentials{Access: "ghu_testsecret", Refresh: "ghr_testsecret"}}
+	c := coding.Connection{UserID: 1, Team: "T", GitHubUserID: 42, Login: "test", Credentials: coding.Credentials{Access: "ghu_testsecret", Refresh: "ghr_testsecret"}}
 	if err := s.SaveConnection(ctx, c); err != nil {
 		t.Fatal(err)
+	}
+	if team, err := s.SlackTeam(ctx, 1); err != nil || team != "T" {
+		t.Fatalf("Slack mapping: %q %v", team, err)
+	}
+	wrong := c
+	wrong.Team = "OTHER"
+	wrong.Credentials.Access = "ghu_wrong"
+	if err := s.SaveConnection(ctx, wrong); !errors.Is(err, coding.ErrDenied) {
+		t.Fatalf("cross-workspace connection write accepted: %v", err)
+	}
+	// One Slack user in two installations must have separate GitHub connections.
+	if _, err := db.Exec(ctx, `INSERT INTO slack_installations(team_id,team_name,bot_token) VALUES('T2','second','test'); INSERT INTO users(id,team_id,slack_user_id) VALUES(3,'T2','U1')`); err != nil {
+		t.Fatal(err)
+	}
+	other := c
+	other.UserID = 3
+	other.Team = "T2"
+	other.Credentials.Access = "ghu_other_workspace"
+	if err := s.SaveConnection(ctx, other); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.WithConnection(ctx, 3, func(got *coding.Connection) error {
+		if got.Team != "T2" || got.Credentials.Access != other.Credentials.Access {
+			return errors.New("workspace credentials mixed")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	provider := &workspaceRepoProvider{}
+	service, err := coding.New(s, provider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Repositories(ctx, coding.Identity{UserID: 1, Team: "T2"}); !errors.Is(err, coding.ErrDenied) {
+		t.Fatalf("wrong Slack workspace accepted: %v", err)
+	}
+	if provider.calls != 0 {
+		t.Fatal("foreign workspace reached GitHub")
+	}
+	for _, i := range []coding.Identity{{UserID: 1, Team: "T"}, {UserID: 3, Team: "T2"}} {
+		repos, err := service.Repositories(ctx, i)
+		if err != nil || len(repos) != 1 {
+			t.Fatalf("mapped workspace failed: %v", err)
+		}
+		want := "owner/first"
+		if i.UserID == 3 {
+			want = "owner/second"
+		}
+		if repos[0].FullName != want {
+			t.Fatalf("wrong repo access for user %d: %v", i.UserID, repos)
+		}
 	}
 	var encrypted string
 	if err := db.QueryRow(ctx, `SELECT credentials FROM coding_connections WHERE user_id=1`).Scan(&encrypted); err != nil {
@@ -88,7 +140,7 @@ func TestCodingStorePostgres(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			err := s.WithConnection(ctx, 1, func(got *coding.Connection) error {
-				if got.GitHubUserID != 42 {
+				if got.GitHubUserID != 42 || got.Team != "T" {
 					return errors.New("wrong account")
 				}
 				if got.Credentials.Access == c.Credentials.Access {
@@ -171,6 +223,9 @@ func TestCodingStorePostgres(t *testing.T) {
 	if err := s.WithConnection(ctx, 1, func(*coding.Connection) error { return nil }); !errors.Is(err, coding.ErrConnect) {
 		t.Fatal("disconnect retained credentials")
 	}
+	if err := s.WithConnection(ctx, 3, func(*coding.Connection) error { return nil }); err != nil {
+		t.Fatal("disconnect affected another workspace")
+	}
 	if _, err := s.ConsumeOAuthState(ctx, "pending"); !errors.Is(err, coding.ErrConnect) {
 		t.Fatal("disconnect retained OAuth state")
 	}
@@ -180,4 +235,18 @@ func TestCodingStorePostgres(t *testing.T) {
 	if got, err := s.CancelDraft(ctx, identity, first.ID); err != nil || got.Status != "cancelled" {
 		t.Fatal("repeat cancel failed")
 	}
+}
+
+type workspaceRepoProvider struct {
+	coding.Provider
+	calls int
+}
+
+func (p *workspaceRepoProvider) Repositories(_ context.Context, token string) ([]coding.Repository, error) {
+	p.calls++
+	name := "owner/first"
+	if token == "ghu_other_workspace" {
+		name = "owner/second"
+	}
+	return []coding.Repository{{ID: 10, InstallationID: 20, FullName: name, DefaultBranch: "main"}}, nil
 }

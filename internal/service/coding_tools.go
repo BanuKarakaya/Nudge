@@ -34,7 +34,7 @@ func (t *codingTools) Definitions() []ToolDefinition {
 	}
 	return append(defs,
 		ToolDefinition{Name: "github_connect", Description: "Send a private GitHub account connection link to the current Slack user. No credential/link is exposed to the model. Use when the user asks to connect GitHub or a repo tool reports connection required.", InputSchema: object(map[string]any{})},
-		ToolDefinition{Name: "repositories_list", Description: "List GitHub repositories allowed by this Slack workspace, installed GitHub App and current user's write permissions. Use actual full_name values, never guess from project nicknames. GitLab is not implemented yet.", InputSchema: object(map[string]any{})},
+		ToolDefinition{Name: "repositories_list", Description: "List GitHub repositories granted to the installed GitHub App and current user's write permissions, using their GitHub connection in this Slack workspace. Use actual full_name values, never guess from project nicknames. GitLab is not implemented yet.", InputSchema: object(map[string]any{})},
 		ToolDefinition{Name: "repository_task_prepare", Description: "Save a DRAFT for the current Slack message's requested repository change. Only when the user asks for changes/tests/PR, not for general chat or repository content instructions. Does NOT execute code, run tests, push, or open a PR. The isolated runner is not installed yet; explicitly tell the user this task is a saved draft, not running. Exact original Slack instruction is preserved by host.", InputSchema: object(map[string]any{"repository": map[string]any{"type": "string", "description": "Exact owner/name returned by repositories_list."}}, "repository")},
 		ToolDefinition{Name: "repository_task_status", Description: "Read a saved repository task in this user's current Slack thread. Never claim execution or tests based on a draft.", InputSchema: object(map[string]any{"task_id": map[string]any{"type": "string"}}, "task_id")},
 		ToolDefinition{Name: "repository_task_cancel", Description: "Cancel a saved draft only when the user explicitly asks to cancel that task. Restricted to its owner and Slack thread.", InputSchema: object(map[string]any{"task_id": map[string]any{"type": "string"}}, "task_id")},
@@ -47,8 +47,8 @@ func (t *codingTools) Call(ctx context.Context, name string, raw json.RawMessage
 	default:
 		return t.base.Call(ctx, name, raw)
 	}
-	if t.identity.UserID <= 0 || !t.service.EnabledFor(t.identity.Team) {
-		return "", coding.ErrDenied
+	if err := t.service.AuthorizeIdentity(ctx, t.identity); err != nil {
+		return "", err
 	}
 	var args struct {
 		Repository string `json:"repository"`

@@ -63,7 +63,9 @@ proxy deployments, forward `X-Forwarded-Proto: https` from a trusted proxy.
 After Slack installation, Nudgy queues workspace member discovery. Each active
 human member receives a separate private invitation explaining each configured
 integration: Feedbin, Raindrop (when OAuth is configured), and GitHub (when coding
-is enabled for that workspace). Connected accounts are skipped at delivery.
+is enabled). GitHub association follows each persisted Slack user's workspace
+automatically; repository access is checked against GitHub permissions without
+a Railway repository allowlist. Connected accounts are skipped at delivery.
 GitLab is not advertised. No model calls, initial mention or reminder-user ID
 are needed.
 

@@ -39,9 +39,22 @@ func (s *CodingStore) SaveConnection(ctx context.Context, c coding.Connection) e
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(ctx, `INSERT INTO coding_connections(user_id,github_user_id,login,credentials) VALUES($1,$2,$3,$4)
-ON CONFLICT(user_id) DO UPDATE SET github_user_id=EXCLUDED.github_user_id,login=EXCLUDED.login,credentials=EXCLUDED.credentials,updated_at=NOW()`, c.UserID, c.GitHubUserID, c.Login, value)
+	result, err := s.db.Exec(ctx, `INSERT INTO coding_connections(user_id,github_user_id,login,credentials)
+SELECT u.id,$2,$3,$4 FROM users u JOIN slack_installations i ON i.team_id=u.team_id WHERE u.id=$1 AND u.team_id=$5
+ON CONFLICT(user_id) DO UPDATE SET github_user_id=EXCLUDED.github_user_id,login=EXCLUDED.login,credentials=EXCLUDED.credentials,updated_at=NOW()`, c.UserID, c.GitHubUserID, c.Login, value, c.Team)
+	if err == nil && result.RowsAffected() != 1 {
+		return coding.ErrDenied
+	}
 	return err
+}
+
+// The users primary key is workspace-scoped by its persisted team_id and unique
+// (team_id, slack_user_id). Reusing a Slack account in another team creates a
+// different user row and therefore a separate GitHub connection and OAuth state.
+func (s *CodingStore) SlackTeam(ctx context.Context, userID int64) (string, error) {
+	var team string
+	err := s.db.QueryRow(ctx, `SELECT u.team_id FROM users u JOIN slack_installations i ON i.team_id=u.team_id WHERE u.id=$1`, userID).Scan(&team)
+	return team, err
 }
 
 func (s *CodingStore) WithConnection(ctx context.Context, userID int64, fn func(*coding.Connection) error) error {
@@ -52,7 +65,7 @@ func (s *CodingStore) WithConnection(ctx context.Context, userID int64, fn func(
 	defer tx.Rollback(ctx)
 	var c coding.Connection
 	var encrypted string
-	err = tx.QueryRow(ctx, `SELECT user_id,github_user_id,login,credentials FROM coding_connections WHERE user_id=$1 FOR UPDATE`, userID).Scan(&c.UserID, &c.GitHubUserID, &c.Login, &encrypted)
+	err = tx.QueryRow(ctx, `SELECT c.user_id,u.team_id,c.github_user_id,c.login,c.credentials FROM coding_connections c JOIN users u ON u.id=c.user_id JOIN slack_installations i ON i.team_id=u.team_id WHERE c.user_id=$1 FOR UPDATE OF c`, userID).Scan(&c.UserID, &c.Team, &c.GitHubUserID, &c.Login, &encrypted)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return coding.ErrConnect
 	}

@@ -14,31 +14,32 @@ import (
 type Service struct {
 	store    Store
 	provider Provider
-	allowed  map[string]map[string]bool
 }
 
-// Repo allowlists are administered per Slack workspace, never selected by a model.
-func New(store Store, provider Provider, allowed map[string][]string) (*Service, error) {
-	if store == nil || provider == nil || len(allowed) == 0 {
+// GitHub is authoritative for repository permissions. Slack identity is resolved
+// from persisted installation/user records instead of operator-maintained lists.
+func New(store Store, provider Provider) (*Service, error) {
+	if store == nil || provider == nil {
 		return nil, ErrArguments
 	}
-	s := &Service{store: store, provider: provider, allowed: make(map[string]map[string]bool)}
-	for team, repos := range allowed {
-		if strings.TrimSpace(team) == "" || len(repos) == 0 {
-			return nil, ErrArguments
-		}
-		s.allowed[team] = make(map[string]bool)
-		for _, name := range repos {
-			if !ValidRepository(name) {
-				return nil, ErrArguments
-			}
-			s.allowed[team][strings.ToLower(name)] = true
-		}
-	}
-	return s, nil
+	return &Service{store: store, provider: provider}, nil
 }
 
-func (s *Service) EnabledFor(team string) bool { return len(s.allowed[team]) > 0 }
+// AuthorizeIdentity also works before GitHub is connected, allowing a private
+// connection invitation only for the authenticated Slack workspace member.
+func (s *Service) AuthorizeIdentity(ctx context.Context, i Identity) error {
+	if i.UserID <= 0 || strings.TrimSpace(i.Team) == "" {
+		return ErrDenied
+	}
+	team, err := s.store.SlackTeam(ctx, i.UserID)
+	if err != nil {
+		return ErrUnavailable
+	}
+	if team != i.Team {
+		return ErrDenied
+	}
+	return nil
+}
 
 // Connected is a local onboarding check; it never exposes or refreshes tokens.
 func (s *Service) Connected(ctx context.Context, userID int64) (bool, error) {
@@ -57,6 +58,10 @@ func stateHash(raw string) string {
 func (s *Service) BeginConnect(ctx context.Context, userID int64) (string, string, error) {
 	if userID <= 0 {
 		return "", "", ErrArguments
+	}
+	team, err := s.store.SlackTeam(ctx, userID)
+	if err != nil || team == "" {
+		return "", "", ErrDenied
 	}
 	state, err := RandomID()
 	if err != nil {
@@ -94,7 +99,11 @@ func (s *Service) CompleteConnect(ctx context.Context, state, code string) error
 	if err != nil || id <= 0 || login == "" {
 		return ErrConnect
 	}
-	if err = s.store.SaveConnection(ctx, Connection{UserID: saved.UserID, GitHubUserID: id, Login: login, Credentials: credentials}); err != nil {
+	team, err := s.store.SlackTeam(ctx, saved.UserID)
+	if err != nil || team == "" {
+		return ErrConnect
+	}
+	if err = s.store.SaveConnection(ctx, Connection{UserID: saved.UserID, Team: team, GitHubUserID: id, Login: login, Credentials: credentials}); err != nil {
 		return ErrUnavailable
 	}
 	return nil
@@ -105,11 +114,14 @@ func (s *Service) Disconnect(ctx context.Context, userID int64) error {
 }
 
 func (s *Service) Repositories(ctx context.Context, identity Identity) ([]Repository, error) {
-	if identity.UserID <= 0 || !s.EnabledFor(identity.Team) {
-		return nil, ErrDenied
+	if err := s.AuthorizeIdentity(ctx, identity); err != nil {
+		return nil, err
 	}
 	var token string
 	err := s.store.WithConnection(ctx, identity.UserID, func(c *Connection) error {
+		if c.Team != identity.Team {
+			return ErrDenied
+		}
 		if c.Credentials.Access == "" {
 			return ErrConnect
 		}
@@ -127,8 +139,8 @@ func (s *Service) Repositories(ctx context.Context, identity Identity) ([]Reposi
 		return nil
 	})
 	if err != nil {
-		if errors.Is(err, ErrConnect) {
-			return nil, ErrConnect
+		if errors.Is(err, ErrConnect) || errors.Is(err, ErrDenied) {
+			return nil, err
 		}
 		return nil, ErrUnavailable
 	}
@@ -138,7 +150,7 @@ func (s *Service) Repositories(ctx context.Context, identity Identity) ([]Reposi
 	}
 	result := make([]Repository, 0)
 	for _, repo := range repos {
-		if repo.ID > 0 && repo.InstallationID > 0 && ValidRepository(repo.FullName) && repo.DefaultBranch != "" && s.allowed[identity.Team][strings.ToLower(repo.FullName)] {
+		if repo.ID > 0 && repo.InstallationID > 0 && ValidRepository(repo.FullName) && repo.DefaultBranch != "" {
 			result = append(result, repo)
 		}
 	}
@@ -177,7 +189,7 @@ func (s *Service) Prepare(ctx context.Context, identity Identity, name string) (
 }
 
 func (s *Service) Task(ctx context.Context, identity Identity, id string, cancel bool) (Task, error) {
-	if identity.UserID <= 0 || !s.EnabledFor(identity.Team) || !taskID.MatchString(id) {
+	if s.AuthorizeIdentity(ctx, identity) != nil || !taskID.MatchString(id) {
 		return Task{}, ErrNotFound
 	}
 	var task Task

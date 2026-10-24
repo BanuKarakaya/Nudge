@@ -25,6 +25,13 @@ type codingHandlerStore struct {
 	saved coding.Connection
 }
 
+func (*codingHandlerStore) SlackTeam(_ context.Context, id int64) (string, error) {
+	if id == 1 {
+		return "T", nil
+	}
+	return "", coding.ErrDenied
+}
+
 func (s *codingHandlerStore) PutOAuthState(_ context.Context, hash string, state coding.OAuthState) error {
 	s.hash, s.state = hash, state
 	return nil
@@ -78,7 +85,7 @@ func (d *codingDM) PostMessage(_ context.Context, token, channel, text string) e
 func codingHandlerFixture(t *testing.T) (*CodingHandler, *codingHandlerStore, secure.LinkSigner, *codingDM) {
 	t.Helper()
 	store := &codingHandlerStore{}
-	s, err := coding.New(store, codingHandlerProvider{}, map[string][]string{"T": {"owner/repo"}})
+	s, err := coding.New(store, codingHandlerProvider{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +149,7 @@ func TestGitHubCallbackRequiresSignedLinkBrowserCookieAndSingleUseState(t *testi
 	request.AddCookie(cookies[0])
 	ok := httptest.NewRecorder()
 	h.callback(ok, request)
-	if ok.Code != 200 || store.saved.UserID != 1 || store.saved.GitHubUserID != 42 {
+	if ok.Code != 200 || store.saved.UserID != 1 || store.saved.Team != "T" || store.saved.GitHubUserID != 42 {
 		t.Fatalf("callback=%d connection=%d", ok.Code, store.saved.UserID)
 	}
 	if strings.Contains(ok.Body.String(), "ghu_") || ok.Header().Get("Cache-Control") != "no-store" {
@@ -182,7 +189,7 @@ func TestEnablingCodingToolsRebootsNativeThreadButPreservesDeliveredHistory(t *t
 	})}).WithCoding(codingHandler)
 	h.replyWithSummary(conversationEvent("GitHub repolarımı göster"))
 	got, err := store.Load(context.Background(), key)
-	if err != nil || got.AgentThreadID != "new-native" || got.AgentToolVersion != "coding-drafts-v1" {
+	if err != nil || got.AgentThreadID != "new-native" || got.AgentToolVersion != "coding-drafts-v2" {
 		t.Fatalf("new tool version not persisted: %+v", got)
 	}
 }

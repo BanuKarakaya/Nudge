@@ -233,7 +233,7 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 			// delivered history once when coding tools are enabled or disabled.
 			toolVersion := ""
 			if h.coding != nil {
-				toolVersion = "coding-drafts-v1"
+				toolVersion = "coding-drafts-v2"
 			}
 			if state.AgentToolVersion != toolVersion {
 				state.AgentThreadID = ""
