@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"nudge/internal/ai"
+	"nudge/internal/codex"
 	"nudge/internal/database"
 	"nudge/internal/feedbin"
 	"nudge/internal/handler"
@@ -119,99 +120,21 @@ func main() {
 	feedbinDigestService := service.NewFeedbinDigestService(feedbinRepository, feedbin.Client{
 		HTTPClient: &http.Client{Timeout: 15 * time.Second},
 	})
-	var textSummarizer service.TextSummarizer
-	var rssRecommender service.RSSRecommender
-	var dialogue service.ConversationAssistant
-	var webAssistant service.WebAssistant
-	if apiKey := os.Getenv("OPENROUTER_API_KEY"); apiKey != "" {
-		model := os.Getenv("OPENROUTER_MODEL")
-		if model == "" {
-			model = "openrouter/free"
-		}
-		baseURL := os.Getenv("OPENROUTER_BASE_URL")
-		if baseURL == "" {
-			baseURL = "https://openrouter.ai/api/v1"
-		}
-		complexModel := os.Getenv("OPENROUTER_COMPLEX_MODEL")
-		if complexModel == "" {
-			complexModel = "deepseek/deepseek-v4.1-flash"
-		}
-		log.Printf("OpenRouter AI enabled (model=%s, complex_model=%s, base_url=%s)", model, complexModel, baseURL)
-		openRouterClient := ai.OpenAICompatibleClient{
-			APIKey:     apiKey,
-			Model:      model,
-			BaseURL:    baseURL,
-			HTTPClient: &http.Client{Timeout: 90 * time.Second},
-		}
-		complexClient := ai.OpenAICompatibleClient{
-			APIKey:     apiKey,
-			Model:      complexModel,
-			BaseURL:    baseURL,
-			HTTPClient: &http.Client{Timeout: 90 * time.Second},
-		}
-		modelRouter := ai.OpenRouterModelRouter{Free: openRouterClient, DeepSeek: complexClient}
-		textSummarizer = modelRouter
-		rssRecommender = modelRouter
-		dialogue = modelRouter
-	} else if apiKey := os.Getenv("OPENAI_API_KEY"); apiKey != "" {
-		model := os.Getenv("OPENAI_MODEL")
-		if model == "" {
-			model = "gpt-6-luna"
-		}
-		baseURL := os.Getenv("OPENAI_BASE_URL")
-		if baseURL == "" {
-			baseURL = "https://api.openai.com/v1"
-		}
-		log.Printf("OpenAI AI enabled (model=%s, base_url=%s)", model, baseURL)
-		openAIClient := ai.OpenAICompatibleClient{
-			APIKey:     apiKey,
-			Model:      model,
-			BaseURL:    baseURL,
-			HTTPClient: &http.Client{Timeout: 90 * time.Second},
-		}
-		textSummarizer = openAIClient
-		rssRecommender = openAIClient
-		dialogue = openAIClient
-	} else if apiKey := os.Getenv("OPENCODE_API_KEY"); apiKey != "" {
-		model := os.Getenv("OPENCODE_MODEL")
-		if model == "" {
-			model = "deepseek-v4.1-flash-free"
-		}
-		baseURL := os.Getenv("OPENCODE_BASE_URL")
-		if baseURL == "" {
-			baseURL = "https://opencode.ai/inference/v1"
-		}
-		log.Printf("OpenCode AI enabled (model=%s, base_url=%s)", model, baseURL)
-		openCodeClient := ai.OpenAICompatibleClient{
-			APIKey:     apiKey,
-			Model:      model,
-			BaseURL:    baseURL,
-			HTTPClient: &http.Client{Timeout: 90 * time.Second},
-		}
-		textSummarizer = openCodeClient
-		rssRecommender = openCodeClient
-		dialogue = openCodeClient
-	} else if apiKey := os.Getenv("DEEPSEEK_API_KEY"); apiKey != "" {
-		// Optional fallback for direct DeepSeek API usage.
-		model := os.Getenv("DEEPSEEK_MODEL")
-		if model == "" {
-			model = "deepseek-flash"
-		}
-		log.Printf("Direct DeepSeek summaries enabled (model=%s)", model)
-		deepSeekClient := ai.OpenAICompatibleClient{
-			APIKey:     apiKey,
-			Model:      model,
-			HTTPClient: &http.Client{Timeout: 90 * time.Second},
-		}
-		textSummarizer = deepSeekClient
-		rssRecommender = deepSeekClient
-		dialogue = deepSeekClient
-	} else {
-		log.Printf("AI summaries disabled: OPENCODE_API_KEY is not configured")
+	stateDir := os.Getenv("NUDGY_CODEX_STATE_DIR")
+	if stateDir == "" {
+		stateDir = "/var/lib/nudgy/codex"
 	}
+	runtime, err := codex.New(codex.Config{
+		Binary: os.Getenv("CODEX_BINARY"), Model: os.Getenv("CODEX_MODEL"),
+		APIKey: os.Getenv("CODEX_API_KEY"), StateDir: stateDir,
+	})
+	if err != nil {
+		log.Fatalf("Codex harness configuration: %v", err)
+	}
+	log.Printf("Codex app-server harness enabled (model=%s); legacy AI routing disabled", os.Getenv("CODEX_MODEL"))
+	var webAssistant service.WebAssistant
 
-	// Google Search grounding remains a separate provider; OpenRouter models do
-	// not provide Google's live Search grounding as a capability here.
+	// Search is a tool offered to Codex, never a conversation router or fallback.
 	if apiKey := os.Getenv("GEMINI_API_KEY"); apiKey != "" {
 		log.Printf("Google web search enabled separately (model=%s)", os.Getenv("GEMINI_MODEL"))
 		geminiClient := ai.GeminiClient{
@@ -224,10 +147,10 @@ func main() {
 		log.Printf("Google web search disabled: GEMINI_API_KEY is not configured")
 	}
 	_, feedbinTimezone := reminderConfig()
+	digestGenerator := service.NewAgentDigest(runtime, feedbinDigestService, feedbinTimezone)
 	feedbinDigestHandler := handler.NewFeedbinDigestHandler(
 		installationRepository,
-		feedbinDigestService,
-		textSummarizer,
+		digestGenerator,
 		slackAPIClient,
 		feedbinTimezone,
 		os.Getenv("NUDGE_TEST_TOKEN"),
@@ -259,9 +182,7 @@ func main() {
 		installationRepository,
 		bookmarkService,
 		feedbinDigestService,
-		textSummarizer,
-		rssRecommender,
-		dialogue,
+		runtime,
 		webAssistant,
 		conversationRepository,
 		slackAPIClient,
@@ -298,8 +219,7 @@ func main() {
 			reminderTimezone,
 			installationRepository,
 			feedbinRepository,
-			feedbinDigestService,
-			textSummarizer,
+			digestGenerator,
 			notificationRepository,
 			slackAPIClient,
 		)

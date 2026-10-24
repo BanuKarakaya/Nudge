@@ -7,9 +7,11 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-
-	"nudge/internal/service"
 )
+
+type testTransport func(*http.Request) (*http.Response, error)
+
+func (f testTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 func groundedFixture(finish string) string {
 	payload, _ := json.Marshal(map[string]any{
@@ -33,15 +35,27 @@ func TestSearchWebUsesGoogleSearchWithoutJSONSchema(t *testing.T) {
 	calls := 0
 	client := GeminiClient{APIKey: "secret-test", HTTPClient: &http.Client{Transport: testTransport(func(r *http.Request) (*http.Response, error) {
 		calls++
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
 		var payload generateRequest
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		if err := json.Unmarshal(body, &payload); err != nil {
 			t.Fatal(err)
 		}
 		if len(payload.Tools) != 1 || payload.Tools[0].GoogleSearch == nil {
 			t.Fatal("Google Search tool not enabled")
 		}
-		if payload.GenerationConfig.ResponseSchema != nil || payload.GenerationConfig.ResponseMimeType != "" {
-			t.Fatal("search must not use the structured routing schema")
+		var wire struct {
+			GenerationConfig map[string]json.RawMessage `json:"generationConfig"`
+		}
+		if err := json.Unmarshal(body, &wire); err != nil {
+			t.Fatal(err)
+		}
+		for _, key := range []string{"responseSchema", "responseMimeType"} {
+			if _, exists := wire.GenerationConfig[key]; exists {
+				t.Fatalf("search must not send %s", key)
+			}
 		}
 		if !strings.Contains(payload.Contents[0].Parts[0].Text, "AI agent hakkında bir makale") {
 			t.Fatal("lost requested topic")
@@ -127,23 +141,23 @@ func TestGroundedLinksCannotInjectSlackMarkup(t *testing.T) {
 	}
 }
 
-func TestConverseCanRequestWebSearchDespiteEarlierRSSConversation(t *testing.T) {
-	var state service.ConversationState
-	state.Remember("RSS öner", "<https://example.com/fridges|Fridges>", service.ConversationRSSSummary)
-	state.Remember("AI agent makalesi bul", "İnternet arama yeteneğim yok.", service.ConversationReply)
-	client := GeminiClient{APIKey: "test", HTTPClient: &http.Client{Transport: testTransport(func(r *http.Request) (*http.Response, error) {
-		var payload generateRequest
-		_ = json.NewDecoder(r.Body).Decode(&payload)
-		prompt := payload.Contents[0].Parts[0].Text
-		if !strings.Contains(prompt, "WEB_SEARCH") || !strings.Contains(prompt, "bugünkü araç listesini esas al") || !strings.Contains(prompt, "RSSlerimden olmayan") {
-			t.Fatal("missing current request/capabilities")
-		}
-		decision, _ := json.Marshal(service.ConversationDecision{Action: service.ConversationWebSearch, SearchRequest: "AI agent hakkında açık webden bir makale öner."})
-		body, _ := json.Marshal(map[string]any{"candidates": []any{map[string]any{"finishReason": "STOP", "content": map[string]any{"parts": []any{map[string]any{"text": string(decision)}}}}}})
-		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(string(body)))}, nil
-	})}}
-	decision, err := client.Converse(context.Background(), state, "Bana RSSlerimden olmayan AI agent ile ilgili internetten bir makale öner")
-	if err != nil || decision.Action != service.ConversationWebSearch || decision.SearchRequest == "" {
-		t.Fatalf("web action rejected: %+v %v", decision, err)
+func TestSearchWebRejectsMissingConfigurationOrRequestWithoutCallingAPI(t *testing.T) {
+	for _, tc := range []struct {
+		name, apiKey, request string
+	}{
+		{"missing key", "", "find article"},
+		{"empty request", "test", ""},
+		{"blank request", "test", " \n\t "},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := GeminiClient{APIKey: tc.apiKey, HTTPClient: &http.Client{Transport: testTransport(func(*http.Request) (*http.Response, error) {
+				t.Fatal("invalid search must not make an HTTP request")
+				return nil, nil
+			})}}
+			answer, err := client.SearchWeb(context.Background(), tc.request)
+			if answer != "" || err == nil {
+				t.Fatalf("invalid search accepted: %q %v", answer, err)
+			}
+		})
 	}
 }

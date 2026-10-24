@@ -19,14 +19,13 @@ type FeedbinReminder struct {
 	timezone      *time.Location
 	installations repository.InstallationRepository
 	connections   repository.FeedbinConnectionRepository
-	digest        *service.FeedbinDigestService
-	ai            service.TextSummarizer
+	generator     service.DigestGenerator
 	notifications repository.NotificationRepository
 	slack         SlackWorkspaceClient
 }
 
-func NewFeedbinReminder(seedUserID int64, timezone *time.Location, installations repository.InstallationRepository, connections repository.FeedbinConnectionRepository, digest *service.FeedbinDigestService, ai service.TextSummarizer, notifications repository.NotificationRepository, slack SlackWorkspaceClient) *FeedbinReminder {
-	return &FeedbinReminder{seedUserID: seedUserID, timezone: timezone, installations: installations, connections: connections, digest: digest, ai: ai, notifications: notifications, slack: slack}
+func NewFeedbinReminder(seedUserID int64, timezone *time.Location, installations repository.InstallationRepository, connections repository.FeedbinConnectionRepository, generator service.DigestGenerator, notifications repository.NotificationRepository, slack SlackWorkspaceClient) *FeedbinReminder {
+	return &FeedbinReminder{seedUserID: seedUserID, timezone: timezone, installations: installations, connections: connections, generator: generator, notifications: notifications, slack: slack}
 }
 
 func (r *FeedbinReminder) Run(ctx context.Context) {
@@ -81,7 +80,7 @@ func (r *FeedbinReminder) processMember(ctx context.Context, teamID, botToken, s
 	if err != nil || exists {
 		return err
 	}
-	digest, err := r.digest.BuildSummary(ctx, userID, since, r.ai, until)
+	digest, err := r.generator.Generate(ctx, userID, since, until)
 	if err != nil {
 		return fmt.Errorf("build Feedbin digest: %w", err)
 	}

@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"nudge/internal/domain"
-	"nudge/internal/repository"
-	"nudge/internal/service"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"nudge/internal/domain"
+	"nudge/internal/repository"
+	"nudge/internal/service"
 )
 
 type conversationTestStore map[service.ConversationKey][]byte
@@ -22,24 +24,22 @@ func (s conversationTestStore) Load(_ context.Context, k service.ConversationKey
 	}
 	return state, nil
 }
-func (s conversationTestStore) Save(_ context.Context, k service.ConversationKey, state service.ConversationState) error {
+func (s conversationTestStore) Save(ctx context.Context, k service.ConversationKey, state service.ConversationState) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	raw, err := json.Marshal(state)
 	s[k] = raw
 	return err
 }
 
-type dialogueFunc func(context.Context, service.ConversationState, string) (service.ConversationDecision, error)
+type agentFunc func(context.Context, service.AgentRequest) (service.AgentResult, error)
 
-type webFunc func(context.Context, string) (string, error)
-
-func (f webFunc) SearchWeb(ctx context.Context, request string) (string, error) {
+func (f agentFunc) Run(ctx context.Context, request service.AgentRequest) (service.AgentResult, error) {
 	return f(ctx, request)
 }
 
-func (f dialogueFunc) Converse(c context.Context, s service.ConversationState, r string) (service.ConversationDecision, error) {
-	return f(c, s, r)
-}
-
+// Shared with auth_test.go.
 type conversationInstallations struct {
 	repository.InstallationRepository
 }
@@ -52,152 +52,216 @@ func (conversationInstallations) GetByUserID(context.Context, int64) (domain.Sla
 }
 
 type conversationSender struct {
-	messages []string
-	fail     bool
+	messages   []string
+	fail       bool
+	beforeSend func(context.Context, string)
 }
 
-func (s *conversationSender) PostMessageInThread(_ context.Context, _, _, _, text string) error {
+func (s *conversationSender) PostMessageInThread(ctx context.Context, _, _, _, text string) error {
+	if s.beforeSend != nil {
+		s.beforeSend(ctx, text)
+	}
 	if s.fail {
 		return errors.New("send failed")
 	}
 	s.messages = append(s.messages, text)
 	return nil
 }
-
-func TestFollowUpUsesDeliveredSummaryAfterThanksAndHandlerRestart(t *testing.T) {
+func conversationEvent(text string) slackEventEnvelope {
+	event := slackEventEnvelope{TeamID: "T", Type: "event_callback"}
+	event.Event.Type = "app_mention"
+	event.Event.Channel, event.Event.User, event.Event.TS, event.Event.Text = "C", "U", "1.0", text
+	return event
+}
+func deliveredState() service.ConversationState {
+	return service.ConversationState{
+		Turns:    []service.ConversationExchange{{Request: "özet", Reply: "<https://example.com/one|One>"}},
+		Articles: []service.ConversationArticle{{ID: "PREVIOUS-1", Title: "One", URL: "https://example.com/one"}},
+		RSS:      &service.RSSSummaryProgress{Scope: "today", ShownKeys: []string{"url:https://example.com/one"}},
+	}
+}
+func assertAgentInput(t *testing.T, input, message, timezone string) {
+	t.Helper()
+	prefix, ok := strings.CutSuffix(input, "\n\nSlack message:\n"+message)
+	if !ok || !strings.HasSuffix(prefix, "\nTimezone: "+timezone) {
+		t.Fatalf("missing message/timezone: %q", input)
+	}
+	stamp := strings.TrimSuffix(strings.TrimPrefix(prefix, "Current time: "), "\nTimezone: "+timezone)
+	now, err := time.Parse(time.RFC3339, stamp)
+	if err != nil || time.Since(now) < -time.Second || time.Since(now) > time.Minute {
+		t.Fatalf("invalid current time: %q %v", stamp, err)
+	}
+}
+func TestAgentBootstrapsJSONHistoryAndResumesAfterHandlerRestart(t *testing.T) {
 	store := make(conversationTestStore)
 	key := service.ConversationKey{Team: "T", Channel: "C", Thread: "1.0", User: "U"}
-	state := service.ConversationState{}
-	state.Remember("rss özetimi ver", "<https://example.com/one|First>\nKonu: Bir.\n<https://example.com/two|Second>\nKonu: İki.\n<https://example.com/three|Third>\nKonu: Üç.", service.ConversationRSSSummary)
+	state := deliveredState()
 	if err := store.Save(context.Background(), key, state); err != nil {
 		t.Fatal(err)
 	}
 	sender := &conversationSender{}
-	makeHandler := func(model service.ConversationAssistant) *SlackEventHandler {
-		return &SlackEventHandler{installations: conversationInstallations{}, history: store, dialogue: model, client: sender, timezone: time.UTC}
-	}
-	event := slackEventEnvelope{TeamID: "T"}
-	event.Event.User = "U"
-	event.Event.Channel = "C"
-	event.Event.ThreadTS = "1.0"
-	event.Event.Text = "Teşekkür ederim"
-	h := makeHandler(dialogueFunc(func(_ context.Context, s service.ConversationState, _ string) (service.ConversationDecision, error) {
-		return service.ConversationDecision{Action: service.ConversationReply, Reply: "Rica ederim!"}, nil
-	}))
-	h.replyWithSummary(event)
-	requests := []string{
-		"peki bu bana verdiğin rss özetinden sadece 1 tane rss okuyacak zamanım var desem hangi rss i seçerdim",
-		"Bunlardan birini seçsen?",
-	}
-	for _, request := range requests {
-		event.Event.Text = request
-		h = makeHandler(dialogueFunc(func(_ context.Context, s service.ConversationState, r string) (service.ConversationDecision, error) {
-			if r != request || len(s.Articles) != 3 || len(s.Turns) < 2 {
-				t.Fatalf("context missing: %+v", s)
+	for i, input := range []string{"<@B123> teşekkürler", "bunlardan hangisini okuyayım?"} {
+		want := state
+		runtime := agentFunc(func(_ context.Context, request service.AgentRequest) (service.AgentResult, error) {
+			if request.Key != key || request.ThreadID != want.AgentThreadID || !reflect.DeepEqual(request.History, want) {
+				t.Fatalf("missing delivered context: %+v", request)
 			}
-			return service.ConversationDecision{Action: service.ConversationSelect, ArticleID: s.Articles[1].ID, Reply: "İkinci makale ihtiyacına daha uygun."}, nil
-		}))
-		// Feedbin is deliberately nil: a follow-up must not fetch a new inventory.
+			assertAgentInput(t, request.Input, strings.TrimSpace(slackUserMention.ReplaceAllString(input, "")), "UTC")
+			return service.AgentResult{ThreadID: "codex-thread", Text: "Agent reply"}, nil
+		})
+		sender.beforeSend = func(context.Context, string) {
+			before, err := store.Load(context.Background(), key)
+			if err != nil || !reflect.DeepEqual(before, want) {
+				t.Fatalf("history advanced before delivery: %+v %v", before, err)
+			}
+		}
+		h := NewSlackEventHandler("signing", conversationInstallations{}, nil, nil, runtime, nil, store, sender, time.UTC)
+		event := conversationEvent(input)
+		if i > 0 {
+			event.Event.TS, event.Event.ThreadTS = "2.0", "1.0"
+		}
 		h.replyWithSummary(event)
-		last := sender.messages[len(sender.messages)-1]
-		if strings.Count(last, "https://") != 1 || !strings.Contains(last, "https://example.com/two") || strings.Contains(last, "First") {
-			t.Fatalf("wrong selection: %s", last)
+		state.AgentThreadID = "codex-thread"
+		state.Remember(input, "Agent reply", "AGENT")
+		got, err := store.Load(context.Background(), key)
+		if err != nil || !reflect.DeepEqual(got, state) {
+			t.Fatalf("history not saved after delivery: %+v %v", got, err)
 		}
 	}
-	for _, change := range []string{"user", "team", "channel", "thread"} {
-		other := event
-		switch change {
-		case "user":
-			other.Event.User = "U2"
-		case "team":
-			other.TeamID = "T2"
-		case "channel":
-			other.Event.Channel = "C2"
-		case "thread":
-			other.Event.ThreadTS = "2.0"
-		}
-		h = makeHandler(dialogueFunc(func(_ context.Context, s service.ConversationState, _ string) (service.ConversationDecision, error) {
-			if len(s.Articles) != 0 || len(s.Turns) != 0 {
-				t.Fatalf("history leaked across %s", change)
+	if len(sender.messages) != 2 {
+		t.Fatalf("messages=%v", sender.messages)
+	}
+}
+func TestAgentHistoryAndThreadIDAreIsolatedByFullSlackScope(t *testing.T) {
+	base := service.ConversationKey{Team: "T", Channel: "C", Thread: "1.0", User: "U"}
+	for _, field := range []string{"team", "channel", "thread", "user"} {
+		t.Run(field, func(t *testing.T) {
+			store := make(conversationTestStore)
+			state := deliveredState()
+			state.AgentThreadID = "private-thread"
+			if err := store.Save(context.Background(), base, state); err != nil {
+				t.Fatal(err)
 			}
-			return service.ConversationDecision{Action: service.ConversationReply, Reply: "Önceki özeti burada göremiyorum."}, nil
-		}))
-		h.replyWithSummary(other)
+			event := conversationEvent("merhaba")
+			switch field {
+			case "team":
+				event.TeamID = "T2"
+			case "channel":
+				event.Event.Channel = "C2"
+			case "thread":
+				event.Event.ThreadTS = "2.0"
+			case "user":
+				event.Event.User = "U2"
+			}
+			calls := 0
+			h := &SlackEventHandler{installations: conversationInstallations{}, history: store, client: &conversationSender{},
+				runtime: agentFunc(func(_ context.Context, request service.AgentRequest) (service.AgentResult, error) {
+					calls++
+					if request.Key == base || request.ThreadID != "" || !reflect.DeepEqual(request.History, service.ConversationState{}) {
+						t.Fatalf("context leaked across %s: %+v", field, request)
+					}
+					return service.AgentResult{ThreadID: "separate-thread", Text: "Merhaba"}, nil
+				}),
+			}
+			h.replyWithSummary(event)
+			got, err := store.Load(context.Background(), base)
+			if calls != 1 || err != nil || !reflect.DeepEqual(got, state) {
+				t.Fatalf("original scope changed: calls=%d state=%+v err=%v", calls, got, err)
+			}
+		})
 	}
 }
-
-func TestUnknownArticleDoesNotBecomeANewRSSRequest(t *testing.T) {
-	h := &SlackEventHandler{dialogue: dialogueFunc(func(context.Context, service.ConversationState, string) (service.ConversationDecision, error) {
-		return service.ConversationDecision{Action: service.ConversationSelect, ArticleID: "PREVIOUS-999", Reply: "Bunu seçtim."}, nil
-	})}
-	message, _, err := h.conversationReply(context.Background(), service.ConversationState{}, "birini seç", 1, time.Now())
-	if err == nil || message == "" {
-		t.Fatalf("expected explicit failure, got %s %v", message, err)
+func TestAgentFailureResetsThreadAndBootstrapsOnlyDeliveredHistory(t *testing.T) {
+	for _, tc := range []struct {
+		name, text            string
+		err                   error
+		sendFails, nilRuntime bool
+	}{
+		{name: "generation", text: "unshown output", err: errors.New("private provider error")},
+		{name: "generation timeout", err: context.DeadlineExceeded},
+		{name: "empty"},
+		{name: "whitespace", text: " \n\t"},
+		{name: "too long", text: strings.Repeat("ş", 35001)},
+		{name: "delivery", text: "unshown output", sendFails: true},
+		{name: "missing runtime", nilRuntime: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := make(conversationTestStore)
+			key := service.ConversationKey{Team: "T", Channel: "C", Thread: "1.0", User: "U"}
+			old := deliveredState()
+			old.AgentThreadID = "old-thread"
+			old.AgentTokenUsage = &service.AgentTokenUsage{Input: 100, Output: 20, Total: 120}
+			if err := store.Save(context.Background(), key, old); err != nil {
+				t.Fatal(err)
+			}
+			sender := &conversationSender{fail: tc.sendFails, beforeSend: func(ctx context.Context, _ string) {
+				if ctx.Err() != nil {
+					t.Fatal("failure delivery inherited canceled run context")
+				}
+			}}
+			calls := 0
+			h := &SlackEventHandler{installations: conversationInstallations{}, history: store, client: sender}
+			if !tc.nilRuntime {
+				h.runtime = agentFunc(func(_ context.Context, request service.AgentRequest) (service.AgentResult, error) {
+					calls++
+					if request.ThreadID != "old-thread" {
+						t.Fatalf("wrong resume ID: %s", request.ThreadID)
+					}
+					request.History.Turns[0].Reply = "unshown"
+					request.History.Articles[0].Title = "unshown"
+					request.History.RSS.ShownKeys[0] = "unshown"
+					request.History.AgentTokenUsage.Total = 999
+					return service.AgentResult{ThreadID: "unsafe-thread", Text: tc.text}, tc.err
+				})
+			}
+			h.replyWithSummary(conversationEvent("<@B123> merhaba"))
+			old.AgentThreadID = ""
+			old.AgentTokenUsage = nil
+			got, err := store.Load(context.Background(), key)
+			if err != nil || !reflect.DeepEqual(got, old) {
+				t.Fatalf("failed turn polluted delivered history: %+v %v", got, err)
+			}
+			if !tc.nilRuntime && calls != 1 {
+				t.Fatalf("runtime failure triggered fallback/retry: calls=%d", calls)
+			}
+			if tc.sendFails {
+				if len(sender.messages) != 0 {
+					t.Fatalf("unexpected delivery: %v", sender.messages)
+				}
+			} else if len(sender.messages) != 1 || sender.messages[0] != agentFailureMessage {
+				t.Fatalf("unsafe failure response: %v", sender.messages)
+			}
+			sender.fail = false
+			bootstrapped := false
+			runtime := agentFunc(func(_ context.Context, request service.AgentRequest) (service.AgentResult, error) {
+				bootstrapped = true
+				if request.ThreadID != "" || !reflect.DeepEqual(request.History, old) {
+					t.Fatalf("new thread did not bootstrap delivered history: %+v", request)
+				}
+				return service.AgentResult{ThreadID: "fresh-thread", Text: "Delivered"}, nil
+			})
+			// Reconstruct the handler to prove reset is persistent, not process-local.
+			h = NewSlackEventHandler("", conversationInstallations{}, nil, nil, runtime, nil, store, sender, nil)
+			event := conversationEvent("yeniden dene")
+			event.Event.TS, event.Event.ThreadTS = "2.0", "1.0"
+			h.replyWithSummary(event)
+			got, err = store.Load(context.Background(), key)
+			if !bootstrapped || err != nil || got.AgentThreadID != "fresh-thread" || len(got.Turns) != 2 || got.Turns[1].Reply != "Delivered" {
+				t.Fatalf("fresh thread not persisted: %+v %v", got, err)
+			}
+		})
 	}
 }
-
-func TestUndeliveredAnswerIsNotRemembered(t *testing.T) {
-	store := make(conversationTestStore)
-	sender := &conversationSender{fail: true}
-	h := &SlackEventHandler{
-		installations: conversationInstallations{}, history: store, client: sender,
-		dialogue: dialogueFunc(func(context.Context, service.ConversationState, string) (service.ConversationDecision, error) {
-			return service.ConversationDecision{Action: service.ConversationReply, Reply: "Merhaba!"}, nil
-		}),
-	}
-	event := slackEventEnvelope{TeamID: "T"}
-	event.Event.Channel, event.Event.User, event.Event.TS = "C", "U", "1.0"
-	event.Event.Text = "selam"
-	h.replyWithSummary(event)
-	if len(store) != 0 {
-		t.Fatal("undelivered answer was saved as conversation history")
-	}
-}
-
-func TestWebRequestDoesNotFetchRSSAndIsRememberedForFollowUp(t *testing.T) {
-	store := make(conversationTestStore)
+func TestAgentAcceptsSlackCharacterLimitBoundary(t *testing.T) {
 	sender := &conversationSender{}
-	h := &SlackEventHandler{installations: conversationInstallations{}, history: store, client: sender}
-	h.dialogue = dialogueFunc(func(_ context.Context, s service.ConversationState, _ string) (service.ConversationDecision, error) {
-		return service.ConversationDecision{Action: service.ConversationWebSearch, SearchRequest: "AI agent mimarileri hakkında bir makale öner."}, nil
-	})
-	calls := 0
-	h.web = webFunc(func(_ context.Context, request string) (string, error) {
-		calls++
-		if request != "AI agent mimarileri hakkında bir makale öner." {
-			t.Fatalf("wrong request: %s", request)
-		}
-		return "AI agent mimarileri.\n<https://example.com/agents|Agent makalesi>", nil
-	})
-	event := slackEventEnvelope{TeamID: "T"}
-	event.Event.Channel, event.Event.User, event.Event.TS = "C", "U", "1.0"
-	event.Event.Text = "RSSlerimden değil internetten AI agent makalesi öner"
-	// Neither a Feedbin nor a Raindrop connection exists in this test.
-	h.replyWithSummary(event)
-	event.Event.ThreadTS = "1.0"
-	event.Event.Text = "Bu makale neden önemli?"
-	event.Event.TS = "2.0" // A new Slack reply has its own event timestamp.
-	h.dialogue = dialogueFunc(func(_ context.Context, s service.ConversationState, _ string) (service.ConversationDecision, error) {
-		if len(s.Turns) != 1 || !strings.Contains(s.Turns[0].Reply, "example.com/agents") {
-			t.Fatalf("missing web context: %+v", s)
-		}
-		return service.ConversationDecision{Action: service.ConversationReply, Reply: "Agent mimarilerini karşılaştırdığı için."}, nil
-	})
-	h.replyWithSummary(event)
-	if calls != 1 || len(sender.messages) != 2 || !strings.Contains(sender.messages[1], "karşılaştırdığı") {
-		t.Fatalf("unexpected calls/messages: %d %+v", calls, sender.messages)
-	}
-}
-
-func TestFailedWebSearchDoesNotFallBackToRSS(t *testing.T) {
-	h := &SlackEventHandler{
-		dialogue: dialogueFunc(func(context.Context, service.ConversationState, string) (service.ConversationDecision, error) {
-			return service.ConversationDecision{Action: service.ConversationWebSearch, SearchRequest: "AI agents"}, nil
+	text := strings.Repeat("ş", 35000)
+	h := &SlackEventHandler{installations: conversationInstallations{}, history: make(conversationTestStore), client: sender,
+		runtime: agentFunc(func(context.Context, service.AgentRequest) (service.AgentResult, error) {
+			return service.AgentResult{ThreadID: "thread", Text: text}, nil
 		}),
-		web: webFunc(func(context.Context, string) (string, error) { return "", errors.New("quota") }),
 	}
-	message, action, err := h.conversationReply(context.Background(), service.ConversationState{}, "ara", 1, time.Now())
-	if err == nil || action != service.ConversationWebSearch || !strings.Contains(message, "İnternet aramasını") {
-		t.Fatalf("wrong failure: %s %s %v", action, message, err)
+	h.replyWithSummary(conversationEvent("uzun yanıt"))
+	if len(sender.messages) != 1 || sender.messages[0] != text {
+		t.Fatal("valid Unicode character limit rejected")
 	}
 }

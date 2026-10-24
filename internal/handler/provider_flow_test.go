@@ -3,141 +3,183 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"io"
-	"net/http"
+	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"nudge/internal/ai"
 	"nudge/internal/domain"
 	"nudge/internal/feedbin"
 	"nudge/internal/repository"
 	"nudge/internal/service"
 )
 
-type flowConnections struct {
+type callerInstallations struct {
+	repository.InstallationRepository
+}
+
+func (callerInstallations) GetUserIDBySlackUserID(_ context.Context, team, user string) (int64, error) {
+	if team == "T" && user == "U" {
+		return 11, nil
+	}
+	return 22, nil
+}
+func (callerInstallations) GetByUserID(_ context.Context, user int64) (domain.SlackInstallation, error) {
+	return domain.SlackInstallation{BotToken: fmt.Sprint(user)}, nil
+}
+
+type callerBookmarks struct {
+	service.BookmarkService
+	users     []int64
+	locations []string
+}
+
+func (b *callerBookmarks) ListByDate(_ context.Context, user int64, from, to time.Time) ([]domain.Bookmark, error) {
+	b.users = append(b.users, user)
+	b.locations = append(b.locations, from.Location().String())
+	return []domain.Bookmark{{ID: user, UserID: user, Title: fmt.Sprintf("Bookmark %d", user), SavedAt: from.Add(time.Hour)}}, nil
+}
+
+type callerConnections struct {
 	repository.FeedbinConnectionRepository
-	err error
+	users []int64
 }
 
-func (f flowConnections) GetByUserID(context.Context, int64) (domain.FeedbinConnection, error) {
-	return domain.FeedbinConnection{Email: "test", Password: "test"}, f.err
+func (c *callerConnections) GetByUserID(_ context.Context, user int64) (domain.FeedbinConnection, error) {
+	c.users = append(c.users, user)
+	return domain.FeedbinConnection{Email: fmt.Sprint(user), Password: "secret"}, nil
 }
 
-type flowFeedbin struct {
-	entries []feedbin.Entry
-	calls   int
-	since   time.Time
-}
+type callerFeedbin struct{ emails []string }
 
-func (f *flowFeedbin) ListUnreadSince(_ context.Context, _, _ string, since time.Time) ([]feedbin.Entry, error) {
-	f.calls++
-	f.since = since
-	return f.entries, nil
+func (f *callerFeedbin) ListUnreadSince(_ context.Context, email, password string, since time.Time) ([]feedbin.Entry, error) {
+	f.emails = append(f.emails, email)
+	return []feedbin.Entry{{ID: 1, Title: "RSS " + email, URL: "https://example.com/" + email, CreatedAt: time.Now()}}, nil
 }
-func (*flowFeedbin) ListTaggings(context.Context, string, string) ([]feedbin.Tagging, error) {
+func (*callerFeedbin) ListTaggings(context.Context, string, string) ([]feedbin.Tagging, error) {
 	return nil, nil
 }
 
-type flowTransport func(*http.Request) (*http.Response, error)
+type webFunc func(context.Context, string) (string, error)
 
-func (f flowTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+func (f webFunc) SearchWeb(ctx context.Context, input string) (string, error) { return f(ctx, input) }
 
-// Exercise real provider parsing, dispatch, data services, rendering and history.
-// Only HTTP, the database and Slack delivery are replaced with test doubles.
-func TestProviderToSlackConversationFlow(t *testing.T) {
-	clock := time.Now()
-	entries := &flowFeedbin{entries: []feedbin.Entry{
-		{ID: 1, Title: "Bir", URL: "https://example.com/1", CreatedAt: clock},
-		{ID: 2, Title: "İki", URL: "https://example.com/2", CreatedAt: clock},
-		{ID: 3, Title: "Üç", URL: "https://example.com/3", CreatedAt: clock},
-	}}
-	outputs := []string{
-		`{"action":"RSS_TODAY_STATS","reply":"","article_id":"","search_request":""}`,
-		`{"action":"RSS_SUMMARY","reply":"" a}`, // exact production failure shape
-		`{"action":"RSS_SUMMARY","reply":"","article_id":"","search_request":""}`,
-		`{"articles":[{"id":"RSS-1","topic":"Birinci konu.","importance":"Birinci gerekçe."},{"id":"RSS-2","topic":"İkinci konu.","importance":"İkinci gerekçe."},{"id":"RSS-3","topic":"Üçüncü konu.","importance":"Üçüncü gerekçe."}]}`,
-		`{"action":"SELECT_PREVIOUS","reply":"İkinci makaleyi seçerdim, kısa bir giriş sunuyor.","article_id":"PREVIOUS-2","search_request":""}`,
+func TestAgentToolsAreBoundToResolvedCallerAndConfiguredTimezone(t *testing.T) {
+	location, err := time.LoadLocation("Europe/Istanbul")
+	if err != nil {
+		t.Fatal(err)
 	}
+	bookmarks := &callerBookmarks{}
+	connections := &callerConnections{}
+	feed := &callerFeedbin{}
+	digest := service.NewFeedbinDigestService(connections, feed)
+	searches := 0
+	web := webFunc(func(_ context.Context, query string) (string, error) {
+		searches++
+		if query != "agent architecture" {
+			t.Fatalf("unexpected query: %q", query)
+		}
+		return "external source", nil
+	})
 	calls := 0
-	model := ai.OpenAICompatibleClient{APIKey: "test", Model: "openrouter/free", BaseURL: "https://openrouter.ai/api/v1", HTTPClient: &http.Client{Transport: flowTransport(func(r *http.Request) (*http.Response, error) {
-		if calls >= len(outputs) {
-			t.Fatal("unexpected extra model request")
+	runtime := agentFunc(func(ctx context.Context, request service.AgentRequest) (service.AgentResult, error) {
+		calls++
+		user := int64(11)
+		if request.Key.User == "U2" {
+			user = 22
 		}
-		var payload struct {
-			Messages       []struct{ Role, Content string }
-			ResponseFormat json.RawMessage `json:"response_format"`
+		assertAgentInput(t, request.Input, "kaynaklarım", "Europe/Istanbul")
+		if request.Tools == nil {
+			t.Fatal("missing caller tools")
 		}
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		bookmarkArgs := json.RawMessage(`{"from":"2026-10-01","to":"2026-10-02"}`)
+		raw, err := request.Tools.Call(ctx, "bookmarks_list", bookmarkArgs)
+		if err != nil || !strings.Contains(raw, fmt.Sprintf("Bookmark %d", user)) {
+			t.Fatalf("wrong bookmark tool binding: %s %v", raw, err)
+		}
+		// A model cannot select a different account via tool arguments.
+		if _, err := request.Tools.Call(ctx, "bookmarks_list", json.RawMessage(`{"from":"2026-10-01","to":"2026-10-02","user_id":999}`)); err == nil {
+			t.Fatal("tool accepted model-selected user")
+		}
+		for _, name := range []string{"rss_inventory", "rss_articles"} {
+			raw, err = request.Tools.Call(ctx, name, json.RawMessage(`{"scope":"all_unread"}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		if !strings.Contains(raw, "RSS "+fmt.Sprint(user)) {
+			t.Fatalf("wrong RSS binding: %s", raw)
+		}
+		raw, err = request.Tools.Call(ctx, "rss_inventory", json.RawMessage(`{"scope":"today"}`))
+		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(string(payload.ResponseFormat), "json_schema") {
-			t.Fatal("schema missing")
+		var window struct {
+			Timezone  string
+			Reference time.Time `json:"reference_time"`
 		}
-		if calls == 0 && strings.Contains(payload.Messages[len(payload.Messages)-1].Content, "<@") {
-			t.Fatal("mention leaked into request")
+		if err = json.Unmarshal([]byte(raw), &window); err != nil || window.Timezone != "Europe/Istanbul" || time.Since(window.Reference) > time.Minute {
+			t.Fatalf("wrong bound clock: %s %v", raw, err)
 		}
-		if calls == 4 {
-			found := false
-			for _, m := range payload.Messages {
-				if m.Role == "assistant" && strings.Contains(m.Content, "https://example.com/2") {
-					found = true
-				}
-			}
-			if !found {
-				t.Fatal("delivered summary missing from follow-up context")
-			}
+		if !strings.Contains(request.Input, "Current time: "+window.Reference.Format(time.RFC3339)) {
+			t.Fatalf("model and tools received different clocks: %s", request.Input)
 		}
-		body, _ := json.Marshal(map[string]any{"model": "mock-free-model", "choices": []any{map[string]any{"message": map[string]any{"content": outputs[calls]}, "finish_reason": "stop"}}})
-		calls++
-		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(string(body)))}, nil
-	})}}
+		raw, err = request.Tools.Call(ctx, "web_search", json.RawMessage(`{"query":"agent architecture"}`))
+		if err != nil || raw != "external source" {
+			t.Fatalf("web dependency missing: %s %v", raw, err)
+		}
+		return service.AgentResult{ThreadID: fmt.Sprint(user), Text: "Agent synthesized answer"}, nil
+	})
 	sender := &conversationSender{}
-	h := &SlackEventHandler{installations: conversationInstallations{}, history: make(conversationTestStore), client: sender, dialogue: model, ai: model, recommender: model, timezone: time.UTC, feedbinDigest: service.NewFeedbinDigestService(flowConnections{}, entries)}
-	event := slackEventEnvelope{TeamID: "T"}
-	event.Event.User, event.Event.Channel, event.Event.ThreadTS = "U", "C", "1.0"
-	requests := []string{"<@B123> nasılsın", "bugün kaç RSS'im var", "bugünkü özetimi verir misin", "bunlardan sadece birini okuyabilsem hangisini seçerdin"}
-	for _, request := range requests {
-		event.Event.Text = request
+	h := NewSlackEventHandler("signing", callerInstallations{}, bookmarks, digest, runtime, web, make(conversationTestStore), sender, location)
+	for _, user := range []string{"U", "U2", "U"} {
+		event := conversationEvent("<@B123> kaynaklarım")
+		event.Event.User = user
+		event.EventID = fmt.Sprintf("event-%d", calls)
 		h.replyWithSummary(event)
 	}
-	if calls != 5 || len(sender.messages) != 4 {
-		t.Fatalf("model calls=%d, replies=%v", calls, sender.messages)
+	if calls != 3 || searches != 3 || len(sender.messages) != 3 {
+		t.Fatalf("runs=%d searches=%d messages=%v", calls, searches, sender.messages)
 	}
-	if !strings.Contains(sender.messages[0], "İyiyim") || !strings.Contains(sender.messages[1], "*3 RSS'in*") {
-		t.Fatalf("wrong greeting/count: %v", sender.messages[:2])
+	if !reflect.DeepEqual(bookmarks.users, []int64{11, 22, 11}) || !reflect.DeepEqual(connections.users, []int64{11, 22, 11}) || !reflect.DeepEqual(feed.emails, []string{"11", "22", "11"}) {
+		t.Fatalf("caller scope or per-run refresh wrong: bookmarks=%v connections=%v feed=%v", bookmarks.users, connections.users, feed.emails)
 	}
-	if strings.Count(sender.messages[2], "Neden önemli:") != 3 {
-		t.Fatalf("not a complete summary: %s", sender.messages[2])
-	}
-	if strings.Count(sender.messages[3], "https://") != 1 || !strings.Contains(sender.messages[3], "https://example.com/2") {
-		t.Fatalf("wrong follow-up: %s", sender.messages[3])
-	}
-	if entries.calls != 2 {
-		t.Fatalf("follow-up refetched Feedbin: %d", entries.calls)
+	for _, got := range bookmarks.locations {
+		if got != "Europe/Istanbul" {
+			t.Fatalf("bookmark timezone=%s", got)
+		}
 	}
 }
 
-func TestTodayCountWindowDeduplicationAndMissingConnection(t *testing.T) {
-	now := time.Date(2026, 10, 16, 13, 0, 0, 0, time.UTC)
-	since := lastFeedbinStart(now, time.UTC)
-	f := &flowFeedbin{entries: []feedbin.Entry{
-		{ID: 1, CreatedAt: since.Add(-time.Second)},
-		{ID: 2, CreatedAt: since}, {ID: 2, CreatedAt: since},
-		{ID: 3, CreatedAt: now}, {ID: 4, CreatedAt: now.Add(time.Second)},
-	}}
-	h := &SlackEventHandler{timezone: time.UTC, feedbinDigest: service.NewFeedbinDigestService(flowConnections{}, f), dialogue: dialogueFunc(func(context.Context, service.ConversationState, string) (service.ConversationDecision, error) {
-		return service.ConversationDecision{Action: service.ConversationRSSTodayStats}, nil
-	})}
-	text, _, err := h.conversationReply(context.Background(), service.ConversationState{}, "bugün kaç rss", 1, now)
-	if err != nil || !strings.Contains(text, "*2 RSS'in*") || !f.since.Equal(since) {
-		t.Fatalf("%s %v since=%s", text, err, f.since)
-	}
-	h.feedbinDigest = service.NewFeedbinDigestService(flowConnections{err: pgx.ErrNoRows}, f)
-	text, _, err = h.conversationReply(context.Background(), service.ConversationState{}, "bugün kaç rss", 1, now)
-	if err == nil || !strings.Contains(text, "Feedbin hesabın henüz bağlı") {
-		t.Fatalf("%s %v", text, err)
+func TestDeliveredAgentUsageIsPersistedAndUnknownUsageStaysNil(t *testing.T) {
+	store := make(conversationTestStore)
+	key := service.ConversationKey{Team: "T", Channel: "C", Thread: "1.0", User: "U"}
+	sender := &conversationSender{}
+	var prior *service.AgentTokenUsage
+	for i, usage := range []*service.AgentTokenUsage{{Input: 100, Output: 20, Total: 120}, nil} {
+		expectedPrior := prior
+		runtime := agentFunc(func(_ context.Context, request service.AgentRequest) (service.AgentResult, error) {
+			if !reflect.DeepEqual(request.History.AgentTokenUsage, expectedPrior) {
+				t.Fatalf("lost usage baseline: %+v", request.History.AgentTokenUsage)
+			}
+			return service.AgentResult{ThreadID: "native-thread", Text: "Delivered", TokenUsage: usage}, nil
+		})
+		sender.beforeSend = func(context.Context, string) {
+			state, _ := store.Load(context.Background(), key)
+			if !reflect.DeepEqual(state.AgentTokenUsage, expectedPrior) {
+				t.Fatal("usage persisted before delivery")
+			}
+		}
+		h := NewSlackEventHandler("", conversationInstallations{}, nil, nil, runtime, nil, store, sender, nil)
+		event := conversationEvent("hi")
+		event.Event.TS = fmt.Sprintf("%d.0", i+1)
+		event.Event.ThreadTS = "1.0"
+		h.replyWithSummary(event)
+		state, err := store.Load(context.Background(), key)
+		if err != nil || !reflect.DeepEqual(state.AgentTokenUsage, usage) {
+			t.Fatalf("usage=%+v want=%+v err=%v", state.AgentTokenUsage, usage, err)
+		}
+		prior = usage
 	}
 }

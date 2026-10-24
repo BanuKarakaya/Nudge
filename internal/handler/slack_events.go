@@ -12,12 +12,11 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 
-	"nudge/internal/ai"
 	"nudge/internal/analytics"
-	"nudge/internal/domain"
 	"nudge/internal/repository"
 	"nudge/internal/service"
 	"nudge/internal/slack"
@@ -28,9 +27,7 @@ type SlackEventHandler struct {
 	installations     repository.InstallationRepository
 	bookmarks         service.BookmarkService
 	feedbinDigest     *service.FeedbinDigestService
-	ai                service.TextSummarizer
-	recommender       service.RSSRecommender
-	dialogue          service.ConversationAssistant
+	runtime           service.AgentRuntime
 	web               service.WebAssistant
 	history           service.ConversationStore
 	conversationLocks conversationLocks
@@ -51,12 +48,12 @@ type slackReactionClient interface {
 
 const processingReaction = "nudgythinking"
 
-func NewSlackEventHandler(signingSecret string, installations repository.InstallationRepository, bookmarks service.BookmarkService, feedbinDigest *service.FeedbinDigestService, ai service.TextSummarizer, recommender service.RSSRecommender, dialogue service.ConversationAssistant, web service.WebAssistant, history service.ConversationStore, client slackThreadMessageClient, timezone *time.Location, analytics ...repository.AnalyticsRepository) *SlackEventHandler {
+func NewSlackEventHandler(signingSecret string, installations repository.InstallationRepository, bookmarks service.BookmarkService, feedbinDigest *service.FeedbinDigestService, runtime service.AgentRuntime, web service.WebAssistant, history service.ConversationStore, client slackThreadMessageClient, timezone *time.Location, analytics ...repository.AnalyticsRepository) *SlackEventHandler {
 	var analyticsRepository repository.AnalyticsRepository
 	if len(analytics) > 0 {
 		analyticsRepository = analytics[0]
 	}
-	return &SlackEventHandler{signingSecret: signingSecret, installations: installations, bookmarks: bookmarks, feedbinDigest: feedbinDigest, ai: ai, recommender: recommender, dialogue: dialogue, web: web, history: history, client: client, timezone: timezone, analytics: analyticsRepository}
+	return &SlackEventHandler{signingSecret: signingSecret, installations: installations, bookmarks: bookmarks, feedbinDigest: feedbinDigest, runtime: runtime, web: web, history: history, client: client, timezone: timezone, analytics: analyticsRepository}
 }
 
 func (h *SlackEventHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -145,16 +142,12 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 		}
 	}()
 	key := service.ConversationKey{Team: event.TeamID, Channel: event.Event.Channel, Thread: threadTS, User: event.Event.User}
-	lockStarted := time.Now()
-	unlock := h.conversationLocks.lock(key)
-	defer unlock()
-	log.Printf("slack_request=%s stage=thread_lock_acquired wait_ms=%d", requestID, time.Since(lockStarted).Milliseconds())
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
 	defer cancel()
 	ctx = analytics.WithUsageTracker(ctx, tracker)
 	userID, err := h.installations.GetUserIDBySlackUserID(ctx, event.TeamID, event.Event.User)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			userID, err = h.installations.UpsertUser(ctx, event.TeamID, event.Event.User)
 			if err != nil {
 				log.Printf("slack_request=%s stage=user_create_failed elapsed_ms=%d error=%q", requestID, time.Since(started).Milliseconds(), err)
@@ -198,34 +191,77 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 			}()
 		}
 	}
-	now := time.Now()
-	quickReply, quick := service.ImmediateSocialReply(analyticsRecord.RequestText)
-	historyCtx := ctx
-	if quick {
-		var historyCancel context.CancelFunc
-		historyCtx, historyCancel = context.WithTimeout(ctx, 2*time.Second)
-		defer historyCancel()
+	// Resolve credentials and show activity before waiting for this conversation.
+	lockStarted := time.Now()
+	lockCtx, lockCancel := context.WithTimeout(ctx, 15*time.Second)
+	unlock, lockErr := h.conversationLocks.lock(lockCtx, key)
+	lockCancel()
+	var state service.ConversationState
+	if lockErr != nil {
+		err = lockErr
+		log.Printf("slack_request=%s stage=thread_lock_failed wait_ms=%d error=%q", requestID, time.Since(lockStarted).Milliseconds(), err)
+	} else {
+		defer unlock()
+		log.Printf("slack_request=%s stage=thread_lock_acquired wait_ms=%d", requestID, time.Since(lockStarted).Milliseconds())
+		err = fmt.Errorf("conversation history unavailable")
+		if h.history != nil {
+			state, err = h.history.Load(ctx, key)
+		}
 	}
-	state, err := h.history.Load(historyCtx, key)
 	historyLoaded := err == nil
-	message := "Konuşma geçmişine şu anda erişemedim. Biraz sonra tekrar deneyebilir misin?"
-	action := ""
-	if quick {
-		message, action, err = quickReply, service.ConversationReply, nil
-		log.Printf("slack_request=%s stage=local_social_reply elapsed_ms=%d", requestID, time.Since(started).Milliseconds())
-	} else if err == nil {
+	var result service.AgentResult
+	if historyLoaded {
 		log.Printf("slack_request=%s stage=history_loaded turns=%d prior_articles=%d elapsed_ms=%d", requestID, len(state.Turns), len(state.Articles), time.Since(started).Milliseconds())
-		message, action, err = h.conversationReplyWithState(ctx, &state, event.Event.Text, userID, now, requestID)
+		if h.runtime == nil {
+			err = fmt.Errorf("agent runtime unavailable")
+		} else {
+			// Detach mutable history so a failed run cannot change delivered state.
+			history := state
+			if state.AgentTokenUsage != nil {
+				usage := *state.AgentTokenUsage
+				history.AgentTokenUsage = &usage
+			}
+			history.Turns = append([]service.ConversationExchange(nil), state.Turns...)
+			history.Articles = append([]service.ConversationArticle(nil), state.Articles...)
+			if state.RSS != nil {
+				progress := *state.RSS
+				progress.ShownKeys = append([]string(nil), state.RSS.ShownKeys...)
+				history.RSS = &progress
+			}
+			location := h.timezone
+			if location == nil {
+				location = time.UTC
+			}
+			now := time.Now().In(location)
+			input := fmt.Sprintf("Current time: %s\nTimezone: %s\n\nSlack message:\n%s", now.Format(time.RFC3339), location.String(), analyticsRecord.RequestText)
+			log.Printf("slack_request=%s stage=agent_started", requestID)
+			result, err = h.runtime.Run(ctx, service.AgentRequest{
+				Key: key, ThreadID: state.AgentThreadID, Input: input, History: history,
+				Tools: service.NewAgentTools(h.feedbinDigest, h.bookmarks, h.web, userID, now, location),
+			})
+			if err == nil && (strings.TrimSpace(result.Text) == "" || utf8.RuneCountInString(result.Text) > 35000) {
+				err = fmt.Errorf("agent returned empty or oversized output")
+			}
+		}
 	} else {
 		log.Printf("slack_request=%s stage=history_load_failed elapsed_ms=%d error=%q", requestID, time.Since(started).Milliseconds(), err)
 	}
 	success := err == nil
+	message := agentFailureMessage
+	if success {
+		message = result.Text
+	}
 	analyticsRecord.ResponseText = message
-	analyticsRecord.Action = action
+	analyticsRecord.Action = "AGENT"
 	if err != nil {
-		log.Printf("slack_request=%s stage=conversation_failed elapsed_ms=%d error=%q", requestID, time.Since(started).Milliseconds(), err)
+		log.Printf("slack_request=%s stage=agent_failed elapsed_ms=%d error=%q", requestID, time.Since(started).Milliseconds(), err)
+		if historyLoaded {
+			state.AgentThreadID = ""
+			state.AgentTokenUsage = nil
+			h.saveConversation(key, state, requestID)
+		}
 	} else {
-		log.Printf("slack_request=%s stage=response_ready action=%s chars=%d elapsed_ms=%d", requestID, action, len(message), time.Since(started).Milliseconds())
+		log.Printf("slack_request=%s stage=response_ready chars=%d elapsed_ms=%d", requestID, utf8.RuneCountInString(message), time.Since(started).Milliseconds())
 	}
 	// Generation timeout must not prevent a clear error response being delivered.
 	sendCtx, sendCancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -234,6 +270,11 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 	if err := h.client.PostMessageInThread(sendCtx, installation.BotToken, event.Event.Channel, threadTS, message); err != nil {
 		analyticsRecord.Status = "failed"
 		log.Printf("slack_request=%s stage=slack_send_failed elapsed_ms=%d error=%q", requestID, time.Since(started).Milliseconds(), err)
+		if success {
+			state.AgentThreadID = ""
+			state.AgentTokenUsage = nil
+			h.saveConversation(key, state, requestID)
+		}
 		return
 	}
 	if success {
@@ -246,149 +287,27 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 		removeProcessingReaction()
 		removeProcessingReaction = nil
 	}
-	if success && historyLoaded {
-		state.Remember(event.Event.Text, message, action)
-		if err := h.history.Save(sendCtx, key, state); err != nil {
-			log.Printf("slack_request=%s stage=history_save_failed elapsed_ms=%d error=%q", requestID, time.Since(started).Milliseconds(), err)
-		} else {
-			log.Printf("slack_request=%s stage=history_saved elapsed_ms=%d", requestID, time.Since(started).Milliseconds())
-		}
+	if success {
+		state.AgentThreadID = result.ThreadID
+		state.AgentTokenUsage = result.TokenUsage
+		state.Remember(event.Event.Text, message, "AGENT")
+		h.saveConversation(key, state, requestID)
 	}
 	log.Printf("slack_request=%s stage=done success=%t total_ms=%d", requestID, success, time.Since(started).Milliseconds())
 }
 
-func (h *SlackEventHandler) conversationReply(ctx context.Context, state service.ConversationState, request string, userID int64, now time.Time) (string, string, error) {
-	return h.conversationReplyWithState(ctx, &state, request, userID, now, "local")
-}
+const agentFailureMessage = "Yanıtını şu anda tamamlayamadım. Biraz sonra tekrar deneyebilir misin?"
 
-func (h *SlackEventHandler) conversationReplyWithState(ctx context.Context, state *service.ConversationState, request string, userID int64, now time.Time, requestID string) (string, string, error) {
-	failure := "Yanıtını şu anda tamamlayamadım. Biraz sonra tekrar deneyebilir misin?"
-	request = strings.TrimSpace(slackUserMention.ReplaceAllString(request, ""))
-	if reply, ok := service.ImmediateSocialReply(request); ok {
-		return reply, service.ConversationReply, nil
+// Saving delivered state or invalidating a runtime thread must survive a run/send
+// timeout: Codex may already contain output that Slack never showed.
+func (h *SlackEventHandler) saveConversation(key service.ConversationKey, state service.ConversationState, requestID string) {
+	persistCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := h.history.Save(persistCtx, key, state); err != nil {
+		log.Printf("slack_request=%s stage=history_save_failed error=%q", requestID, err)
+	} else {
+		log.Printf("slack_request=%s stage=history_saved", requestID)
 	}
-	if h.dialogue == nil {
-		return failure, "", fmt.Errorf("conversation assistant unavailable")
-	}
-	modelStarted := time.Now()
-	log.Printf("slack_request=%s stage=model_started", requestID)
-	decision, err := h.dialogue.Converse(ctx, *state, request)
-	if err != nil {
-		log.Printf("slack_request=%s stage=model_failed duration_ms=%d error=%q", requestID, time.Since(modelStarted).Milliseconds(), err)
-		var providerErr *ai.ProviderError
-		if errors.As(err, &providerErr) && providerErr.Status == http.StatusTooManyRequests {
-			failure = "AI hizmetinin kullanım sınırına takıldım. Biraz sonra tekrar deneyebilir misin?"
-		}
-		return failure, "", fmt.Errorf("conversation decision: %w", err)
-	}
-	log.Printf("slack_request=%s stage=model_complete duration_ms=%d action=%s", requestID, time.Since(modelStarted).Milliseconds(), decision.Action)
-	if err = decision.Validate(*state); err != nil {
-		return failure, "", err
-	}
-	var message string
-	operationStarted := time.Now()
-	if decision.Action != service.ConversationReply && decision.Action != service.ConversationSelect {
-		log.Printf("slack_request=%s stage=operation_started action=%s", requestID, decision.Action)
-	}
-	switch decision.Action {
-	case service.ConversationWebSearch:
-		if h.web == nil {
-			err = fmt.Errorf("web search unavailable")
-		} else {
-			message, err = h.web.SearchWeb(ctx, decision.SearchRequest)
-		}
-		if err != nil {
-			return "İnternet aramasını şu anda tamamlayamadım. Biraz sonra tekrar deneyebilir misin? RSS listene dönmedim; web kaynağını doğrulamadan bağlantı önermeyeceğim.", decision.Action, err
-		}
-	case service.ConversationReply:
-		message = decision.Reply
-	case service.ConversationSelect:
-		message, err = state.RenderSelection(decision)
-	case service.ConversationRSSSummary:
-		progress := service.RSSSummaryProgress{Scope: "today", Since: lastFeedbinStart(now, h.timezone)}
-		if decision.RSSContinue && state.RSS != nil {
-			progress = *state.RSS
-		}
-		if decision.RSSScope != "" {
-			progress.Scope = decision.RSSScope
-			if state.RSS != nil && state.RSS.Scope != decision.RSSScope {
-				// A new scope starts a fresh inventory, so entries from the prior
-				// scope must not be silently skipped.
-				progress.ShownKeys = nil
-				progress.Total = 0
-			}
-		}
-		if progress.Scope == "all_unread" {
-			progress.Since = time.Time{}
-		}
-		if progress.Scope == "today" && (progress.Since.IsZero() || (state.RSS != nil && state.RSS.Scope != progress.Scope)) {
-			progress.Since = lastFeedbinStart(now, h.timezone)
-		}
-		if decision.RSSContinue && state.RSS == nil {
-			// Upgrade threads created before paginated summaries existed.
-			for _, article := range state.Articles {
-				if article.URL != "" {
-					progress.ShownKeys = append(progress.ShownKeys, "url:"+article.URL)
-				}
-			}
-		}
-		var next service.RSSSummaryProgress
-		message, next, err = h.feedbinDigest.BuildSummaryPage(ctx, userID, progress, selectedSummarizer(h.ai, decision.NeedsDeepSeek))
-		if err == nil {
-			state.RSS = &next
-		}
-	case service.ConversationRSSTitles:
-		message, err = h.feedbinDigest.BuildDigest(ctx, userID, lastFeedbinStart(now, h.timezone))
-	case service.ConversationRSSStats:
-		message, err = h.feedbinDigest.BuildUnreadStats(ctx, userID)
-	case service.ConversationRSSTodayStats:
-		message, err = h.feedbinDigest.BuildTodayStats(ctx, userID, lastFeedbinStart(now, h.timezone), now)
-	case service.ConversationRSSCategories:
-		message, err = h.feedbinDigest.BuildCategoryStats(ctx, userID)
-	case service.ConversationRSSRecommend:
-		message, err = h.feedbinDigest.BuildRecommendation(ctx, userID, lastFeedbinStart(now, h.timezone), selectedRecommender(h.recommender, decision.NeedsDeepSeek), request)
-	case service.ConversationBookmarks:
-		bookmarks, listErr := h.bookmarks.ListByDate(ctx, userID, lastDailyStart(now, h.timezone).UTC(), now.UTC())
-		err = listErr
-		if err == nil {
-			message = formatThreadSummary(bookmarks)
-		}
-	}
-	if err != nil {
-		if decision.Action != service.ConversationReply && decision.Action != service.ConversationSelect {
-			log.Printf("slack_request=%s stage=operation_failed action=%s duration_ms=%d error=%q", requestID, decision.Action, time.Since(operationStarted).Milliseconds(), err)
-		}
-		if errors.Is(err, pgx.ErrNoRows) && strings.HasPrefix(decision.Action, "RSS_") {
-			failure = "Feedbin hesabın henüz bağlı görünmüyor. Nudge'dan gelen Feedbin bağlantı mesajıyla hesabını bağladıktan sonra tekrar deneyebilirsin."
-		}
-		return failure, decision.Action, fmt.Errorf("execute %s: %w", decision.Action, err)
-	}
-	if decision.Action != service.ConversationReply && decision.Action != service.ConversationSelect {
-		log.Printf("slack_request=%s stage=operation_complete action=%s duration_ms=%d", requestID, decision.Action, time.Since(operationStarted).Milliseconds())
-	}
-	return message, decision.Action, nil
-}
-
-type complexitySummarizerSelector interface {
-	SummarizerFor(bool) service.TextSummarizer
-}
-
-type complexityRecommenderSelector interface {
-	RecommenderFor(bool) service.RSSRecommender
-}
-
-func selectedSummarizer(summarizer service.TextSummarizer, complex bool) service.TextSummarizer {
-	if selector, ok := summarizer.(complexitySummarizerSelector); ok {
-		return selector.SummarizerFor(complex)
-	}
-	return summarizer
-}
-
-func selectedRecommender(recommender service.RSSRecommender, complex bool) service.RSSRecommender {
-	if selector, ok := recommender.(complexityRecommenderSelector); ok {
-		return selector.RecommenderFor(complex)
-	}
-	return recommender
 }
 
 func slackRequestID(event slackEventEnvelope) string {
@@ -398,37 +317,3 @@ func slackRequestID(event slackEventEnvelope) string {
 }
 
 var slackUserMention = regexp.MustCompile(`<@[A-Z0-9]+>`)
-
-func lastFeedbinStart(now time.Time, location *time.Location) time.Time {
-	localNow := now.In(location)
-	start := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 23, 0, 0, 0, location)
-	if localNow.Before(start) {
-		start = start.Add(-24 * time.Hour)
-	}
-	return start
-}
-
-func lastDailyStart(now time.Time, location *time.Location) time.Time {
-	localNow := now.In(location)
-	start := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 22, 0, 0, 0, location)
-	if localNow.Before(start) {
-		start = start.Add(-24 * time.Hour)
-	}
-	return start
-}
-
-func formatThreadSummary(bookmarks []domain.Bookmark) string {
-	if len(bookmarks) == 0 {
-		return "📚 *Bookmarkların Beybi*\n\nDün 22:00’den beri kaydettiğin bir bookmark yok."
-	}
-	var builder strings.Builder
-	builder.WriteString("📚 *Bookmarkların Beybi*\n\n")
-	for _, bookmark := range bookmarks {
-		builder.WriteString("• *")
-		builder.WriteString(strings.ReplaceAll(bookmark.Title, "*", ""))
-		builder.WriteString("*\n  🔗 <")
-		builder.WriteString(bookmark.URL)
-		builder.WriteString("|Bookmark’ı aç>\n")
-	}
-	return builder.String()
-}

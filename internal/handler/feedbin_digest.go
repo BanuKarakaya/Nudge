@@ -17,15 +17,14 @@ type FeedbinDigestSlackClient interface {
 
 type FeedbinDigestHandler struct {
 	installations repository.InstallationRepository
-	digest        *service.FeedbinDigestService
-	ai            service.TextSummarizer
+	generator     service.DigestGenerator
 	slack         FeedbinDigestSlackClient
 	timezone      *time.Location
 	testToken     string
 }
 
-func NewFeedbinDigestHandler(installations repository.InstallationRepository, digest *service.FeedbinDigestService, ai service.TextSummarizer, slack FeedbinDigestSlackClient, timezone *time.Location, testToken string) *FeedbinDigestHandler {
-	return &FeedbinDigestHandler{installations: installations, digest: digest, ai: ai, slack: slack, timezone: timezone, testToken: testToken}
+func NewFeedbinDigestHandler(installations repository.InstallationRepository, generator service.DigestGenerator, slack FeedbinDigestSlackClient, timezone *time.Location, testToken string) *FeedbinDigestHandler {
+	return &FeedbinDigestHandler{installations: installations, generator: generator, slack: slack, timezone: timezone, testToken: testToken}
 }
 
 func (h *FeedbinDigestHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -45,9 +44,9 @@ func (h *FeedbinDigestHandler) testDigest(w http.ResponseWriter, r *http.Request
 	localNow := time.Now().In(h.timezone)
 	since := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 23, 0, 0, 0, h.timezone)
 	if localNow.Before(since) {
-		since = since.Add(-24 * time.Hour)
+		since = since.AddDate(0, 0, -1)
 	}
-	digest, err := h.digest.BuildSummary(r.Context(), userID, since, h.ai)
+	digest, err := h.generator.Generate(r.Context(), userID, since, localNow)
 	if err != nil {
 		log.Printf("Feedbin test summary failed: %v", err)
 		writeError(w, http.StatusBadGateway, service.SummaryUnavailable)

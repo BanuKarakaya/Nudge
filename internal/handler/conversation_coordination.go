@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -15,31 +16,48 @@ type conversationLocks struct {
 }
 
 type conversationLock struct {
-	mu   sync.Mutex
+	gate chan struct{}
 	refs int
 }
 
-func (l *conversationLocks) lock(key service.ConversationKey) func() {
+func (l *conversationLocks) lock(ctx context.Context, key service.ConversationKey) (func(), error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	l.mu.Lock()
 	if l.entries == nil {
 		l.entries = make(map[service.ConversationKey]*conversationLock)
 	}
 	entry := l.entries[key]
 	if entry == nil {
-		entry = &conversationLock{}
+		entry = &conversationLock{gate: make(chan struct{}, 1)}
 		l.entries[key] = entry
 	}
 	entry.refs++
 	l.mu.Unlock()
-	entry.mu.Lock()
-	return func() {
-		entry.mu.Unlock()
+	releaseRef := func() {
 		l.mu.Lock()
 		defer l.mu.Unlock()
 		entry.refs--
 		if entry.refs == 0 {
 			delete(l.entries, key)
 		}
+	}
+	select {
+	case entry.gate <- struct{}{}:
+		// Cancellation may race with a released gate; never start canceled work.
+		if err := ctx.Err(); err != nil {
+			<-entry.gate
+			releaseRef()
+			return nil, err
+		}
+		return func() {
+			<-entry.gate
+			releaseRef()
+		}, nil
+	case <-ctx.Done():
+		releaseRef()
+		return nil, ctx.Err()
 	}
 }
 

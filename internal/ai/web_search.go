@@ -23,9 +23,8 @@ type groundingMetadata struct {
 	} `json:"groundingChunks"`
 }
 
-// Search is a separate call: Gemini 2.5's search tool is not combined with the
-// structured routing schema. Only a self-contained public research request is
-// sent, not the private conversation/RSS inventory used to interpret it.
+// SearchWeb sends only a self-contained public research request to Google Search.
+// Private conversation history and RSS inventory are not part of this tool's input.
 func (c GeminiClient) SearchWeb(ctx context.Context, request string) (string, error) {
 	if c.APIKey == "" || strings.TrimSpace(request) == "" {
 		return "", fmt.Errorf("web search is not configured or request is empty")

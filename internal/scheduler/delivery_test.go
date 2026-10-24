@@ -4,16 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 
 	"nudge/internal/domain"
-	"nudge/internal/feedbin"
 	"nudge/internal/repository"
-	"nudge/internal/service"
 )
 
 type memoryOutbox struct {
@@ -149,24 +146,11 @@ func (feedConnections) GetByUserID(context.Context, int64) (domain.FeedbinConnec
 	return domain.FeedbinConnection{}, nil
 }
 
-type feedSource struct {
-	since   time.Time
-	entries []feedbin.Entry
-	calls   int
-}
+type digestFunc func(context.Context, int64, time.Time, time.Time) (string, error)
 
-func (s *feedSource) ListUnreadSince(_ context.Context, _, _ string, since time.Time) ([]feedbin.Entry, error) {
-	s.since = since
-	s.calls++
-	return s.entries, nil
+func (f digestFunc) Generate(ctx context.Context, userID int64, since, until time.Time) (string, error) {
+	return f(ctx, userID, since, until)
 }
-func (*feedSource) ListTaggings(context.Context, string, string) ([]feedbin.Tagging, error) {
-	return nil, nil
-}
-
-type summaryFunc func(context.Context, string) (string, error)
-
-func (f summaryFunc) Summarize(c context.Context, s string) (string, error) { return f(c, s) }
 
 type workspaceSlack struct{}
 
@@ -176,33 +160,43 @@ func (workspaceSlack) ListUsers(context.Context, string) ([]domain.SlackMember, 
 func (workspaceSlack) OpenDirectMessage(context.Context, string, string) (string, error) {
 	return "D", nil
 }
-func TestScheduledDigestIncludesPreviousDayAndExcludesNextWindow(t *testing.T) {
+func TestScheduledDigestPassesExactWindowAndNeverRecomputesQueuedDigest(t *testing.T) {
 	loc := time.FixedZone("Istanbul", 3*60*60)
 	now := time.Date(2026, 10, 23, 23, 0, 0, 0, loc)
-	source := &feedSource{entries: []feedbin.Entry{
-		{ID: 1, Title: "yesterday", URL: "https://example.test/1", CreatedAt: now.Add(-time.Hour)},
-		{ID: 2, Title: "next-window", URL: "https://example.test/2", CreatedAt: now},
-	}}
 	q := &memoryOutbox{}
 	calls := 0
-	ai := summaryFunc(func(_ context.Context, input string) (string, error) {
+	generator := digestFunc(func(_ context.Context, userID int64, since, until time.Time) (string, error) {
 		calls++
-		if !strings.Contains(input, "yesterday") || strings.Contains(input, "next-window") {
-			t.Fatal(input)
+		if userID != 1 || !since.Equal(now.AddDate(0, 0, -1)) || !until.Equal(now) {
+			t.Fatalf("user=%d window=[%s, %s)", userID, since, until)
 		}
-		return `{"articles":[{"id":"RSS-1","topic":"Konu.","importance":"Önemli."}]}`, nil
+		return "second", nil
 	})
-	r := NewFeedbinReminder(1, loc, installations{}, feedConnections{}, service.NewFeedbinDigestService(feedConnections{}, source), ai, q, workspaceSlack{})
+	r := NewFeedbinReminder(1, loc, installations{}, feedConnections{}, generator, q, workspaceSlack{})
 	if err := r.RunOnce(context.Background(), now); err != nil {
 		t.Fatal(err)
 	}
-	if !source.since.Equal(now.Add(-24*time.Hour)) || len(q.pending) != 1 {
-		t.Fatalf("since=%s queued=%d", source.since, len(q.pending))
+	if len(q.pending) != 1 || q.pending[0].Message.Text != "second" {
+		t.Fatalf("unexpected queue: %+v", q.pending)
 	}
-	if err := r.RunOnce(context.Background(), now); err != nil {
+	if err := r.RunOnce(context.Background(), now.Add(70*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	if len(q.pending) != 1 || calls != 1 || source.calls != 1 {
+	if len(q.pending) != 1 || calls != 1 {
 		t.Fatal("already queued digest was rebuilt")
+	}
+	client := &flakySlack{}
+	worker := DeliveryWorker{Notifications: q, Installations: installations{}, Client: client}
+	if _, err := worker.DeliverNext(context.Background()); err == nil {
+		t.Fatal("expected transient delivery failure")
+	}
+	if err := r.RunOnce(context.Background(), now.Add(2*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := worker.DeliverNext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 || client.calls["second"] != 2 || len(q.complete) != 1 {
+		t.Fatal("retry did not reuse the queued digest")
 	}
 }
