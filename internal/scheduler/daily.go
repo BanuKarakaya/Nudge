@@ -22,6 +22,9 @@ type SlackWorkspaceClient interface {
 }
 
 type DailyReminder struct {
+	onboarding interface {
+		EnqueueWorkspace(context.Context, int64) error
+	}
 	seedUserID    int64
 	publicURL     string
 	timezone      *time.Location
@@ -34,6 +37,10 @@ type DailyReminder struct {
 	notifications repository.NotificationRepository
 	slack         SlackWorkspaceClient
 }
+
+func (r *DailyReminder) WithOnboarding(s interface {
+	EnqueueWorkspace(context.Context, int64) error
+}) *DailyReminder { r.onboarding = s; return r }
 
 func NewDailyReminder(seedUserID int64, publicURL string, timezone *time.Location,
 	installations repository.InstallationRepository, connections repository.RaindropConnectionRepository,
@@ -67,6 +74,9 @@ func (r *DailyReminder) Run(ctx context.Context) {
 }
 
 func (r *DailyReminder) SendOnboardingOnce(ctx context.Context) error {
+	if r.onboarding != nil {
+		return r.onboarding.EnqueueWorkspace(ctx, r.seedUserID)
+	}
 	installation, err := r.installations.GetByUserID(ctx, r.seedUserID)
 	if err != nil {
 		return fmt.Errorf("get workspace installation: %w", err)

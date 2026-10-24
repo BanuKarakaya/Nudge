@@ -8,9 +8,11 @@ import (
 )
 
 type NotificationMessage struct {
-	Channel  string           `json:"channel"`
-	Text     string           `json:"text,omitempty"`
-	Bookmark *domain.Bookmark `json:"bookmark,omitempty"`
+	Connection          string           `json:"connection,omitempty"`
+	WorkspaceOnboarding bool             `json:"workspace_onboarding,omitempty"`
+	Channel             string           `json:"channel"`
+	Text                string           `json:"text,omitempty"`
+	Bookmark            *domain.Bookmark `json:"bookmark,omitempty"`
 }
 type NotificationDelivery struct {
 	ID         int64

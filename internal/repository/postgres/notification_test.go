@@ -148,4 +148,22 @@ func TestNotificationDeliveryPostgres(t *testing.T) {
 	if total != 3 || sent != 3 {
 		t.Fatalf("rows=%d sent=%d", total, sent)
 	}
+	// Typed onboarding deliveries need no channel or pre-generated bearer link.
+	for _, message := range []repository.NotificationMessage{{Connection: "github"}, {WorkspaceOnboarding: true}} {
+		if err := q.Enqueue(ctx, 1, "onboarding", fmt.Sprint(message), message); err != nil {
+			t.Fatal(err)
+		}
+		got, err := q.ClaimNext(ctx)
+		if err != nil || got.Message != message {
+			t.Fatalf("typed payload roundtrip: %+v %v", got, err)
+		}
+		if err := q.Complete(ctx, got); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, message := range []repository.NotificationMessage{{Connection: "unknown"}, {Connection: "github", WorkspaceOnboarding: true}, {Connection: "github", Channel: "public", Text: "secret"}} {
+		if err := q.Enqueue(ctx, 1, "invalid", "key", message); err == nil {
+			t.Fatal("accepted invalid typed payload")
+		}
+	}
 }

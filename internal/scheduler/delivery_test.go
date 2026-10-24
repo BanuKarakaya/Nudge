@@ -21,6 +21,37 @@ type memoryOutbox struct {
 	retries  []time.Duration
 }
 
+type invitationDelivery struct{ calls map[string]int }
+
+func (s *invitationDelivery) DiscoverWorkspace(context.Context, int64) error { return nil }
+func (s *invitationDelivery) DeliverInvitation(_ context.Context, _ int64, purpose string) error {
+	s.calls[purpose]++
+	if purpose == "github" && s.calls[purpose] == 1 {
+		return errors.New("temporary Slack failure")
+	}
+	return nil
+}
+func TestConnectionInvitationsRetryIndependently(t *testing.T) {
+	ctx := context.Background()
+	q := &memoryOutbox{}
+	s := &invitationDelivery{calls: map[string]int{}}
+	for _, purpose := range []string{"feedbin", "github", "raindrop"} {
+		if err := q.Enqueue(ctx, 1, "connection_invitation", purpose, repository.NotificationMessage{Connection: purpose}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	worker := DeliveryWorker{Notifications: q, Onboarding: s}
+	for i := 0; i < 4; i++ {
+		_, err := worker.DeliverNext(ctx)
+		if (i == 1) != (err != nil) {
+			t.Fatalf("delivery %d: %v", i, err)
+		}
+	}
+	if s.calls["feedbin"] != 1 || s.calls["raindrop"] != 1 || s.calls["github"] != 2 || len(q.complete) != 3 {
+		t.Fatalf("replayed successful invitation: %+v", s.calls)
+	}
+}
+
 func (q *memoryOutbox) Exists(_ context.Context, u int64, k, p string) (bool, error) {
 	return q.known[fmt.Sprint(u, k, p)], nil
 }

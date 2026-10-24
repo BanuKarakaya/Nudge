@@ -29,9 +29,9 @@ func (h *OnboardingHandler) testOnboarding(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := h.service.Send(r.Context(), userID); err != nil {
+	if err := h.service.Resend(r.Context(), userID); err != nil {
 		writeError(w, http.StatusBadGateway, "could not send onboarding message")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"message": "onboarding message sent"})
+	writeJSON(w, http.StatusOK, map[string]string{"message": "connection invitations queued"})
 }

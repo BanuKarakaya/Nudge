@@ -31,8 +31,11 @@ Startup applies the idempotent coding schema.
 
 ## User flow and access
 
-1. Ask Nudgy to connect GitHub. A signed, 20-minute link goes privately to the
-   authenticated user's Slack DM, never into shared channel text or model output.
+1. After Slack installation, Nudgy automatically sends each user a separate
+   GitHub invitation when configured for that workspace. Existing installations
+   are discovered at startup too. The signed link is valid for 20 minutes after
+   delivery and goes only to that user's DM. Asking Nudgy to connect GitHub is
+   still available to replace expired links, but is not needed for discovery.
 2. Open it and authorize the App. OAuth uses PKCE, a single-use 10-minute state
    and a browser cookie binding the callback.
 3. Ask for repositories. Access requires the workspace allowlist, the App's

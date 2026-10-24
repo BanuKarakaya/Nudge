@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"github.com/jackc/pgx/v5"
 	"log"
 	"net/http"
 	"os"
@@ -170,6 +172,23 @@ func main() {
 		links,
 	)
 	onboardingHandler := handler.NewOnboardingHandler(onboardingService, os.Getenv("NUDGE_TEST_TOKEN"))
+	onboardingService.Register(service.ConnectionInvitation{Purpose: "feedbin", Name: "Feedbin", Description: "RSS aboneliklerini, okunmamış yazılarını ve özetlerini Nudgy ile takip etmek için bağlayabilirsin.", Connected: func(ctx context.Context, id int64) (bool, error) {
+		_, err := feedbinRepository.GetByUserID(ctx, id)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		return err == nil, err
+	}})
+	if raindropOAuth.ClientID != "" && raindropOAuth.ClientSecret != "" && raindropOAuth.RedirectURL != "" {
+		onboardingService.Register(service.ConnectionInvitation{Purpose: "raindrop", Name: "Raindrop", Description: "Kaydettiğin bağlantıları ve okuma listeni Nudgy ile takip etmek için bağlayabilirsin.", Connected: func(ctx context.Context, id int64) (bool, error) {
+			_, err := raindropRepository.GetByUserID(ctx, id)
+			if errors.Is(err, pgx.ErrNoRows) {
+				return false, nil
+			}
+			return err == nil, err
+		}})
+	}
+	slackHandler.WithOnboarding(onboardingService)
 	onboardingHandler.RegisterRoutes(privateMux)
 	_, appTimezone := reminderConfig()
 	conversationCtx, conversationCancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -196,7 +215,7 @@ func main() {
 		appTimezone,
 		analyticsRepository,
 	)
-	if err := configureCoding(db, mux, privateMux, slackEventHandler, installationRepository, slackAPIClient, links); err != nil {
+	if err := configureCoding(db, mux, privateMux, slackEventHandler, installationRepository, slackAPIClient, links, onboardingService); err != nil {
 		log.Fatalf("repository task configuration: %v", err)
 	}
 	slackEventHandler.RegisterRoutes(mux)
@@ -207,8 +226,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("initialize notification deliveries: %v", err)
 	}
-	worker := scheduler.DeliveryWorker{Notifications: notificationRepository, Installations: installationRepository, Client: slackAPIClient}
+	onboardingService.WithQueue(notificationRepository)
+	worker := scheduler.DeliveryWorker{Notifications: notificationRepository, Installations: installationRepository, Client: slackAPIClient, Onboarding: onboardingService}
 	go worker.Run(context.Background())
+	go scheduler.RunOnboarding(context.Background(), installationRepository, onboardingService)
+	log.Print("connection invitations enabled after Slack installation and on startup; per-user delivery deduplication active")
 	if reminderUserID, reminderTimezone := reminderConfig(); reminderUserID > 0 {
 		dailyReminder := scheduler.NewDailyReminder(
 			reminderUserID,
@@ -223,6 +245,7 @@ func main() {
 			notificationRepository,
 			slackAPIClient,
 		)
+		dailyReminder.WithOnboarding(onboardingService)
 		go dailyReminder.Run(context.Background())
 		feedbinReminder := scheduler.NewFeedbinReminder(
 			reminderUserID,
@@ -234,7 +257,7 @@ func main() {
 			slackAPIClient,
 		)
 		go feedbinReminder.Run(context.Background())
-		log.Printf("onboarding enabled at 13:45, Raindrop reminder at 22:00 (%s)", reminderTimezone)
+		log.Printf("onboarding reconciliation at 13:45, Raindrop reminder at 22:00 (%s)", reminderTimezone)
 		log.Printf("Feedbin reminder enabled at 23:00 (%s)", reminderTimezone)
 	} else {
 		log.Printf("daily reminder disabled: set NUDGE_REMINDER_USER_ID")

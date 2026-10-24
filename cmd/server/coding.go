@@ -17,10 +17,11 @@ import (
 	"nudge/internal/repository"
 	"nudge/internal/repository/postgres"
 	"nudge/internal/secure"
+	"nudge/internal/service"
 	"nudge/internal/slack"
 )
 
-func configureCoding(db *pgxpool.Pool, public, admin *http.ServeMux, events *handler.SlackEventHandler, installations repository.InstallationRepository, client slack.APIClient, links secure.LinkSigner) error {
+func configureCoding(db *pgxpool.Pool, public, admin *http.ServeMux, events *handler.SlackEventHandler, installations repository.InstallationRepository, client slack.APIClient, links secure.LinkSigner, onboarding *service.OnboardingService) error {
 	if os.Getenv("NUDGY_CODING_ENABLED") != "true" {
 		return nil
 	}
@@ -58,5 +59,6 @@ func configureCoding(db *pgxpool.Pool, public, admin *http.ServeMux, events *han
 	h := handler.NewCodingHandler(s, installations, client, links, base)
 	h.RegisterRoutes(public, admin)
 	events.WithCoding(h)
+	onboarding.Register(service.ConnectionInvitation{Purpose: "github", Name: "GitHub", Description: "Erişebildiğin projeleri listelemek ve kod değişikliği görevleri hazırlamak için bağlayabilirsin. Kod çalıştırma ve PR açma henüz etkin değil.", Enabled: s.EnabledFor, Connected: s.Connected})
 	return nil
 }

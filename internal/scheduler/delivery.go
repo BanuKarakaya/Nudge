@@ -18,6 +18,10 @@ type NotificationClient interface {
 	PostBookmarkMessage(context.Context, string, string, domain.Bookmark) error
 }
 type DeliveryWorker struct {
+	Onboarding interface {
+		DiscoverWorkspace(context.Context, int64) error
+		DeliverInvitation(context.Context, int64, string) error
+	}
 	Notifications repository.NotificationRepository
 	Installations repository.InstallationRepository
 	Client        NotificationClient
@@ -47,12 +51,23 @@ func (w DeliveryWorker) DeliverNext(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	sendCtx, sendCancel := context.WithTimeout(ctx, 30*time.Second)
-	installation, err := w.Installations.GetByUserID(sendCtx, d.UserID)
-	if err == nil {
-		if d.Message.Bookmark != nil {
-			err = w.Client.PostBookmarkMessage(sendCtx, installation.BotToken, d.Message.Channel, *d.Message.Bookmark)
+	if d.Message.WorkspaceOnboarding || d.Message.Connection != "" {
+		if w.Onboarding == nil {
+			err = errors.New("onboarding delivery unavailable")
+		} else if d.Message.WorkspaceOnboarding {
+			err = w.Onboarding.DiscoverWorkspace(sendCtx, d.UserID)
 		} else {
-			err = w.Client.PostMessage(sendCtx, installation.BotToken, d.Message.Channel, d.Message.Text)
+			err = w.Onboarding.DeliverInvitation(sendCtx, d.UserID, d.Message.Connection)
+		}
+	} else {
+		installation, installErr := w.Installations.GetByUserID(sendCtx, d.UserID)
+		err = installErr
+		if err == nil {
+			if d.Message.Bookmark != nil {
+				err = w.Client.PostBookmarkMessage(sendCtx, installation.BotToken, d.Message.Channel, *d.Message.Bookmark)
+			} else {
+				err = w.Client.PostMessage(sendCtx, installation.BotToken, d.Message.Channel, d.Message.Text)
+			}
 		}
 	}
 	sendCancel()

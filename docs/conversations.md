@@ -52,7 +52,7 @@ startup if the signing or encryption key is invalid. The Go server does not
 load `.env` automatically; the process manager must supply these variables.
 
 Account links now include a signed, user-specific, service-specific capability
-valid for eight days. Bare `?user_id=...` links from older messages no longer
+valid for eight days for Feedbin/Raindrop and 20 minutes for GitHub. Bare `?user_id=...` links from older messages no longer
 work. The Feedbin form carries the capability into its POST request; changing
 the user ID or using a Raindrop token is rejected. Treat these links as private
 bearer credentials and do not log their query strings in a reverse proxy.
@@ -60,12 +60,31 @@ Connection pages use no-store/no-referrer headers. OAuth callbacks additionally
 require the initiating browser's HttpOnly, SameSite=Lax state cookie. In HTTPS
 proxy deployments, forward `X-Forwarded-Proto: https` from a trusted proxy.
 
-The 13:45 onboarding job sends new invitations at most once per ISO week for
-accounts still missing a connection, so expired invitations can be replaced.
-An administrator can immediately resend signed links using the protected
-`POST /api/v1/reminders/test-onboarding` endpoint and `X-User-ID`.
-Rotating the signing key invalidates outstanding links. OAuth state remains
-process-local, so installation/callback requests need the same server instance.
+After Slack installation, Nudgy queues workspace member discovery. Each active
+human member receives a separate private invitation explaining each configured
+integration: Feedbin, Raindrop (when OAuth is configured), and GitHub (when coding
+is enabled for that workspace). Connected accounts are skipped at delivery.
+GitLab is not advertised. No model calls, initial mention or reminder-user ID
+are needed.
+
+Startup reconciliation covers existing installations and retries enqueue errors
+every five minutes. Discovery runs daily per seed user/catalog; per-user/service
+invitation keys prevent daily/reinstall duplicates. New members are picked up
+on the next daily discovery. The durable outbox creates DM channels and signed
+links at actual delivery, so queue delays cannot consume link lifetimes. As with
+other Slack deliveries, a crash after Slack acceptance but before database
+completion can cause a duplicate.
+
+Bot scopes `users:read`, `im:write`, and `chat:write` are required. Existing apps
+missing `im:write` must be reauthorized. See Slack's
+[DM API](https://docs.slack.dev/reference/methods/conversations.open/) and
+[member list API](https://docs.slack.dev/reference/methods/users.list/).
+Administrators can queue fresh invitations for missing connections via the
+protected `POST /api/v1/reminders/test-onboarding` endpoint and `X-User-ID`.
+GitHub users can also ask Nudgy for a replacement link after expiry.
+Rotating the signing key invalidates outstanding links. Slack/Raindrop OAuth
+state is process-local, so their callbacks need the initiating server instance;
+GitHub OAuth state is stored in PostgreSQL.
 
 ## Scheduled summaries and reliable delivery
 

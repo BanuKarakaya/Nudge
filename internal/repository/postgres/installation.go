@@ -15,6 +15,24 @@ type InstallationRepository struct {
 	db *pgxpool.Pool
 }
 
+// One stable user per installed workspace is enough to discover its members.
+func (r *InstallationRepository) ListWorkspaceSeeds(ctx context.Context) ([]int64, error) {
+	rows, err := r.db.Query(ctx, `SELECT MIN(u.id) FROM users u JOIN slack_installations s ON s.team_id=u.team_id GROUP BY u.team_id ORDER BY MIN(u.id)`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 func NewInstallationRepository(db *pgxpool.Pool) *InstallationRepository {
 	return &InstallationRepository{db: db}
 }

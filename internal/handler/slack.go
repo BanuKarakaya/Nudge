@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -13,10 +15,17 @@ import (
 )
 
 type SlackHandler struct {
+	onboarding interface {
+		EnqueueWorkspace(context.Context, int64) error
+	}
 	oauth       slack.OAuthClient
 	installRepo repository.InstallationRepository
 	states      *oauthStateStore
 }
+
+func (h *SlackHandler) WithOnboarding(s interface {
+	EnqueueWorkspace(context.Context, int64) error
+}) *SlackHandler { h.onboarding = s; return h }
 
 func NewSlackHandler(oauthClient slack.OAuthClient, installRepo repository.InstallationRepository) *SlackHandler {
 	return &SlackHandler{
@@ -87,6 +96,11 @@ func (h *SlackHandler) callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.onboarding != nil {
+		if err := h.onboarding.EnqueueWorkspace(r.Context(), userID); err != nil {
+			log.Printf("onboarding stage=enqueue_failed user_id=%d", userID)
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"message": "Slack workspace connected",
 		"user_id": userID,

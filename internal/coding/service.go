@@ -40,6 +40,15 @@ func New(store Store, provider Provider, allowed map[string][]string) (*Service,
 
 func (s *Service) EnabledFor(team string) bool { return len(s.allowed[team]) > 0 }
 
+// Connected is a local onboarding check; it never exposes or refreshes tokens.
+func (s *Service) Connected(ctx context.Context, userID int64) (bool, error) {
+	err := s.store.WithConnection(ctx, userID, func(*Connection) error { return nil })
+	if errors.Is(err, ErrConnect) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
 func stateHash(raw string) string {
 	h := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(h[:])

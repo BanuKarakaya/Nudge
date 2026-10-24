@@ -30,7 +30,12 @@ func (r *NotificationRepository) Exists(ctx context.Context, userID int64, kind,
 	return exists, err
 }
 func (r *NotificationRepository) Enqueue(ctx context.Context, userID int64, kind, period string, message repository.NotificationMessage) error {
-	if userID <= 0 || kind == "" || period == "" || message.Channel == "" || (message.Text == "" && message.Bookmark == nil) {
+	invitation := message.Connection == "github" || message.Connection == "feedbin" || message.Connection == "raindrop"
+	special := invitation || message.WorkspaceOnboarding
+	if userID <= 0 || kind == "" || period == "" ||
+		(message.Connection != "" && !invitation) || (invitation && message.WorkspaceOnboarding) ||
+		(special && (message.Channel != "" || message.Text != "" || message.Bookmark != nil)) ||
+		(!special && (message.Channel == "" || (message.Text == "" && message.Bookmark == nil))) {
 		return errors.New("invalid notification")
 	}
 	payload, err := json.Marshal(message)
