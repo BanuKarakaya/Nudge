@@ -60,8 +60,8 @@ func TestNewValidation(t *testing.T) {
 		edit func(*Config)
 		want string
 	}{
-		{"missing model", func(c *Config) { c.Model = " \t" }, "CODEX_MODEL"},
-		{"missing key", func(c *Config) { c.APIKey = "\n " }, "CODEX_API_KEY"},
+		{"missing model", func(c *Config) { c.Model = " \t" }, "CODEX_SIMPLE_MODEL"},
+		{"missing key", func(c *Config) { c.APIKey = "\n " }, "OPENROUTER_API_KEY"},
 		{"empty state directory", func(c *Config) { c.StateDir = "" }, "absolute"},
 		{"relative state directory", func(c *Config) { c.StateDir = "relative/state" }, "absolute"},
 		{"missing binary", func(c *Config) { c.Binary = filepath.Join(c.StateDir, "missing-codex") }, "binary not found"},

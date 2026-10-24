@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"nudge/internal/ai"
@@ -124,14 +125,20 @@ func main() {
 	if stateDir == "" {
 		stateDir = "/var/lib/nudgy/codex"
 	}
+	if strings.TrimSpace(os.Getenv("CODEX_COMPLEX_MODEL")) == "" {
+		log.Fatal("Codex harness configuration: CODEX_COMPLEX_MODEL must be explicitly selected")
+	}
 	runtime, err := codex.New(codex.Config{
-		Binary: os.Getenv("CODEX_BINARY"), Model: os.Getenv("CODEX_MODEL"),
-		APIKey: os.Getenv("CODEX_API_KEY"), StateDir: stateDir,
+		Binary: os.Getenv("CODEX_BINARY"), Model: os.Getenv("CODEX_SIMPLE_MODEL"),
+		ComplexModel: os.Getenv("CODEX_COMPLEX_MODEL"),
+		APIKey:       os.Getenv("OPENROUTER_API_KEY"), StateDir: stateDir,
+		BaseURL:         "https://openrouter.ai/api/v1",
+		ModelCatalogURL: "https://openrouter.ai/api/v1/models",
 	})
 	if err != nil {
 		log.Fatalf("Codex harness configuration: %v", err)
 	}
-	log.Printf("Codex app-server harness enabled (model=%s); legacy AI routing disabled", os.Getenv("CODEX_MODEL"))
+	log.Printf("Codex app-server harness enabled (provider=OpenRouter simple_model=%s complex_model=%s); legacy AI routing disabled", os.Getenv("CODEX_SIMPLE_MODEL"), os.Getenv("CODEX_COMPLEX_MODEL"))
 	var webAssistant service.WebAssistant
 
 	// Search is a tool offered to Codex, never a conversation router or fallback.
