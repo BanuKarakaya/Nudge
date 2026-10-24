@@ -1,11 +1,18 @@
 # Nudgy conversations
 
-All app mentions, including greetings and thanks, are handled by the self-hosted
-Codex app-server harness. See [Codex setup, architecture and deployment gate](codex-harness.md).
+App mentions are handled by the self-hosted Codex app-server harness, except
+standalone common greetings, how-are-you questions and thanks. These use a
+conservative whole-message allowlist and local replies: zero model calls/tokens.
+Mixed requests (e.g. “teşekkürler, RSS özetimi ver”) still reach Codex.
+Local exchanges appear in interaction analytics as `SOCIAL_REPLY`, with no AI
+usage. They are excluded from model-bound history and leave native thread IDs
+and usage counters unchanged. Slack authentication, deduplication, reactions,
+conversation locking and safe history loading still apply.
+See [Codex setup, architecture and deployment gate](codex-harness.md).
 
 Go no longer selects intent/action enums, routes free/complex models, repairs
-model JSON, retries summaries through other models, or returns local social
-responses. Codex calls user-bound data tools and writes the final reply. It also
+model JSON, or retries summaries through other models. Apart from the local
+courtesy replies above, Codex calls user-bound data tools and writes the final reply. It also
 creates scheduled RSS summaries; Go still owns schedules and reliable delivery.
 
 Conversation transcripts and native thread IDs are stored in Postgres, keyed by

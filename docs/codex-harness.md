@@ -60,8 +60,10 @@ to a different origin.
 
 ## Model routing owned by Codex
 
-Every user request starts on DeepSeek. Its instructions keep greetings, thanks,
-simple questions, RSS counts/titles and straightforward summaries on that model.
+Standalone common greetings and thanks are answered locally without model calls
+(see conversations.md); they do not enter the native thread. Every other user
+request starts on DeepSeek. Its instructions keep simple questions, RSS
+counts/titles and straightforward summaries on that model.
 For writing/debugging code, architecture or complex multi-step reasoning, Codex
 is instructed to call the internal `handoff_to_luna` tool before attempting the
 task. The tool takes no model identifier or other arguments; Go does not classify

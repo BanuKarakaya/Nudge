@@ -205,7 +205,7 @@ func TestProcessingReactionSurroundsAgentAndDelivery(t *testing.T) {
 			if outcome == "history failure" {
 				h.history = nil
 			}
-			event := conversationEvent("hi")
+			event := conversationEvent("RSS özetimi ver")
 			event.Event.ThreadTS = "root"
 			h.replyWithSummary(event)
 			close(sender.events)
@@ -241,7 +241,7 @@ func TestProcessingReactionIsAddedBeforeWaitingForConversationLock(t *testing.T)
 		t.Fatal(err)
 	}
 	done := make(chan struct{})
-	go func() { h.replyWithSummary(conversationEvent("hi")); close(done) }()
+	go func() { h.replyWithSummary(conversationEvent("RSS özetimi ver")); close(done) }()
 	select {
 	case stage := <-sender.events:
 		if stage != "add:1.0" {
@@ -342,7 +342,7 @@ func TestSignedSlackEventAcknowledgesBeforeAgentCompletes(t *testing.T) {
 			<-release
 			return service.AgentResult{ThreadID: "thread", Text: "reply"}, nil
 		}), nil, make(conversationTestStore), &conversationSender{}, nil, completionAnalytics{done: done})
-	body := `{"type":"event_callback","team_id":"T","event_id":"E","event":{"type":"app_mention","user":"U","channel":"C","ts":"1.0","text":"hi"}}`
+	body := `{"type":"event_callback","team_id":"T","event_id":"E","event":{"type":"app_mention","user":"U","channel":"C","ts":"1.0","text":"RSS özetimi ver"}}`
 	request := httptest.NewRequest("POST", "/slack/events", strings.NewReader(body))
 	signSlackRequest(request, body)
 	response := httptest.NewRecorder()

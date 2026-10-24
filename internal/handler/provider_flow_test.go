@@ -172,7 +172,7 @@ func TestDeliveredAgentUsageIsPersistedAndUnknownUsageStaysNil(t *testing.T) {
 			}
 		}
 		h := NewSlackEventHandler("", conversationInstallations{}, nil, nil, runtime, nil, store, sender, nil)
-		event := conversationEvent("hi")
+		event := conversationEvent("RSS özetimi ver")
 		event.Event.TS = fmt.Sprintf("%d.0", i+1)
 		event.Event.ThreadTS = "1.0"
 		h.replyWithSummary(event)

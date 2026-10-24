@@ -210,9 +210,13 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 	}
 	historyLoaded := err == nil
 	var result service.AgentResult
+	localReply := localSocialReply(analyticsRecord.RequestText)
 	if historyLoaded {
 		log.Printf("slack_request=%s stage=history_loaded turns=%d prior_articles=%d elapsed_ms=%d", requestID, len(state.Turns), len(state.Articles), time.Since(started).Milliseconds())
-		if h.runtime == nil {
+		if localReply != "" {
+			result.Text = localReply
+			log.Printf("slack_request=%s stage=local_social_reply model_calls=0", requestID)
+		} else if h.runtime == nil {
 			err = fmt.Errorf("agent runtime unavailable")
 		} else {
 			// Detach mutable history so a failed run cannot change delivered state.
@@ -253,6 +257,9 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 	}
 	analyticsRecord.ResponseText = message
 	analyticsRecord.Action = "AGENT"
+	if localReply != "" {
+		analyticsRecord.Action = "SOCIAL_REPLY"
+	}
 	if err != nil {
 		log.Printf("slack_request=%s stage=agent_failed elapsed_ms=%d error=%q", requestID, time.Since(started).Milliseconds(), err)
 		if historyLoaded {
@@ -270,7 +277,7 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 	if err := h.client.PostMessageInThread(sendCtx, installation.BotToken, event.Event.Channel, threadTS, message); err != nil {
 		analyticsRecord.Status = "failed"
 		log.Printf("slack_request=%s stage=slack_send_failed elapsed_ms=%d error=%q", requestID, time.Since(started).Milliseconds(), err)
-		if success {
+		if success && localReply == "" {
 			state.AgentThreadID = ""
 			state.AgentTokenUsage = nil
 			h.saveConversation(key, state, requestID)
@@ -287,7 +294,9 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 		removeProcessingReaction()
 		removeProcessingReaction = nil
 	}
-	if success {
+	// Courtesy exchanges are recorded in analytics, not model-bound history.
+	// Preserve the native thread and its cumulative usage counters unchanged.
+	if success && localReply == "" {
 		state.AgentThreadID = result.ThreadID
 		state.AgentTokenUsage = result.TokenUsage
 		state.Remember(event.Event.Text, message, "AGENT")

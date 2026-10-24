@@ -100,7 +100,7 @@ func TestAgentBootstrapsJSONHistoryAndResumesAfterHandlerRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	sender := &conversationSender{}
-	for i, input := range []string{"<@B123> teşekkürler", "bunlardan hangisini okuyayım?"} {
+	for i, input := range []string{"<@B123> RSS özetimi ver", "bunlardan hangisini okuyayım?"} {
 		want := state
 		runtime := agentFunc(func(_ context.Context, request service.AgentRequest) (service.AgentResult, error) {
 			if request.Key != key || request.ThreadID != want.AgentThreadID || !reflect.DeepEqual(request.History, want) {
@@ -142,7 +142,7 @@ func TestAgentHistoryAndThreadIDAreIsolatedByFullSlackScope(t *testing.T) {
 			if err := store.Save(context.Background(), base, state); err != nil {
 				t.Fatal(err)
 			}
-			event := conversationEvent("merhaba")
+			event := conversationEvent("RSS özetimi ver")
 			switch field {
 			case "team":
 				event.TeamID = "T2"
@@ -214,7 +214,7 @@ func TestAgentFailureResetsThreadAndBootstrapsOnlyDeliveredHistory(t *testing.T)
 					return service.AgentResult{ThreadID: "unsafe-thread", Text: tc.text}, tc.err
 				})
 			}
-			h.replyWithSummary(conversationEvent("<@B123> merhaba"))
+			h.replyWithSummary(conversationEvent("<@B123> RSS özetimi ver"))
 			old.AgentThreadID = ""
 			old.AgentTokenUsage = nil
 			got, err := store.Load(context.Background(), key)
