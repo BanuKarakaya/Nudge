@@ -29,6 +29,7 @@ type DashboardFilters struct {
 	Model  string
 	Status string
 	Limit  int
+	Offset int
 }
 
 type DashboardSummary struct {

@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -66,9 +67,20 @@ func (h *DashboardHandler) api(w http.ResponseWriter, r *http.Request) {
 		from = time.Unix(0, 0)
 	}
 
+	limit, offset := 24, 0
+	for key, target := range map[string]*int{"limit": &limit, "offset": &offset} {
+		if raw := r.URL.Query().Get(key); raw != "" {
+			value, err := strconv.Atoi(raw)
+			if err != nil || value < 0 || (key == "limit" && (value < 1 || value > 100)) {
+				writeDashboardJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid pagination"})
+				return
+			}
+			*target = value
+		}
+	}
 	result, err := h.repository.Dashboard(r.Context(), repository.DashboardFilters{
 		From: from, To: to, Model: strings.TrimSpace(r.URL.Query().Get("model")),
-		Status: strings.TrimSpace(r.URL.Query().Get("status")), Limit: 24,
+		Status: strings.TrimSpace(r.URL.Query().Get("status")), Limit: limit, Offset: offset,
 	})
 	if err != nil {
 		writeDashboardJSON(w, http.StatusInternalServerError, map[string]string{"error": "dashboard data unavailable"})

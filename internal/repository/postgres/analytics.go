@@ -75,6 +75,9 @@ func (r *AnalyticsRepository) Dashboard(ctx context.Context, filters repository.
 	if filters.Limit <= 0 || filters.Limit > 100 {
 		filters.Limit = 24
 	}
+	if filters.Offset < 0 {
+		filters.Offset = 0
+	}
 	if filters.To.IsZero() {
 		filters.To = time.Now()
 	}
@@ -88,7 +91,9 @@ func (r *AnalyticsRepository) Dashboard(ctx context.Context, filters repository.
 		where += fmt.Sprintf(" AND model ILIKE $%d", len(args)+1)
 		args = append(args, "%"+filters.Model+"%")
 	}
-	if filters.Status != "" {
+	if filters.Status == "issues" {
+		where += " AND status IN ('failed', 'degraded')"
+	} else if filters.Status != "" {
 		where += fmt.Sprintf(" AND status = $%d", len(args)+1)
 		args = append(args, filters.Status)
 	}
@@ -143,9 +148,9 @@ func (r *AnalyticsRepository) Dashboard(ctx context.Context, filters repository.
 	rows.Close()
 
 	argsRecent := append([]any{}, args...)
-	argsRecent = append(argsRecent, filters.Limit)
+	argsRecent = append(argsRecent, filters.Limit, filters.Offset)
 	rows, err = r.db.Query(ctx, `SELECT id, request_text, response_text, action, status, model, provider, latency_ms, prompt_tokens, completion_tokens, total_tokens, created_at
-		FROM nudge_ai_interactions WHERE `+where+` ORDER BY created_at DESC LIMIT $`+fmt.Sprint(len(argsRecent)), argsRecent...)
+		FROM nudge_ai_interactions WHERE `+where+` ORDER BY created_at DESC, id DESC LIMIT $`+fmt.Sprint(len(argsRecent)-1)+` OFFSET $`+fmt.Sprint(len(argsRecent)), argsRecent...)
 	if err != nil {
 		return result, err
 	}

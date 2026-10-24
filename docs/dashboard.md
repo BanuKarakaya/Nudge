@@ -22,3 +22,27 @@ ordinary workspace members.
 The analytics migration is applied idempotently when the server starts. Provider
 usage fields are recorded when the provider returns usage metadata; latency and
 model data are still recorded when a provider omits token counts.
+
+The sidebar links and summary cards navigate to the corresponding sections.
+Click a conversation's message to read the complete request/response, model,
+provider, status, timestamp, latency, and token breakdown. Model legend buttons
+and the model details dialog apply a model filter. Model and status filters
+apply to both summary metrics and conversations; clearing them retains the date
+range. Notifications summarize failed/degraded interactions in the current view
+and link to those records; they are not a Slack notification inbox.
+
+The API accepts `limit` (1–100, default 24) and `offset` (non-negative, default 0).
+Summary totals are independent of pagination. Conversations sort by creation
+time and ID descending. “Tümünü gör” switches to 100-record pages; Previous/Next
+reach the remaining records without discarding filters. Status `issues` includes
+both `failed` and `degraded` records. Invalid pagination returns HTTP 400.
+
+The workspace control explains the all-workspaces scope. The account control
+lets the administrator change the in-memory token or sign out. Sign-out and
+failed requests clear previously displayed records and details; outdated
+requests cannot restore them. Connection indicators reflect the last dashboard
+API request, not Slack's overall service health. The mobile layout exposes the
+same token entry and account controls.
+
+Checks: `node --test internal/dashboard/app_test.cjs` and
+`go test ./internal/handler ./internal/repository/postgres ./internal/dashboard`.
