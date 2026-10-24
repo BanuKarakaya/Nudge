@@ -31,7 +31,7 @@ type linkClaims struct {
 }
 
 func (s LinkSigner) Token(userID int64, purpose string, expires time.Time) (string, error) {
-	if len(s.key) != 32 || userID <= 0 || (purpose != "feedbin" && purpose != "raindrop") {
+	if len(s.key) != 32 || userID <= 0 || (purpose != "feedbin" && purpose != "raindrop" && purpose != "github") {
 		return "", errors.New("invalid account link configuration")
 	}
 	raw, _ := json.Marshal(linkClaims{userID, purpose, expires.Unix()})
@@ -67,7 +67,11 @@ func (s LinkSigner) Verify(token string, userID int64, purpose string, now time.
 }
 
 func (s LinkSigner) URL(base string, userID int64, purpose string, now time.Time) (string, error) {
-	token, err := s.Token(userID, purpose, now.Add(8*24*time.Hour))
+	lifetime := 8 * 24 * time.Hour
+	if purpose == "github" {
+		lifetime = 20 * time.Minute
+	}
+	token, err := s.Token(userID, purpose, now.Add(lifetime))
 	if err != nil {
 		return "", err
 	}

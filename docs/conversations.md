@@ -10,6 +10,11 @@ and usage counters unchanged. Slack authentication, deduplication, reactions,
 conversation locking and safe history loading still apply.
 See [Codex setup, architecture and deployment gate](codex-harness.md).
 
+Optional [GitHub connection and repository task drafts](repository-tasks.md)
+are disabled by default. When configured, authenticated Slack users can connect
+GitHub privately, list allowed repositories and save/inspect/cancel task drafts.
+Repository editing, test execution and PR publication are not implemented yet.
+
 Go no longer selects intent/action enums, routes free/complex models, repairs
 model JSON, or retries summaries through other models. Apart from the local
 courtesy replies above, Codex calls user-bound data tools and writes the final reply. It also

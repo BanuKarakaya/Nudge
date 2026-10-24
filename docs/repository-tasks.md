@@ -1,0 +1,75 @@
+# Repository tasks: connection and draft phase
+
+Nudgy can connect a Slack user's GitHub account, list permitted repositories,
+and persist a task containing their original Slack request. Disabled by default.
+This phase does **not** clone repositories, execute code/tests, push branches,
+or publish PRs. GitLab is not implemented yet.
+
+## GitHub App setup
+
+Create a GitHub App with OAuth callback
+`https://YOUR_NUDGE_HOST/github/oauth/callback`. Enable expiring user access
+tokens. Grant repository **Contents: read/write**, **Pull requests: read/write**,
+and **Metadata: read**. Install only on selected repositories. No webhook or App
+private key is needed in this phase. Write permissions establish eligibility
+for future coding tasks; this phase only uses read endpoints.
+
+```text
+NUDGY_CODING_ENABLED=true
+NUDGY_GITHUB_APP_ID=<numeric App ID>
+NUDGY_GITHUB_CLIENT_ID=<App OAuth client ID>
+NUDGY_GITHUB_CLIENT_SECRET=<App OAuth client secret>
+NUDGY_CODING_ENCRYPTION_KEY=<separate base64-encoded 32-byte random key>
+NUDGY_GITHUB_ALLOWED_REPOS={"T_WORKSPACE_ID":["owner/repository"]}
+NUDGE_PUBLIC_URL=https://YOUR_NUDGE_HOST
+```
+
+Keep the encryption key stable across deployments and back it up securely.
+Changing it without migrating credentials requires reconnection. Existing
+Slack authentication, DM permissions and link signing must also be configured.
+Startup applies the idempotent coding schema.
+
+## User flow and access
+
+1. Ask Nudgy to connect GitHub. A signed, 20-minute link goes privately to the
+   authenticated user's Slack DM, never into shared channel text or model output.
+2. Open it and authorize the App. OAuth uses PKCE, a single-use 10-minute state
+   and a browser cookie binding the callback.
+3. Ask for repositories. Access requires the workspace allowlist, the App's
+   installation permissions and the user's current GitHub permissions.
+4. Request a change in `owner/repository`. Nudgy saves the original Slack request
+   as an immutable **draft**, reports its ID and says execution is unavailable.
+   The same user can inspect/cancel it in the same Slack thread.
+
+Tools: `github_connect`, `repositories_list`, `repository_task_prepare`,
+`repository_task_status`, `repository_task_cancel`. Native Codex threads are
+renewed when the tool set changes, retaining delivered conversation history.
+Local greeting responses still bypass model calls.
+
+Credentials and PKCE verifiers are encrypted in PostgreSQL. Refresh runs under
+a row lock; OAuth state is hashed. Identity comes from verified Slack events,
+never model arguments. Repeated events return the original task. Authenticated
+admin `DELETE /api/v1/coding/github/connection` removes local credentials and
+cancels drafts; users can revoke authorization in GitHub settings too.
+
+## Next phase
+
+Execution requires a durable queue and isolated per-task workers with resource
+limits and temporary scoped credentials. Repository code/tests must not execute
+inside the production bot container. Recheck authorization before execution and
+PR publication. Existing drafts must not execute automatically after deployment.
+Workers will create a branch, run Codex edits/tests and publish a PR with the
+actual diff and test report; merging remains separate. Match runners to projects:
+PipePulse requires macOS for its native Swift build/tests.
+
+## Verification
+
+Run `go test -race ./...` and `go vet ./...`. Provider/handler tests mock GitHub;
+they neither modify external repositories nor spend model credits. Set
+`NUDGE_TEST_DATABASE_URL` to a disposable PostgreSQL database and run
+`go test -race ./internal/repository/postgres -run TestCodingStorePostgres`
+for encryption, locking, event deduplication and ownership checks.
+
+References: [GitHub user tokens](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-user-access-token-for-a-github-app),
+[refresh](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/refreshing-user-access-tokens),
+[installation API](https://docs.github.com/en/rest/apps/installations).

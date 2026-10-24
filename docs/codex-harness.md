@@ -110,8 +110,11 @@ web research uses the existing grounding provider and returns source links;
 Codex decides when to request it and writes the final Slack answer.
 
 Tool calls are checked against both active native thread and turn IDs. Calls are
-deduplicated by call ID within the run. Tools are read-only; adding writes later
-requires durable idempotency and explicit authorization, not merely a new schema.
+deduplicated by call ID within the run. Default data tools are read-only. The
+optional [repository task tools](repository-tasks.md) connect GitHub and persist
+user-bound task drafts; they cannot edit repositories or execute code. Repository
+writes require isolated workers, durable idempotency and explicit authorization,
+not merely a new schema.
 Bounds: four concurrent children, 120 seconds per run (including slot wait),
 45 seconds per tool, 256 tool calls, 2 MiB tool result and 35,000 final characters.
 These are resource limits, not restrictions on which RSS entries can be read.

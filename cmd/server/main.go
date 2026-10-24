@@ -196,6 +196,9 @@ func main() {
 		appTimezone,
 		analyticsRepository,
 	)
+	if err := configureCoding(db, mux, privateMux, slackEventHandler, installationRepository, slackAPIClient, links); err != nil {
+		log.Fatalf("repository task configuration: %v", err)
+	}
 	slackEventHandler.RegisterRoutes(mux)
 
 	notificationCtx, notificationCancel := context.WithTimeout(context.Background(), 15*time.Second)

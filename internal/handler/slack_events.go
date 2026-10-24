@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"nudge/internal/analytics"
+	"nudge/internal/coding"
 	"nudge/internal/repository"
 	"nudge/internal/service"
 	"nudge/internal/slack"
@@ -35,6 +36,12 @@ type SlackEventHandler struct {
 	client            slackThreadMessageClient
 	timezone          *time.Location
 	analytics         repository.AnalyticsRepository
+	coding            *CodingHandler
+}
+
+func (h *SlackEventHandler) WithCoding(handler *CodingHandler) *SlackEventHandler {
+	h.coding = handler
+	return h
 }
 
 type slackThreadMessageClient interface {
@@ -222,6 +229,17 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 		} else if h.runtime == nil {
 			err = fmt.Errorf("agent runtime unavailable")
 		} else {
+			// Dynamic tools belong to a native thread at creation. Re-bootstrap
+			// delivered history once when coding tools are enabled or disabled.
+			toolVersion := ""
+			if h.coding != nil {
+				toolVersion = "coding-drafts-v1"
+			}
+			if state.AgentToolVersion != toolVersion {
+				state.AgentThreadID = ""
+				state.AgentTokenUsage = nil
+				state.AgentToolVersion = toolVersion
+			}
 			// Detach mutable history so a failed run cannot change delivered state.
 			history := state
 			if state.AgentTokenUsage != nil {
@@ -241,10 +259,18 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 			}
 			now := time.Now().In(location)
 			input := fmt.Sprintf("Current time: %s\nTimezone: %s\n\nSlack message:\n%s", now.Format(time.RFC3339), location.String(), analyticsRecord.RequestText)
+			tools := service.NewAgentTools(h.feedbinDigest, h.bookmarks, h.web, userID, now, location)
+			if h.coding != nil {
+				eventID := event.EventID
+				if eventID == "" {
+					eventID = event.Event.TS
+				}
+				tools = h.coding.Tools(tools, coding.Identity{UserID: userID, Team: event.TeamID, Channel: event.Event.Channel, Thread: threadTS, Event: eventID, Request: analyticsRecord.RequestText})
+			}
 			log.Printf("slack_request=%s stage=agent_started", requestID)
 			result, err = h.runtime.Run(ctx, service.AgentRequest{
 				Key: key, ThreadID: state.AgentThreadID, Input: input, History: history,
-				Tools: service.NewAgentTools(h.feedbinDigest, h.bookmarks, h.web, userID, now, location),
+				Tools: tools,
 			})
 			if err == nil && (strings.TrimSpace(result.Text) == "" || utf8.RuneCountInString(result.Text) > 35000) {
 				err = fmt.Errorf("agent returned empty or oversized output")
