@@ -24,3 +24,9 @@ CREATE INDEX IF NOT EXISTS nudge_ai_interactions_created_at_idx
 
 CREATE INDEX IF NOT EXISTS nudge_ai_interactions_model_idx
     ON nudge_ai_interactions (model);
+
+-- Additive and idempotent for existing deployments. Older rows have no trace.
+ALTER TABLE nudge_ai_interactions
+    ADD COLUMN IF NOT EXISTS operations JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE nudge_ai_interactions
+    ADD COLUMN IF NOT EXISTS trace_version INTEGER NOT NULL DEFAULT 0;

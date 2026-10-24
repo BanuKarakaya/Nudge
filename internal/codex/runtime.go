@@ -476,6 +476,7 @@ func (r *Runtime) consume(ctx context.Context, c *connection, req service.AgentR
 			result, exists := seen[p.CallID]
 			requestHandoff := false
 			if !exists {
+				operationStarted := time.Now()
 				output := "Tool is unavailable."
 				success := false
 				if p.Tool == handoffTool && !handoff && r.config.ComplexModel != "" {
@@ -502,6 +503,7 @@ func (r *Runtime) consume(ctx context.Context, c *connection, req service.AgentR
 					}
 					log.Printf("harness=codex thread=%s turn=%s stage=tool_completed tool=%s success=%t duration_ms=%d", threadID, turnID, p.Tool, success, time.Since(begin).Milliseconds())
 				}
+				analytics.RecordTool(ctx, p.Tool, r.config.Model, operationStarted, success, output)
 				result = map[string]any{"success": success, "contentItems": []map[string]string{{"type": "inputText", "text": output}}}
 				if len(seen) >= 256 {
 					return service.AgentResult{}, errors.New("Codex tool call budget exceeded")

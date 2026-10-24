@@ -82,3 +82,31 @@ test('latest request wins and conversation contents are escaped', async () => {
   assert.match(h.element('dialog-content').innerHTML, /&lt;script&gt;/);
   assert.match(h.element('conversation-rows').innerHTML, /&lt;img/);
 });
+
+test('operations page renders real steps, safe logs and escaped diffs', async () => {
+  const h = harness();
+  h.run('location.hash = "#operations"; syncNavigation();');
+  await h.reply(0, { total_messages: 1, recent: [{ request: 'RSS getir', trace_version: 1, operations: [
+    { tool: 'rss_articles', title: 'RSS başlıkları getirildi', status: 'success', duration_ms: 20, detail: 'Getirilen: 3', model: 'model', diff: '<script>unsafe</script>', path: '<img>', token: 'must-not-render' }
+  ] }] });
+  assert.match(h.element('conversation-rows').innerHTML, /RSS başlıkları getirildi/);
+  h.run('showConversation(0)');
+  const html = h.element('dialog-content').innerHTML;
+  assert.match(html, /Teknik log/);
+  assert.match(html, /&lt;script&gt;unsafe/);
+  assert.ok(!html.includes('must-not-render'));
+  assert.equal(h.element('dialog-title').textContent, 'İşlem detayı');
+  h.element('view-all').handlers.click();
+  assert.equal(h.run('location.hash'), 'operations'); // plain test-location object
+});
+
+test('old records and requests without tool steps are not fabricated', async () => {
+  const h = harness();
+  await h.reply(0);
+  assert.match(h.run('operationTimeline({})'), /eski mesaj/);
+  assert.match(h.run('operationTimeline({trace_version:1})'), /araç adımı kaydedilmedi/);
+  assert.ok(!h.run('operationTimeline({})').includes('Başarılı'));
+  h.run('location.hash = "#operations"; syncNavigation(); disconnect();');
+  assert.equal(h.run('state.data'), null);
+  assert.equal(h.element('dialog-content').textContent, '');
+});

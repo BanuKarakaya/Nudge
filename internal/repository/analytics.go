@@ -21,6 +21,7 @@ type InteractionRecord struct {
 	LatencyMS    int64
 	StartedAt    time.Time
 	Usage        []analytics.AIUsage
+	Operations   []analytics.Operation
 }
 
 type DashboardFilters struct {
@@ -62,18 +63,21 @@ type ModelUsage struct {
 }
 
 type Interaction struct {
-	ID               int64     `json:"id"`
-	Request          string    `json:"request"`
-	Response         string    `json:"response"`
-	Action           string    `json:"action"`
-	Status           string    `json:"status"`
-	Model            string    `json:"model"`
-	Provider         string    `json:"provider"`
-	LatencyMS        int64     `json:"latency_ms"`
-	PromptTokens     int64     `json:"prompt_tokens"`
-	CompletionTokens int64     `json:"completion_tokens"`
-	TotalTokens      int64     `json:"total_tokens"`
-	CreatedAt        time.Time `json:"created_at"`
+	RequestID        string                `json:"request_id"`
+	TraceVersion     int                   `json:"trace_version"`
+	Operations       []analytics.Operation `json:"operations"`
+	ID               int64                 `json:"id"`
+	Request          string                `json:"request"`
+	Response         string                `json:"response"`
+	Action           string                `json:"action"`
+	Status           string                `json:"status"`
+	Model            string                `json:"model"`
+	Provider         string                `json:"provider"`
+	LatencyMS        int64                 `json:"latency_ms"`
+	PromptTokens     int64                 `json:"prompt_tokens"`
+	CompletionTokens int64                 `json:"completion_tokens"`
+	TotalTokens      int64                 `json:"total_tokens"`
+	CreatedAt        time.Time             `json:"created_at"`
 }
 
 type AnalyticsRepository interface {

@@ -120,6 +120,7 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 		threadTS = event.Event.TS
 	}
 	tracker := analytics.NewUsageTracker()
+	operations := &analytics.OperationTracker{}
 	analyticsRecord := repository.InteractionRecord{
 		RequestID: requestID, TeamID: event.TeamID, ChannelID: event.Event.Channel,
 		ThreadTS: threadTS, SlackUserID: event.Event.User,
@@ -132,6 +133,7 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 		}
 		analyticsRecord.LatencyMS = time.Since(started).Milliseconds()
 		analyticsRecord.Usage = tracker.Snapshot()
+		analyticsRecord.Operations = operations.Snapshot()
 		if analyticsRecord.Status == "processing" {
 			analyticsRecord.Status = "failed"
 		}
@@ -145,6 +147,7 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
 	defer cancel()
 	ctx = analytics.WithUsageTracker(ctx, tracker)
+	ctx = analytics.WithOperationTracker(ctx, operations)
 	userID, err := h.installations.GetUserIDBySlackUserID(ctx, event.TeamID, event.Event.User)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

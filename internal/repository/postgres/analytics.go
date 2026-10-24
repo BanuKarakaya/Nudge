@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -34,21 +35,30 @@ func (r *AnalyticsRepository) RecordInteraction(ctx context.Context, record repo
 	if record.StartedAt.IsZero() {
 		record.StartedAt = time.Now()
 	}
-	_, err := r.db.Exec(ctx, `
+	operations := record.Operations
+	if operations == nil {
+		operations = []analytics.Operation{}
+	}
+	encodedOperations, err := json.Marshal(operations)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Exec(ctx, `
 		INSERT INTO nudge_ai_interactions
 			(request_id, team_id, channel_id, thread_ts, slack_user_id, user_id,
 			 request_text, response_text, action, status, provider, model, latency_ms,
-			 prompt_tokens, completion_tokens, total_tokens, created_at)
-		VALUES ($1,$2,$3,$4,$5,NULLIF($6, 0),$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+			 prompt_tokens, completion_tokens, total_tokens, created_at, operations, trace_version)
+		VALUES ($1,$2,$3,$4,$5,NULLIF($6, 0),$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18::jsonb,1)
 		ON CONFLICT (request_id) DO UPDATE SET
 			response_text=EXCLUDED.response_text, action=EXCLUDED.action,
 			status=EXCLUDED.status, provider=EXCLUDED.provider, model=EXCLUDED.model,
 			latency_ms=EXCLUDED.latency_ms, prompt_tokens=EXCLUDED.prompt_tokens,
-			completion_tokens=EXCLUDED.completion_tokens, total_tokens=EXCLUDED.total_tokens`,
+			completion_tokens=EXCLUDED.completion_tokens, total_tokens=EXCLUDED.total_tokens,
+			operations=EXCLUDED.operations, trace_version=EXCLUDED.trace_version`,
 		record.RequestID, record.TeamID, record.ChannelID, record.ThreadTS, record.SlackUserID,
 		record.UserID, record.RequestText, record.ResponseText, record.Action, record.Status,
 		strings.Join(providers, " → "), strings.Join(models, " → "), record.LatencyMS,
-		prompt, completion, total, record.StartedAt)
+		prompt, completion, total, record.StartedAt, encodedOperations)
 	return err
 }
 
@@ -149,14 +159,19 @@ func (r *AnalyticsRepository) Dashboard(ctx context.Context, filters repository.
 
 	argsRecent := append([]any{}, args...)
 	argsRecent = append(argsRecent, filters.Limit, filters.Offset)
-	rows, err = r.db.Query(ctx, `SELECT id, request_text, response_text, action, status, model, provider, latency_ms, prompt_tokens, completion_tokens, total_tokens, created_at
+	rows, err = r.db.Query(ctx, `SELECT id, request_text, response_text, action, status, model, provider, latency_ms, prompt_tokens, completion_tokens, total_tokens, created_at, operations, trace_version, request_id
 		FROM nudge_ai_interactions WHERE `+where+` ORDER BY created_at DESC, id DESC LIMIT $`+fmt.Sprint(len(argsRecent)-1)+` OFFSET $`+fmt.Sprint(len(argsRecent)), argsRecent...)
 	if err != nil {
 		return result, err
 	}
 	for rows.Next() {
 		var item repository.Interaction
-		if err := rows.Scan(&item.ID, &item.Request, &item.Response, &item.Action, &item.Status, &item.Model, &item.Provider, &item.LatencyMS, &item.PromptTokens, &item.CompletionTokens, &item.TotalTokens, &item.CreatedAt); err != nil {
+		var rawOperations []byte
+		if err := rows.Scan(&item.ID, &item.Request, &item.Response, &item.Action, &item.Status, &item.Model, &item.Provider, &item.LatencyMS, &item.PromptTokens, &item.CompletionTokens, &item.TotalTokens, &item.CreatedAt, &rawOperations, &item.TraceVersion, &item.RequestID); err != nil {
+			rows.Close()
+			return result, err
+		}
+		if err := json.Unmarshal(rawOperations, &item.Operations); err != nil {
 			rows.Close()
 			return result, err
 		}

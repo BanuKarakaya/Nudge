@@ -63,3 +63,17 @@ dialog p{color:#71676c;font-size:14px;margin:0 0 16px}dialog h3{font-size:14px;m
 .dialog-table{overflow:auto;margin:16px 0}.dialog-table table{min-width:520px}.dialog-table small{display:block;margin-top:5px;color:#71676c}.dialog-table td,.dialog-table th{padding:12px}
 @media(max-width:720px){.notice{flex-wrap:wrap}.token-entry{display:flex;width:100%;margin-left:0}.token-entry input{min-width:0;width:auto;flex:1}.table-tools{flex-wrap:wrap}.table-panel{padding:0}.sidebar-foot{display:block}.sidebar-foot .system-status{display:none}.user-mini{justify-content:center;padding:8px 0}.user-mini>span:not(.avatar){display:none}.workspace{display:flex;justify-content:center;padding:12px 0}.workspace>span:not(.workspace-dot){display:none}.detail-meta{grid-template-columns:1fr}.pagination{gap:6px}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.metric-action:hover{transform:none}.bar-track i{transition:none}}
+/* Operations is a separate hash-routed page sharing date/auth/filter controls. */
+.operations-view > .nudgy-note,
+.operations-view > .metric-grid,
+.operations-view > .dashboard-grid,
+.operations-view > .bottom-grid { display: none; }
+.operations-help { padding: 24px; margin-top: 24px; }
+.operations-help p { color: #705e63; line-height: 1.7; }
+.operation-timeline { padding-left: 24px; }
+.operation-timeline li { padding: 0 0 24px 12px; border-left: 2px solid #eadde0; margin-bottom: 12px; }
+.operation-heading { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.operation-meta { color: #705e63; font-size: 13px; overflow-wrap: anywhere; }
+.operation-timeline p { line-height: 1.6; overflow-wrap: anywhere; }
+.operation-timeline summary { cursor: pointer; color: #762f3d; padding: 8px 0; }
+.operation-diff { background: #f5f7f5; border: 1px solid #d7e4d7; border-radius: 10px; padding: 16px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 400px; overflow: auto; }

@@ -150,6 +150,7 @@ function renderModels(models) {
 }
 
 function renderRows(rows) {
+  if (location.hash === "#operations") { renderOperationRows(rows); return; }
   const body = $("conversation-rows"); setText("table-caption", rows.length ? `${number.format(state.offset + 1)}–${number.format(state.offset + rows.length)} / ${number.format(state.data.total_messages)} kayıt` : "Bu filtrelerde kayıt yok.");
   if (!rows.length) { body.innerHTML = `<tr><td colspan="6"><div class="empty-mini" style="padding:24px 0">Bu aralıkta henüz konuşma kaydı yok.</div></td></tr>`; return; }
   body.innerHTML = rows.map((row, index) => `<tr><td class="conversation-cell"><button class="conversation-open" data-row="${index}" aria-haspopup="dialog" title="Konuşmanın tamamını aç">${esc(row.request || "İsimsiz mesaj")}</button><small title="${esc(row.response)}">↳ ${esc(row.response || "Yanıt yok")}</small></td><td class="model-cell" title="${esc(row.model)}">${esc(row.model || "—")}</td><td><span class="status ${esc(row.status)}">${row.status === "success" ? "Başarılı" : row.status === "degraded" ? "Kısmi" : row.status === "processing" ? "İşleniyor" : "Hata"}</span></td><td class="latency-cell">${formatLatency(row.latency_ms)}</td><td class="tokens-cell">${shortNumber(row.total_tokens)}</td><td class="time-cell">${formatDate(row.created_at)}<br>${formatTime(row.created_at)}</td></tr>`).join("");
@@ -172,6 +173,22 @@ function navigate(section) {
 }
 function syncNavigation() {
   const section = location.hash.slice(1) || "overview";
+  const operations = section === "operations";
+  $("overview").classList.toggle("operations-view", operations);
+  $("operations-help").classList.toggle("hidden", !operations);
+  document.querySelector(".page-heading h1").textContent = operations ? "Yapılan işlemler" : "Nudgy overview";
+  document.querySelector(".page-heading p").textContent = operations
+    ? "Nudgy ne yaptı? Her mesajın araç adımlarını, sonuçlarını ve sürelerini incele."
+    : "Mesajlarını, model performansını ve token kullanımını tek bakışta takip et.";
+  document.querySelector("#conversations h2").textContent = operations ? "İşlem geçmişi" : "Son konuşmalar";
+  document.querySelector("#conversations .panel-head p").textContent = operations
+    ? "Bir isteği açarak işlem zaman çizelgesini ve güvenli log detaylarını gör. Filtreler mesaj durumuna uygulanır."
+    : "Kullanıcı mesajı → Nudgy yanıtı detayları";
+  const headings = operations ? ["MESAJ / YAPILAN İŞLEM", "MODEL", "İŞLEM ADIMLARI", "TOPLAM SÜRE", "ADIM", "ZAMAN"]
+    : ["MESAJ / YANIT", "MODEL", "DURUM", "SÜRE", "TOKEN", "ZAMAN"];
+  document.querySelectorAll("#conversations th").forEach((th, index) => { th.textContent = headings[index]; });
+  if (state.data) renderRows(state.data.recent || []);
+  $(operations ? "overview" : section)?.scrollIntoView({ block: "start" });
   document.querySelectorAll(".nav-item").forEach(link => {
     const selected = link.getAttribute("href") === "#" + section;
     link.classList.toggle("active", selected);
@@ -197,7 +214,31 @@ function showModels() {
 function showConversation(index) {
   const row = state.data?.recent?.[index]; if (!row) return;
   openDialog("Konuşma detayı",
-    `<dl class="detail-meta"><div><dt>Model</dt><dd>${esc(row.model || "—")}</dd></div><div><dt>Sağlayıcı</dt><dd>${esc(row.provider || "—")}</dd></div><div><dt>Durum</dt><dd>${esc(({success:"Başarılı",failed:"Hatalı",degraded:"Kısmi",processing:"İşleniyor"})[row.status] || row.status)}</dd></div><div><dt>İşlem</dt><dd>${esc(row.action || "—")}</dd></div><div><dt>Süre</dt><dd>${formatLatency(row.latency_ms)}</dd></div><div><dt>Zaman</dt><dd>${esc(new Date(row.created_at).toLocaleString("tr-TR"))}</dd></div><div><dt>Prompt / Completion / Toplam token</dt><dd>${number.format(row.prompt_tokens || 0)} / ${number.format(row.completion_tokens || 0)} / ${number.format(row.total_tokens || 0)}</dd></div></dl><h3>Kullanıcı mesajı</h3><pre class="message-content">${esc(row.request || "Mesaj yok")}</pre><h3>Nudgy yanıtı</h3><pre class="message-content">${esc(row.response || "Yanıt kaydedilmedi")}</pre>`);
+    `<dl class="detail-meta"><div><dt>Model</dt><dd>${esc(row.model || "—")}</dd></div><div><dt>Sağlayıcı</dt><dd>${esc(row.provider || "—")}</dd></div><div><dt>Mesaj durumu</dt><dd>${esc(({success:"Başarılı",failed:"Hatalı",degraded:"Kısmi",processing:"İşleniyor"})[row.status] || row.status)}</dd></div><div><dt>İşlem</dt><dd>${esc(row.action || "—")}</dd></div><div><dt>Süre</dt><dd>${formatLatency(row.latency_ms)}</dd></div><div><dt>Zaman</dt><dd>${esc(new Date(row.created_at).toLocaleString("tr-TR"))}</dd></div><div><dt>Prompt / Completion / Toplam token</dt><dd>${number.format(row.prompt_tokens || 0)} / ${number.format(row.completion_tokens || 0)} / ${number.format(row.total_tokens || 0)}</dd></div></dl><h3>Kullanıcı mesajı</h3><pre class="message-content">${esc(row.request || "Mesaj yok")}</pre>${operationTimeline(row)}<h3>Nudgy yanıtı</h3><pre class="message-content">${esc(row.response || "Yanıt kaydedilmedi")}</pre>`);
+  if (location.hash === "#operations") $("dialog-title").textContent = "İşlem detayı";
+}
+
+function noOperations(row) {
+  return row.trace_version ? "Bu istekte araç adımı kaydedilmedi."
+    : "Bu eski mesaj için işlem detayı kaydedilmemiş.";
+}
+function renderOperationRows(rows) {
+  setText("table-caption", rows.length ? `${number.format(state.offset + 1)}–${number.format(state.offset + rows.length)} / ${number.format(state.data.total_messages)} istek` : "Bu filtrelerde kayıt yok.");
+  $("conversation-rows").innerHTML = rows.length ? rows.map((row, index) => {
+    const ops = row.operations || [], failed = ops.filter(op => op.status === "failed").length;
+    const summary = ops.length ? ops.map(op => op.title).join(" → ") : noOperations(row);
+    return `<tr><td class="conversation-cell"><button class="conversation-open" data-row="${index}" aria-haspopup="dialog">${esc(row.request || "İsimsiz mesaj")}</button><small title="${esc(summary)}">${esc(summary)}</small></td><td class="model-cell">${esc(row.model || "—")}</td><td><span class="status ${failed ? "failed" : ops.length ? "success" : ""}">${failed ? `${failed} adım hatalı` : ops.length ? "Adımlar tamamlandı" : row.trace_version ? "Adım yok" : "Kayıt yok"}</span></td><td>${formatLatency(row.latency_ms || 0)}</td><td>${row.trace_version || ops.length ? number.format(ops.length) : "—"}</td><td class="time-cell">${formatDate(row.created_at)}<br>${formatTime(row.created_at)}</td></tr>`;
+  }).join("") : '<tr><td colspan="6" class="empty-state">Bu aralıkta henüz işlem kaydı yok.</td></tr>';
+}
+function operationTimeline(row) {
+  const ops = row.operations || [];
+  if (!ops.length) return `<h3>Yapılan işlemler</h3><p>${esc(noOperations(row))}</p>`;
+  return '<h3>Yapılan işlemler</h3><ol class="operation-timeline">' + ops.map((op, index) => {
+    const status = op.status === "success" ? "Başarılı" : "Başarısız / reddedildi";
+    // Only expose the documented trace fields, not future arbitrary payloads.
+    const log = { request_id: row.request_id, step: index + 1, tool: op.tool, status: op.status, model: op.model, started_at: op.started_at, duration_ms: op.duration_ms };
+    return `<li><div class="operation-heading"><strong>${esc(op.title)}</strong><span class="status ${op.status === "success" ? "success" : "failed"}">${status}</span></div><p class="operation-meta">${formatTime(op.started_at)} · ${formatLatency(op.duration_ms || 0)} · ${esc(op.model || "Model bilgisi yok")}</p><p>${esc(op.detail)}</p>${op.path ? `<h4>Dosya: ${esc(op.path)}</h4>` : ""}${op.diff ? `<pre class="operation-diff">${esc(op.diff)}</pre>` : ""}<details><summary>Teknik log</summary><pre class="message-content">${esc(JSON.stringify(log, null, 2))}</pre></details></li>`;
+  }).join("") + '</ol>';
 }
 function showNotifications() {
   const data = state.data;
@@ -267,7 +308,7 @@ $("token-input").addEventListener("keydown", event => { if (event.key === "Enter
 $("previous-page").addEventListener("click", () => { state.offset = Math.max(0, state.offset - state.limit); loadDashboard(); });
 $("next-page").addEventListener("click", () => { state.offset += state.limit; loadDashboard(); });
 $("view-all").addEventListener("click", () => {
-  state.limit = state.limit === 24 ? 100 : 24; state.offset = 0; navigate("conversations"); loadDashboard();
+  state.limit = state.limit === 24 ? 100 : 24; state.offset = 0; navigate(location.hash === "#operations" ? "operations" : "conversations"); loadDashboard();
 });
 window.addEventListener("hashchange", syncNavigation);
 $("today-label").textContent = new Date().toLocaleDateString("tr-TR", { day: "numeric", month: "long", year: "numeric" });

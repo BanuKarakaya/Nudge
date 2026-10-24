@@ -46,3 +46,40 @@ same token entry and account controls.
 
 Checks: `node --test internal/dashboard/app_test.cjs` and
 `go test ./internal/handler ./internal/repository/postgres ./internal/dashboard`.
+
+## Operations page
+
+`/dashboard#operations` shows the separate **Yapılan işlemler** page. It shares
+date/model/message-status filters and pagination with Overview. Each request
+opens a timeline of actual tool calls, not actions inferred from assistant text.
+Tool status is distinct from the overall message/delivery status: a tool can
+fail even if the agent subsequently delivers a successful explanation.
+
+The Codex adapter records RSS inventory, article retrieval, bookmarks, web search
+and model handoff attempts, including failure/rejection, model, start time and
+duration. Replayed tool call IDs do not create duplicate steps. Safe numerical
+RSS/bookmark result counts and pagination are retained; raw arguments, article
+bodies, titles, URLs, search results, provider errors and credentials are not.
+The technical-log expander shows structured metadata, not process stdout.
+
+Trace data is attached to its Slack interaction and saved on request completion,
+including failed turns, using the existing bounded analytics persistence call.
+It is **not** a durable live audit stream: hard crashes can lose in-flight traces,
+and persistence failures remain in server logs. Scheduled background digests
+are not included. Use Refresh to fetch newly completed requests.
+
+Startup applies additive `operations` JSONB and `trace_version` columns without
+deleting existing rows. Historical rows are explicitly marked as lacking trace
+data. A new request with no tool calls is not labelled as a successful tool action.
+No new environment variable is required. The existing administrator token
+protects all operation details, across all workspaces.
+
+The bounded Operation schema and detail renderer support `path`/`diff` for future
+write adapters. Those adapters must only emit confirmed actions with reviewed,
+secret-redacted diffs. **No GitHub/GitLab connection, file editing or PR/MR creation
+is implemented by this dashboard change.** Unknown tools only record metadata.
+
+Tests: `go test -race ./internal/analytics ./internal/codex ./internal/handler`,
+and `NUDGE_TEST_DATABASE_URL=<disposable-db> go test ./internal/repository/postgres
+-run TestAnalyticsOperationsPostgres` verifies upgrade, repeatable migration,
+trace upsert, filters and pagination in an isolated test schema.
