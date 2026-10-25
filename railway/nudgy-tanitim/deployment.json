@@ -1,0 +1,10 @@
+{
+  "provider": "railway",
+  "workspaceId": "3a61952c-f7c0-41e0-b1f1-e619ab1bd79a",
+  "projectId": "a065cd37-dfe2-421c-b47d-69af86c957cc",
+  "environmentId": "22446832-0b3c-4410-b02d-96f0794f8662",
+  "serviceId": "9efc790c-c0d8-4330-9138-628d9cb5206c",
+  "deploymentType": "function",
+  "source": "index.js",
+  "url": "https://nudgy-say-hello.up.railway.app"
+}

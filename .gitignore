@@ -4,3 +4,5 @@
 .DS_Store
 bin/
 tmp/
+# Managed Sites project has its own Git history.
+/sites/nudgy-tanitim/
