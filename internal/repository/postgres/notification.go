@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -42,9 +43,63 @@ func (r *NotificationRepository) Enqueue(ctx context.Context, userID int64, kind
 	if err != nil {
 		return err
 	}
-	_, err = r.db.Exec(ctx, `INSERT INTO notifications (user_id, notification_type, period_key, delivery_status, payload, sent_at)
- VALUES ($1,$2,$3,'pending',$4,NULL) ON CONFLICT (user_id, notification_type, period_key) DO NOTHING`, userID, kind, period, payload)
-	return err
+	const insert = `INSERT INTO notifications (user_id, notification_type, period_key, delivery_status, payload, sent_at)
+ VALUES ($1,$2,$3,'pending',$4,NULL) ON CONFLICT (user_id, notification_type, period_key) DO NOTHING`
+	parts := splitNotificationText(message.Text)
+	if special || message.Bookmark != nil || len(parts) <= 1 {
+		_, err = r.db.Exec(ctx, insert, userID, kind, period, payload)
+		return err
+	}
+	// Commit the entire snapshot together. The first row keeps the original
+	// period key, so Exists and concurrent/repeated preparations deduplicate
+	// the whole list, including against messages queued by the old generator.
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(context.Background())
+	for i, part := range parts {
+		message.Text = part
+		payload, err = json.Marshal(message)
+		if err != nil {
+			return err
+		}
+		key := period
+		if i > 0 {
+			key = fmt.Sprintf("%s/part/%d", period, i+1)
+		}
+		result, err := tx.Exec(ctx, insert, userID, kind, key, payload)
+		if err != nil {
+			return err
+		}
+		if i == 0 && result.RowsAffected() == 0 {
+			return nil
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+// Stay below Slack's text truncation limit, preserving full lines where possible
+// and Unicode characters even for a pathological single oversized line.
+func splitNotificationText(text string) []string {
+	const maxChars = 30000
+	chars := []rune(text)
+	var parts []string
+	for len(chars) > maxChars {
+		end := maxChars
+		for i := end - 1; i >= 0; i-- {
+			if chars[i] == '\n' {
+				end = i + 1
+				break
+			}
+		}
+		parts = append(parts, string(chars[:end]))
+		chars = chars[end:]
+	}
+	if len(chars) > 0 {
+		parts = append(parts, string(chars))
+	}
+	return parts
 }
 func (r *NotificationRepository) ClaimNext(ctx context.Context) (repository.NotificationDelivery, error) {
 	var d repository.NotificationDelivery

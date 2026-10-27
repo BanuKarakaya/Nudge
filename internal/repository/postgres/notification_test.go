@@ -148,6 +148,61 @@ func TestNotificationDeliveryPostgres(t *testing.T) {
 	if total != 3 || sent != 3 {
 		t.Fatalf("rows=%d sent=%d", total, sent)
 	}
+	// Large lists are committed atomically and deduplicated as one snapshot.
+	large := repository.NotificationMessage{Channel: "D", Text: strings.Repeat("• <https://example.com|Türkçe başlık>\n", 3000)}
+	parts := splitNotificationText(large.Text)
+	// A failure on a later part must also roll back the original period row.
+	if _, err := db.Exec(ctx, `ALTER TABLE notifications ADD CONSTRAINT reject_test_part CHECK (period_key <> 'rollback/part/2')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := q.Enqueue(ctx, 1, "daily_feedbin", "rollback", large); err == nil {
+		t.Fatal("expected part insertion failure")
+	}
+	if exists, err := q.Exists(ctx, 1, "daily_feedbin", "rollback"); err != nil || exists {
+		t.Fatalf("partial batch committed: %v %v", exists, err)
+	}
+	if _, err := db.Exec(ctx, `ALTER TABLE notifications DROP CONSTRAINT reject_test_part`); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := q.Enqueue(ctx, 1, "daily_feedbin", "large", large); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A changed inventory on retry must not append additional parts.
+	changed := large
+	changed.Text += large.Text
+	if err := q.Enqueue(ctx, 1, "daily_feedbin", "large", changed); err != nil {
+		t.Fatal(err)
+	}
+	var retriable repository.NotificationDelivery
+	for i, text := range parts {
+		d, err := q.ClaimNext(ctx)
+		if err != nil || d.Message.Text != text {
+			t.Fatalf("part %d: %+v %v", i, d, err)
+		}
+		if i == 1 {
+			retriable = d
+			if err := q.Retry(ctx, d, time.Hour); err != nil {
+				t.Fatal(err)
+			}
+		} else if err := q.Complete(ctx, d); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := q.ClaimNext(ctx); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("duplicate parts queued: %v", err)
+	}
+	if _, err := db.Exec(ctx, `UPDATE notifications SET available_at=NOW()-INTERVAL '1 second' WHERE id=$1`, retriable.ID); err != nil {
+		t.Fatal(err)
+	}
+	d, err := q.ClaimNext(ctx)
+	if err != nil || d.ID != retriable.ID || d.Message.Text != parts[1] {
+		t.Fatalf("wrong part retried: %+v %v", d, err)
+	}
+	if err := q.Complete(ctx, d); err != nil {
+		t.Fatal(err)
+	}
 	// Typed onboarding deliveries need no channel or pre-generated bearer link.
 	for _, message := range []repository.NotificationMessage{{Connection: "github"}, {WorkspaceOnboarding: true}} {
 		if err := q.Enqueue(ctx, 1, "onboarding", fmt.Sprint(message), message); err != nil {
@@ -164,6 +219,27 @@ func TestNotificationDeliveryPostgres(t *testing.T) {
 	for _, message := range []repository.NotificationMessage{{Connection: "unknown"}, {Connection: "github", WorkspaceOnboarding: true}, {Connection: "github", Channel: "public", Text: "secret"}} {
 		if err := q.Enqueue(ctx, 1, "invalid", "key", message); err == nil {
 			t.Fatal("accepted invalid typed payload")
+		}
+	}
+}
+
+func TestSplitNotificationTextPreservesUnicodeAndLines(t *testing.T) {
+	for _, original := range []string{"", "short", strings.Repeat("ğ📰", 30000), strings.Repeat("• <https://example.com/article|Türkçe başlık>\n", 3000)} {
+		parts := splitNotificationText(original)
+		if strings.Join(parts, "") != original {
+			t.Fatal("text lost or duplicated")
+		}
+		for _, part := range parts {
+			if len([]rune(part)) > 30000 || part == "" {
+				t.Fatalf("invalid part length: %d", len([]rune(part)))
+			}
+		}
+		if strings.HasPrefix(original, "•") {
+			for _, part := range parts {
+				if !strings.HasPrefix(part, "• <") || !strings.HasSuffix(part, ">\n") {
+					t.Fatal("article link split across messages")
+				}
+			}
 		}
 	}
 }

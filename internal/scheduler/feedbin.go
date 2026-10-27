@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -88,7 +89,11 @@ func (r *FeedbinReminder) processMember(ctx context.Context, teamID, botToken, s
 	if err != nil {
 		return fmt.Errorf("open direct message: %w", err)
 	}
-	return r.notifications.Enqueue(ctx, userID, feedbinNotificationType, periodKey, repository.NotificationMessage{Channel: dmChannel, Text: digest})
+	if err := r.notifications.Enqueue(ctx, userID, feedbinNotificationType, periodKey, repository.NotificationMessage{Channel: dmChannel, Text: digest}); err != nil {
+		return err
+	}
+	log.Printf("Feedbin reminder queued user=%s period=%s", slackUserID, periodKey)
+	return nil
 }
 
 func (r *FeedbinReminder) nextEvent(now time.Time) time.Time {

@@ -17,8 +17,9 @@ Repository editing, test execution and PR publication are not implemented yet.
 
 Go no longer selects intent/action enums, routes free/complex models, repairs
 model JSON, or retries summaries through other models. Apart from the local
-courtesy replies above, Codex calls user-bound data tools and writes the final reply. It also
-creates scheduled RSS summaries; Go still owns schedules and reliable delivery.
+courtesy replies above, Codex calls user-bound data tools and writes the final reply.
+The daily RSS notification is a direct list of titles and links; it does not call
+a model. Go owns schedules and reliable delivery.
 
 Conversation transcripts and native thread IDs are stored in Postgres, keyed by
 workspace, channel, Slack thread and user. Native Codex history lives on the
@@ -88,9 +89,10 @@ Rotating the signing key invalidates outstanding links. Slack/Raindrop OAuth
 state is process-local, so their callbacks need the initiating server instance;
 GitHub OAuth state is stored in PostgreSQL.
 
-## Scheduled summaries and reliable delivery
+## Scheduled titles and reliable delivery
 
-The 23:00 RSS job summarizes the completed local-calendar window
+The 23:00 RSS job sends each connected workspace member their own unread RSS
+titles and source links from the completed local-calendar window
 `[previous day 23:00, scheduled day 23:00)`. For example, the October 23 job
 covers October 22 23:00 through October 23 22:59:59. Entries at the ending
 boundary belong to the next job. Preparation retries keep the original scheduled
@@ -107,9 +109,13 @@ claimed after restart. The worker runs even if new scheduled reminders are
 disabled. It polls at most every 15 seconds when idle or after an error.
 
 Each bookmark has its own durable delivery key; one failed bookmark does not
-resend the already completed part of the batch. Feedbin digest payloads are
-stored once, so delivery retries do not regenerate summaries or incur AI calls.
-Preparation errors (Feedbin/AI, Slack DM lookup, enqueue failures) are aggregated
+resend the already completed part of the batch. RSS titles are fetched directly
+from Feedbin without an AI or category lookup. Long text lists are split at
+line boundaries into at most 30,000 Unicode characters per message (an oversized
+single line is split at character boundaries). All parts are committed in one
+transaction, and the original user/type/period key deduplicates the whole list.
+Each part retries independently; successful parts are not replayed.
+Preparation errors (Feedbin, Slack DM lookup, enqueue failures) are aggregated
 and retried up to five times in the same process. These pre-enqueue attempts are
 not durable across restart. A schedule missed while the server is down is not
 backfilled automatically.

@@ -252,13 +252,13 @@ func main() {
 			reminderTimezone,
 			installationRepository,
 			feedbinRepository,
-			digestGenerator,
+			service.NewFeedbinTitles(feedbinDigestService),
 			notificationRepository,
 			slackAPIClient,
 		)
 		go feedbinReminder.Run(context.Background())
 		log.Printf("onboarding reconciliation at 13:45, Raindrop reminder at 22:00 (%s)", reminderTimezone)
-		log.Printf("Feedbin reminder enabled at 23:00 (%s)", reminderTimezone)
+		log.Printf("Feedbin title/link reminder enabled at 23:00 (%s), no AI generation", reminderTimezone)
 	} else {
 		log.Printf("daily reminder disabled: set NUDGE_REMINDER_USER_ID")
 	}

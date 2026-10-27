@@ -131,9 +131,11 @@ output is success. Commentary, deltas, EOF and failed/interrupted turns cannot
 be mistaken for a final response. An acknowledged routing interruption only
 permits the next model turn; it is never a successful user reply. Tool results can fail within a successful turn;
 Codex must explain that rather than fabricate data.
-For scheduled digests, a conversational explanation is not successful delivery:
+The 23:00 scheduled RSS notification sends titles and links directly, without
+using this runtime. The protected AI test-digest endpoint still uses the digest
+generator; a conversational explanation is not successful generation:
 at least one RSS retrieval must succeed and no RSS retrieval may have failed.
-Otherwise generation fails before enqueue, preserving the scheduler's retry.
+Otherwise generation fails instead of treating a retrieval error as an empty inventory.
 Stable partial-answer items are joined in order, deduplicated by native item ID.
 
 The thinking reaction is managed by the Slack transport, before waiting/generation
