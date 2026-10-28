@@ -28,6 +28,30 @@ persistent application volume. Missing credentials/model fail startup; no old
 provider is selected silently. Existing delivered transcripts can bootstrap new
 Codex conversations. Setup and test steps are documented in codex-harness.md.
 
+When mentioned in an existing Slack thread, Nudgy fetches that thread with
+`conversations.replies` before each model run, including messages by participants
+who never mentioned Nudgy. The root and replies before the triggering mention
+are supplied as JSON context with Slack author IDs, timestamps and original text
+(including inline code). New replies are refreshed even when resuming a native
+Codex conversation. Only `app_mention` events trigger responses; no channel-wide
+message subscription or background message ingestion is needed. User-specific
+tools and native conversation storage remain isolated by the requesting user.
+
+Thread reads use the installation's bot token and require `channels:history`,
+`groups:history`, `im:history` and `mpim:history` for the corresponding conversation
+types. The install URL also requests `app_mentions:read`. Reauthorize existing
+installations via `/slack/install` to grant these scopes, and invite Nudgy to the
+channels where it should answer. Keep the `app_mention` event subscription enabled.
+See Slack's [thread API](https://docs.slack.dev/reference/methods/conversations.replies/).
+
+Reads have a ten-second timeout and a 20-page limit (100 messages per page).
+Context retains the root and latest 99 fetched replies, with a 4,000-character
+per-message limit and a 48 KiB encoded message budget. If a read is incomplete,
+rate-limited or lacks permission, the model receives an explicit partial or
+unavailable status; it must not pretend to know missing discussion. Attachments
+and linked files are not downloaded. Thread text is context, not authorization
+for tools or code changes. Local courtesy replies do not fetch thread history.
+
 RSS tools explicitly distinguish all unread records, the current local calendar
 day and the most recently completed reminder window. Pagination is a message/tool
 size boundary, not a five-article access limit. Web research is an optional tool

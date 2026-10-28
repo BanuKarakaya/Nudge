@@ -259,7 +259,8 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 				location = time.UTC
 			}
 			now := time.Now().In(location)
-			input := fmt.Sprintf("Current time: %s\nTimezone: %s\n\nSlack message:\n%s", now.Format(time.RFC3339), location.String(), analyticsRecord.RequestText)
+			threadContext := h.threadContext(ctx, installation.BotToken, event)
+			input := fmt.Sprintf("Current time: %s\nTimezone: %s%s\n\nSlack message:\n%s", now.Format(time.RFC3339), location.String(), threadContext, analyticsRecord.RequestText)
 			tools := service.NewAgentTools(h.feedbinDigest, h.bookmarks, h.web, userID, now, location)
 			if h.coding != nil {
 				eventID := event.EventID

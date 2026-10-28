@@ -36,7 +36,7 @@ type OAuthResponse struct {
 func (c OAuthClient) InstallURL(state string) string {
 	params := url.Values{}
 	params.Set("client_id", c.ClientID)
-	params.Set("scope", "chat:write,reactions:write,users:read,im:write")
+	params.Set("scope", "app_mentions:read,chat:write,reactions:write,users:read,im:write,channels:history,groups:history,im:history,mpim:history")
 	params.Set("redirect_uri", c.RedirectURL)
 	params.Set("state", state)
 	return oauthAuthorizeURL + "?" + params.Encode()
