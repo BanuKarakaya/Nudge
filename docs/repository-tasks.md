@@ -46,7 +46,13 @@ change, and removed permissions stop authorizing new tasks.
    the GitHub login returned by `/user`; check it before returning to Slack.
 3. Ask for repositories. Access requires the App's installation permissions and
    the user's current GitHub write permissions. Suspended installations, archived
-   and disabled repositories are excluded.
+   and disabled repositories are excluded. Installation inventory is only a
+   candidate list: each candidate also requires `GET /repos/{owner}/{repo}/collaborators/{login}/permission`
+   to return the verified user's numeric ID and effective `write` or `admin`
+   permission. `permissions.push` on installation inventory alone is insufficient.
+   Repositories whose role cannot be verified (403/404) are excluded; network,
+   rate-limit (429), and server failures fail the whole listing instead of
+   presenting a partial success.
 4. Request a change in `owner/repository`. Nudgy saves the original Slack request
    as an immutable **draft**, reports its ID and says execution is unavailable.
    The same user can inspect/cancel it in the same Slack thread.

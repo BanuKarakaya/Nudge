@@ -25,6 +25,12 @@ func TestGitHubRejectsReadOnlyUninstalledSuspendedAndDifferentApp(t *testing.T) 
 			t.Fatal("wrong credential destination")
 		}
 		calls = append(calls, r.URL.Path)
+		if r.URL.Path == "/user" {
+			return response(`{"id":55,"login":"developer"}`), nil
+		}
+		if r.URL.Path == "/repos/owner/repo/collaborators/developer/permission" {
+			return response(`{"permission":"write","user":{"id":55,"login":"developer"}}`), nil
+		}
 		if r.URL.Path == "/user/installations" {
 			return response(`{"installations":[{"id":1,"app_id":7,"permissions":{"contents":"write","pull_requests":"write"}},{"id":2,"app_id":8,"permissions":{"contents":"write","pull_requests":"write"}},{"id":3,"app_id":7,"permissions":{"contents":"read","pull_requests":"write"}},{"id":4,"app_id":7,"suspended_at":"2026-01-01T00:00:00Z","permissions":{"contents":"write","pull_requests":"write"}}]}`), nil
 		}
@@ -34,7 +40,7 @@ func TestGitHubRejectsReadOnlyUninstalledSuspendedAndDifferentApp(t *testing.T) 
 		return response(`{"repositories":[{"id":10,"full_name":"owner/repo","default_branch":"master","permissions":{"push":true}},{"id":11,"full_name":"owner/readonly","default_branch":"main","permissions":{"push":false}},{"id":12,"full_name":"owner/archived","archived":true,"permissions":{"push":true}},{"id":13,"full_name":"owner/disabled","disabled":true,"permissions":{"push":true}}]}`), nil
 	})}}
 	repos, err := g.Repositories(context.Background(), "ghu_private")
-	if err != nil || len(repos) != 1 || repos[0].FullName != "owner/repo" || len(calls) != 2 {
+	if err != nil || len(repos) != 1 || repos[0].FullName != "owner/repo" || len(calls) != 4 {
 		t.Fatalf("repos=%+v err=%v calls=%v", repos, err, calls)
 	}
 	if _, err := g.Repositories(context.Background(), "ghs_installation_token"); !errors.Is(err, ErrConnect) {
@@ -101,6 +107,12 @@ func TestGitHubDoesNotFollowRedirectsOrReturnPartialFailure(t *testing.T) {
 func TestGitHubTraversesRepositoryPages(t *testing.T) {
 	pages := 0
 	g := GitHub{AppID: 7, HTTPClient: &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path == "/user" {
+			return response(`{"id":55,"login":"developer"}`), nil
+		}
+		if strings.HasSuffix(r.URL.Path, "/collaborators/developer/permission") {
+			return response(`{"permission":"write","user":{"id":55,"login":"developer"}}`), nil
+		}
 		if r.URL.Path == "/user/installations" {
 			return response(`{"installations":[{"id":1,"app_id":7,"permissions":{"contents":"write","pull_requests":"write"}}]}`), nil
 		}
@@ -118,5 +130,56 @@ func TestGitHubTraversesRepositoryPages(t *testing.T) {
 	repos, err := g.Repositories(context.Background(), "ghu_secret")
 	if err != nil || len(repos) != 101 || pages != 2 {
 		t.Fatalf("pagination: %d %d %v", len(repos), pages, err)
+	}
+}
+
+func TestInstallationPushFlagDoesNotAuthorizeAnotherUsersRepository(t *testing.T) {
+	for _, tc := range []struct {
+		name, permission   string
+		responseUser       int64
+		status             int
+		allowed, wantError bool
+	}{
+		{"write", "write", 55, 200, true, false},
+		{"owner", "admin", 55, 200, true, false},
+		{"read only despite push flag", "read", 55, 200, false, false},
+		{"no collaborator grant", "none", 55, 200, false, false},
+		{"missing role", "", 55, 200, false, false},
+		{"another user role", "admin", 99, 200, false, false},
+		{"forbidden", "", 0, 403, false, false},
+		{"not a collaborator", "", 0, 404, false, false},
+		{"revoked token", "", 0, 401, false, true},
+		{"rate limited", "", 0, 429, false, true},
+		{"upstream failure", "", 0, 500, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			checked := false
+			g := GitHub{AppID: 7, HTTPClient: &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
+				if r.Header.Get("Authorization") != "Bearer ghu_requesting_user" {
+					t.Fatal("used different credential")
+				}
+				switch r.URL.Path {
+				case "/user":
+					return response(`{"id":55,"login":"latifatcii"}`), nil
+				case "/user/installations":
+					return response(`{"installations":[{"id":1,"app_id":7,"permissions":{"contents":"write","pull_requests":"write"}}]}`), nil
+				case "/user/installations/1/repositories":
+					return response(`{"repositories":[{"id":10,"full_name":"BanuKarakaya/Beybi","default_branch":"main","permissions":{"push":true}}]}`), nil
+				case "/repos/BanuKarakaya/Beybi/collaborators/latifatcii/permission":
+					checked = true
+					body, _ := json.Marshal(map[string]any{"permission": tc.permission, "user": map[string]any{"id": tc.responseUser}})
+					r := response(string(body))
+					r.StatusCode = tc.status
+					return r, nil
+				default:
+					t.Fatalf("unexpected request: %s", r.URL.Path)
+					return nil, ErrUnavailable
+				}
+			})}}
+			repos, err := g.Repositories(context.Background(), "ghu_requesting_user")
+			if !checked || (err != nil) != tc.wantError || (len(repos) == 1) != tc.allowed {
+				t.Fatalf("repos=%v err=%v checked=%t", repos, err, checked)
+			}
+		})
 	}
 }

@@ -5,8 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -84,6 +86,13 @@ func (g GitHub) Repositories(ctx context.Context, token string) ([]Repository, e
 	if !strings.HasPrefix(token, "ghu_") {
 		return nil, ErrConnect
 	}
+	userID, login, err := g.User(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	if userID <= 0 || !githubLogin.MatchString(login) {
+		return nil, ErrConnect
+	}
 	var repos []Repository
 	seen := make(map[int64]bool)
 	for page := 1; page <= 20; page++ {
@@ -112,7 +121,13 @@ func (g GitHub) Repositories(ctx context.Context, token string) ([]Repository, e
 			for _, repo := range items {
 				if !seen[repo.ID] {
 					seen[repo.ID] = true
-					repos = append(repos, repo)
+					allowed, err := g.repositoryPermission(ctx, token, Account{ID: userID, Login: login}, repo)
+					if err != nil {
+						return nil, err
+					}
+					if allowed {
+						repos = append(repos, repo)
+					}
 				}
 			}
 		}
@@ -121,6 +136,32 @@ func (g GitHub) Repositories(ctx context.Context, token string) ([]Repository, e
 		}
 	}
 	return nil, ErrUnavailable // Never present a partial page traversal as complete.
+}
+
+// Installation inventory is only a candidate list. Confirm the named user's
+// effective role independently; never equate app write access with user access.
+func (g GitHub) repositoryPermission(ctx context.Context, token string, user Account, repo Repository) (bool, error) {
+	var permission struct {
+		Permission string  `json:"permission"`
+		User       Account `json:"user"`
+	}
+	err := g.request(ctx, "https://api.github.com/repos/"+repo.FullName+"/collaborators/"+user.Login+"/permission", token, nil, &permission)
+	if errors.Is(err, ErrDenied) {
+		log.Printf("coding_event=repository_permission_unverified github_user_id=%d repository_id=%d", user.ID, repo.ID)
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	allowed := permission.User.ID == user.ID && (permission.Permission == "admin" || permission.Permission == "write")
+	role := permission.Permission
+	switch role {
+	case "admin", "write", "read", "none":
+	default:
+		role = "unknown"
+	}
+	log.Printf("coding_event=repository_permission_checked github_user_id=%d repository_id=%d role=%q allowed=%t", user.ID, repo.ID, role, allowed)
+	return allowed, nil
 }
 
 func (g GitHub) installationRepos(ctx context.Context, token string, installationID int64) ([]Repository, error) {

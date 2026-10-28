@@ -105,6 +105,7 @@ type Provider interface {
 }
 
 var repoName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9_.-]{1,100}$`)
+var githubLogin = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]{0,38}$`)
 var taskID = regexp.MustCompile(`^[a-f0-9]{32}$`)
 
 func ValidRepository(name string) bool { return repoName.MatchString(name) }
