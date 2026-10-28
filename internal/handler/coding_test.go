@@ -315,6 +315,11 @@ func TestGitHubSetupRejectsUnboundAndPendingSelections(t *testing.T) {
 		{"missing form state", "POST", "", "https://nudgy.example", true, 400},
 		{"existing update without query state", "GET", "installation_id=2&setup_action=update", "", true, 302},
 		{"existing personal selection", "POST", "valid-form", "https://nudgy.example", true, 302},
+		{"no-referrer browser form", "POST", "valid-form", "null", true, 302},
+		{"opaque origin without browser cookie", "POST", "valid-form", "null", false, 400},
+		{"opaque origin without form state", "POST", "", "null", true, 400},
+		{"opaque origin with forged state", "POST", "wrong-form", "null", true, 400},
+		{"opaque origin from cross-site", "POST", "valid-form", "null", true, 403},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h, store, links, _ := codingHandlerFixture(t)
@@ -327,6 +332,8 @@ func TestGitHubSetupRejectsUnboundAndPendingSelections(t *testing.T) {
 				body := ""
 				if tc.query == "valid-form" {
 					body = url.Values{"state": {cookie.Value}}.Encode()
+				} else if tc.query == "wrong-form" {
+					body = url.Values{"state": {"forged"}}.Encode()
 				}
 				req = httptest.NewRequest("POST", "https://nudgy.example/github/setup", strings.NewReader(body))
 				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -337,6 +344,11 @@ func TestGitHubSetupRejectsUnboundAndPendingSelections(t *testing.T) {
 				req.AddCookie(cookie)
 			}
 			req.Header.Set("Origin", tc.origin)
+			if tc.name == "opaque origin from cross-site" {
+				req.Header.Set("Sec-Fetch-Site", "cross-site")
+			} else if tc.origin == "null" {
+				req.Header.Set("Sec-Fetch-Site", "same-origin")
+			}
 			w := httptest.NewRecorder()
 			h.setup(w, req)
 			if w.Code != tc.want || store.saved.UserID != 0 {

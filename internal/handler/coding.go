@@ -108,8 +108,12 @@ func (h *CodingHandler) setup(w http.ResponseWriter, r *http.Request) {
 	state := r.URL.Query().Get("state")
 	manual := r.Method == http.MethodPost
 	if manual {
-		if origin := r.Header.Get("Origin"); origin != "" && origin != h.publicURL {
-			writeError(w, http.StatusForbidden, "invalid origin")
+		// Our no-referrer policy makes browsers send Origin: null for form
+		// submissions. Opaque/absent origins still require the unpredictable
+		// form state, matching HttpOnly cookie and single-use server state below.
+		origin := r.Header.Get("Origin")
+		if r.Header.Get("Sec-Fetch-Site") == "cross-site" || (origin != "" && origin != "null" && origin != h.publicURL) {
+			renderGitHubConnectionPage(w, http.StatusForbidden, githubPageData{Title: "Bağlantıyı yeniden başlatalım.", Description: "Bu isteğin bağlantı sayfasından geldiğini doğrulayamadık. Slack’te Nudgy’nin gönderdiği özel bağlantıyı açıp tekrar dene."})
 			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, 4096)
