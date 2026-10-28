@@ -118,11 +118,12 @@ func (c APIClient) httpClient() *http.Client {
 }
 
 type postMessageRequest struct {
-	Channel     string `json:"channel"`
-	Text        string `json:"text"`
-	ThreadTS    string `json:"thread_ts,omitempty"`
-	UnfurlLinks bool   `json:"unfurl_links"`
-	UnfurlMedia bool   `json:"unfurl_media"`
+	Channel     string           `json:"channel"`
+	Text        string           `json:"text"`
+	Blocks      []map[string]any `json:"blocks,omitempty"`
+	ThreadTS    string           `json:"thread_ts,omitempty"`
+	UnfurlLinks bool             `json:"unfurl_links"`
+	UnfurlMedia bool             `json:"unfurl_media"`
 }
 
 type postMessageResponse struct {

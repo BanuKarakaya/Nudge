@@ -68,7 +68,7 @@ func TestPrivateReviewEscapesSourceAndNeverPushes(t *testing.T) {
 			t.Fatal("unsafe review", bad)
 		}
 	}
-	for _, want := range []string{"&lt;script&gt;", "Otomatik test çalıştırılmadı", "aynı Slack konuşmasına", "pushla ", "workspace"} {
+	for _, want := range []string{"&lt;script&gt;", "Otomatik test çalıştırılmadı", "aynı Slack konuşmasına", "Pushla", "workspace"} {
 		if !strings.Contains(body, want) {
 			t.Fatal("missing review context", want)
 		}
@@ -137,5 +137,23 @@ func TestReviewZIPContainsExactWorkingCopy(t *testing.T) {
 	}
 	if !strings.Contains(string(files["NUDGY-REVIEW.txt"]), store.edit.Digest) {
 		t.Fatal("archive does not identify reviewed revision")
+	}
+}
+
+func TestReviewExplainsHowToRunXcodeCopyWithoutPushing(t *testing.T) {
+	h, store, link := reviewHandlerFixture(t)
+	store.edit.Snapshot.Files = append(store.edit.Snapshot.Files, coding.RepositoryFile{Path: "toDoList.xcodeproj/project.pbxproj", Mode: "100644", Content: []byte("project")})
+	w := httptest.NewRecorder()
+	h.review(w, httptest.NewRequest(http.MethodGet, link, nil))
+	if w.Code != 200 {
+		t.Fatal(w.Code)
+	}
+	for _, want := range []string{"workspace/toDoList.xcodeproj", "iPhone simülatörünü", "Run (⌘R)", "Push yapmadan test"} {
+		if !strings.Contains(w.Body.String(), want) {
+			t.Fatal("missing simulator instruction", want)
+		}
+	}
+	if strings.Contains(w.Body.String(), "pushla ") {
+		t.Fatal("copy/paste approval still shown")
 	}
 }

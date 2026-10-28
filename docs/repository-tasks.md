@@ -82,13 +82,24 @@ change, and removed permissions stop authorizing new tasks.
    SHA-256 review digest. A private DM contains a 24-hour review link, before/after
    source views, and a ZIP of the complete edited working copy (without `.git`).
    The user tests that copy in their own environment. `tests=not_run` is always
-   shown; the model cannot manufacture successful test results.
-6. The user sends `pushla <task-id> <full-review-digest>` in the **same Slack
-   conversation**, mentioning Nudgy when needed. The host matches the entire
-   current signed message, originating owner/workspace/channel/thread and a later
-   event. Model arguments, previous conversation, repository text, vague OKs and
-   the preparation event cannot authorize push. If files change, the old review
-   link and approval become invalid.
+   shown; the model cannot manufacture successful test results. For Xcode repos,
+   the review page identifies the downloaded workspace/project: open it in Xcode,
+   select the app scheme and iPhone simulator, then Run (⌘R). The existing local
+   checkout is not automatically updated and pushing first is not necessary.
+6. The host attaches a **Pushla** button below the model's original Slack reply.
+   The user tests the copy, then clicks once. No command, task ID or digest needs
+   to be copied. The button carries a 24-hour capability bound to owner, task and
+   review digest, with a separate purpose from the read-only review link.
+   The signed Slack `block_actions` request must also match the actual clicking
+   user, workspace, channel and thread. Other users, expired capabilities, changed
+   code and cancelled tasks cannot authorize a push. The handler acknowledges
+   within Slack's 3-second window, then performs the push asynchronously with a
+   bounded four-job limit. Success removes the clicked button and reports the
+   resulting branch in the same thread; failures notify the owner privately.
+   A restart during an in-flight request can require clicking again; persisted
+   review data and deterministic Git publishing make retries safe. Asking for
+   task status sends a fresh review link and replacement button, including for
+   tasks prepared before this UI was deployed.
 7. Current account and repository write permissions are verified again. Git
    reconstructs the frozen changes, creates a deterministic commit and pushes
    only its new branch with an explicit empty ref lease. Existing unrelated refs
@@ -104,8 +115,10 @@ A failed clone remains cancellable. Old legacy drafts never start automatically.
 
 Tools: `github_connect`, `github_connection_status`, `repositories_list`, `repository_task_prepare`,
 `repository_task_status`, `repository_task_cancel`, `repository_tasks_list`,
-`repository_file_read`, `repository_file_write`, `repository_edit_finish`,
-`repository_push`. Native Codex threads are
+`repository_file_read`, `repository_file_write`, `repository_edit_finish`.
+Push is handled exclusively by signed button interactions, outside the model
+tool surface. Enable Slack Interactivity with request URL
+`https://YOUR_NUDGE_HOST/slack/interactions` (the existing bookmark route). Native Codex threads are
 renewed when the tool set changes, retaining delivered conversation history.
 Local greeting responses still bypass model calls.
 

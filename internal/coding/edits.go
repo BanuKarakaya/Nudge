@@ -374,6 +374,19 @@ func (s *Service) FinishEdit(ctx context.Context, i Identity, id, summary string
 }
 
 func (s *Service) PushEdit(ctx context.Context, i Identity, id string) (EditInfo, error) {
+	return s.pushEdit(ctx, i, id, func(e Edit) bool {
+		return i.Event != "" && i.Event != e.FinishedEvent && i.Event != e.Task.Identity.Event && strings.TrimSpace(i.Request) == approvalCommand(e)
+	})
+}
+
+// PushEditFromButton is only called by the signature-verified Slack interaction
+// handler after checking the owner-bound button capability. Never expose it as
+// a model tool, an unsigned HTTP route, or convert model text into a click.
+func (s *Service) PushEditFromButton(ctx context.Context, i Identity, id, digest string) (EditInfo, error) {
+	return s.pushEdit(ctx, i, id, func(e Edit) bool { return strings.HasPrefix(i.Event, "button:") && digest != "" && digest == e.Digest })
+}
+
+func (s *Service) pushEdit(ctx context.Context, i Identity, id string, approved func(Edit) bool) (EditInfo, error) {
 	if !s.EditingAvailable() || !taskID.MatchString(id) {
 		return EditInfo{}, ErrNotFound
 	}
@@ -384,8 +397,8 @@ func (s *Service) PushEdit(ctx context.Context, i Identity, id string) (EditInfo
 		}
 		// Approval is the entire current, signed Slack message, never model args,
 		// history, repository instructions or the message that prepared the code.
-		if e.Digest == "" || i.Event == "" || i.Event == e.FinishedEvent || i.Event == e.Task.Identity.Event || strings.TrimSpace(i.Request) != approvalCommand(*e) {
-			return errors.New("push için bu sürüme ait onay komutunu aynı Slack konuşmasına kendin göndermelisin")
+		if e.Digest == "" || !approved(*e) {
+			return errors.New("push için güncel inceleme mesajındaki Pushla butonuna görevin sahibi basmalı")
 		}
 		digest, err := e.Review.Digest()
 		if err != nil || digest != e.Digest || !boundReview(*e) {

@@ -18,6 +18,12 @@ type SlackInteractionHandler struct {
 	signingSecret string
 	bookmarks     service.BookmarkService
 	installations repository.InstallationRepository
+	coding        *CodingHandler
+}
+
+func (h *SlackInteractionHandler) WithCoding(coding *CodingHandler) *SlackInteractionHandler {
+	h.coding = coding
+	return h
 }
 
 func NewSlackInteractionHandler(signingSecret string, bookmarks service.BookmarkService, installations repository.InstallationRepository) *SlackInteractionHandler {
@@ -37,9 +43,22 @@ type slackInteractionPayload struct {
 		ID string `json:"id"`
 	} `json:"user"`
 	ResponseURL string `json:"response_url"`
-	Actions     []struct {
+	Channel     struct {
+		ID string `json:"id"`
+	} `json:"channel"`
+	Container struct {
+		ChannelID string `json:"channel_id"`
+		MessageTS string `json:"message_ts"`
+	} `json:"container"`
+	Message struct {
+		TS       string           `json:"ts"`
+		ThreadTS string           `json:"thread_ts"`
+		Blocks   []map[string]any `json:"blocks"`
+	} `json:"message"`
+	Actions []struct {
 		ActionID string `json:"action_id"`
 		Value    string `json:"value"`
+		ActionTS string `json:"action_ts"`
 	} `json:"actions"`
 }
 
@@ -49,7 +68,7 @@ type bookmarkActionValue struct {
 }
 
 func (h *SlackInteractionHandler) handle(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(r.Body)
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
 	if err != nil || !slack.VerifySignature(
 		h.signingSecret,
 		r.Header.Get("X-Slack-Request-Timestamp"),
@@ -68,6 +87,14 @@ func (h *SlackInteractionHandler) handle(w http.ResponseWriter, r *http.Request)
 	var payload slackInteractionPayload
 	if err := json.Unmarshal([]byte(values.Get("payload")), &payload); err != nil || len(payload.Actions) == 0 {
 		writeError(w, http.StatusBadRequest, "invalid Slack interaction payload")
+		return
+	}
+	if payload.Actions[0].ActionID == codingPushAction {
+		if h.coding == nil {
+			writeError(w, http.StatusServiceUnavailable, "coding unavailable")
+			return
+		}
+		h.coding.handlePushButton(w, r, payload)
 		return
 	}
 

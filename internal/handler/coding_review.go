@@ -47,7 +47,7 @@ func (h *CodingHandler) sendEditReview(ctx context.Context, identity coding.Iden
 	if err != nil {
 		return err
 	}
-	message := "Kod değişiklikleri hazır: " + info.Task.Repository.FullName + "\nOtomatik test çalıştırmadım ve GitHub’a henüz pushlamadım. Özel sayfadan değişiklikleri inceleyip çalışma kopyasını alarak test edebilirsin:\n" + link + "\nTestin tamamlanınca görevi istediğin Slack konuşmasına şu onay komutunu gönder (gerekirse @Nudgy’yi etiketle):\n```" + info.ApprovalCommand + "```\nBu komut yalnızca bu sürümü onaylar. Link 24 saat geçerli; paylaşma."
+	message := "Kod değişiklikleri hazır: " + info.Task.Repository.FullName + "\nOtomatik test çalıştırmadım ve GitHub’a henüz pushlamadım. Özel sayfadan değişiklikleri inceleyip çalışma kopyasını indirerek test edebilirsin:\n" + link + "\nTestin tamamlanınca görevi istediğin konuşmadaki mesajın altında bulunan Pushla butonuna bas. Buton yalnızca senin bu sürümü onaylamanı sağlar. Link 24 saat geçerli; paylaşma."
 	if err := h.client.PostMessage(ctx, installation.BotToken, channel, message); err != nil {
 		return errors.New("kod kaydedildi; özel inceleme mesajı gönderilemedi, bitirme işlemini tekrar dene")
 	}
@@ -59,10 +59,11 @@ type reviewFileView struct {
 	Delete              bool
 }
 type reviewPageView struct {
-	Edit               coding.Edit
-	Download, Approval string
-	Files              []reviewFileView
-	Pushed             bool
+	Edit         coding.Edit
+	Download     string
+	XcodeProject string
+	Files        []reviewFileView
+	Pushed       bool
 }
 
 func (h *CodingHandler) review(w http.ResponseWriter, r *http.Request) {
@@ -95,7 +96,7 @@ func (h *CodingHandler) review(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q.Set("download", "zip")
-	data := reviewPageView{Edit: e, Download: "/github/review?" + q.Encode(), Approval: "pushla " + e.Task.ID + " " + e.Digest, Pushed: e.Task.Status == "pushed"}
+	data := reviewPageView{Edit: e, Download: "/github/review?" + q.Encode(), XcodeProject: xcodeProject(e), Pushed: e.Task.Status == "pushed"}
 	before := make(map[string][]byte)
 	for _, f := range e.Snapshot.Files {
 		before[f.Path] = f.Content
@@ -152,4 +153,17 @@ func reviewArchive(e coding.Edit) ([]byte, error) {
 		return nil, err
 	}
 	return out.Bytes(), nil
+}
+
+func xcodeProject(e coding.Edit) string {
+	var project string
+	for _, f := range coding.EditedFiles(e) {
+		if strings.HasSuffix(f.Path, ".xcworkspace/contents.xcworkspacedata") && !strings.Contains(f.Path, ".xcodeproj/") {
+			return "workspace/" + strings.TrimSuffix(f.Path, "/contents.xcworkspacedata")
+		}
+		if project == "" && strings.HasSuffix(f.Path, ".xcodeproj/project.pbxproj") {
+			project = "workspace/" + strings.TrimSuffix(f.Path, "/project.pbxproj")
+		}
+	}
+	return project
 }

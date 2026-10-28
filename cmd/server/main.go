@@ -215,7 +215,7 @@ func main() {
 		appTimezone,
 		analyticsRepository,
 	)
-	if err := configureCoding(db, mux, privateMux, slackEventHandler, installationRepository, slackAPIClient, links, onboardingService); err != nil {
+	if err := configureCoding(db, mux, privateMux, slackEventHandler, slackInteractionHandler, installationRepository, slackAPIClient, links, onboardingService); err != nil {
 		log.Fatalf("repository task configuration: %v", err)
 	}
 	slackEventHandler.RegisterRoutes(mux)

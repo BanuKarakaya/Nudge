@@ -113,7 +113,8 @@ Tool calls are checked against both active native thread and turn IDs. Calls are
 deduplicated by call ID within the run. Default data tools are read-only. The
 optional [repository editing tools](repository-tasks.md) clone GitHub source,
 read/write a user-bound encrypted workspace and freeze it for manual testing.
-Only an exact later signed approval can push that frozen version to a new branch.
+Only a verified owner click on the host-rendered Pushla button can push that
+frozen version to a new branch; push is not exposed as a model tool.
 Repository scripts/tests and native shell tools remain disabled; there is no PR
 or merge operation. Pending edits survive restarts and can be resumed.
 Bounds: four concurrent children, 120 seconds per run (including slot wait),

@@ -23,10 +23,11 @@ type CodingHandler struct {
 	client        codingMessenger
 	links         secure.LinkSigner
 	publicURL     string
+	pushSlots     chan struct{}
 }
 
 func NewCodingHandler(s *coding.Service, installations repository.InstallationRepository, client codingMessenger, links secure.LinkSigner, publicURL string) *CodingHandler {
-	return &CodingHandler{service: s, installations: installations, client: client, links: links, publicURL: publicURL}
+	return &CodingHandler{service: s, installations: installations, client: client, links: links, publicURL: publicURL, pushSlots: make(chan struct{}, 4)}
 }
 
 func (h *CodingHandler) RegisterRoutes(public, admin *http.ServeMux) {
@@ -173,7 +174,7 @@ func (h *CodingHandler) callback(w http.ResponseWriter, r *http.Request) {
 	renderGitHubConnectionPage(w, http.StatusOK, githubPageData{Success: true, Title: "GitHub’ın bağlandı.", Description: "Hesabın ve seçtiğin repolar için bağlantı tamamlandı. Slack’e dönebilirsin.", Login: account.Login})
 }
 
-func (h *CodingHandler) Tools(base service.AgentTools, identity coding.Identity) service.AgentTools {
+func (h *CodingHandler) Tools(base service.AgentTools, identity coding.Identity, ready ...func(coding.EditInfo)) service.AgentTools {
 	return service.NewCodingTools(base, h.service, identity, func(ctx context.Context) error {
 		installation, err := h.installations.GetByUserID(ctx, identity.UserID)
 		if err != nil {
@@ -196,5 +197,13 @@ func (h *CodingHandler) Tools(base service.AgentTools, identity coding.Identity)
 			return err
 		}
 		return h.client.PostMessage(ctx, installation.BotToken, channel, "GitHub hesabını Nudgy’ye bağlamak için özel bağlantın:\n"+link+"\nGitHub’da kendi hesabını ve bağlamak istediğin repoları seç, ardından Nudgy’ye izin ver. Bu bağlantı yalnızca hesabını ve repo izinlerini bağlar. Linki paylaşma.")
-	}, func(ctx context.Context, info coding.EditInfo) error { return h.sendEditReview(ctx, identity, info) })
+	}, func(ctx context.Context, info coding.EditInfo) error {
+		if err := h.sendEditReview(ctx, identity, info); err != nil {
+			return err
+		}
+		for _, fn := range ready {
+			fn(info)
+		}
+		return nil
+	})
 }

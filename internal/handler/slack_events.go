@@ -220,6 +220,7 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 	}
 	historyLoaded := err == nil
 	var result service.AgentResult
+	var codingReply *codingReply
 	localReply := localSocialReply(analyticsRecord.RequestText)
 	if historyLoaded {
 		log.Printf("slack_request=%s stage=history_loaded turns=%d prior_articles=%d elapsed_ms=%d", requestID, len(state.Turns), len(state.Articles), time.Since(started).Milliseconds())
@@ -233,7 +234,7 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 			// delivered history once when coding tools are enabled or disabled.
 			toolVersion := ""
 			if h.coding != nil {
-				toolVersion = "coding-edit-v1"
+				toolVersion = "coding-buttons-v2"
 			}
 			if state.AgentToolVersion != toolVersion {
 				state.AgentThreadID = ""
@@ -265,7 +266,7 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 				if eventID == "" {
 					eventID = event.Event.TS
 				}
-				tools = h.coding.Tools(tools, coding.Identity{UserID: userID, Team: event.TeamID, Channel: event.Event.Channel, Thread: threadTS, Event: eventID, Request: analyticsRecord.RequestText})
+				tools, codingReply = h.coding.ToolsForReply(tools, coding.Identity{UserID: userID, Team: event.TeamID, Channel: event.Event.Channel, Thread: threadTS, Event: eventID, Request: analyticsRecord.RequestText})
 			}
 			log.Printf("slack_request=%s stage=agent_started", requestID)
 			result, err = h.runtime.Run(ctx, service.AgentRequest{
@@ -303,7 +304,7 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 	sendCtx, sendCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer sendCancel()
 	log.Printf("slack_request=%s stage=slack_send_started elapsed_ms=%d", requestID, time.Since(started).Milliseconds())
-	if err := h.client.PostMessageInThread(sendCtx, installation.BotToken, event.Event.Channel, threadTS, message); err != nil {
+	if err := h.postReply(sendCtx, installation.BotToken, event.Event.Channel, threadTS, message, codingReply); err != nil {
 		analyticsRecord.Status = "failed"
 		log.Printf("slack_request=%s stage=slack_send_failed elapsed_ms=%d error=%q", requestID, time.Since(started).Milliseconds(), err)
 		if success && localReply == "" {

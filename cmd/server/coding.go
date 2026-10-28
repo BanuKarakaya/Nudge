@@ -20,7 +20,7 @@ import (
 	"nudge/internal/slack"
 )
 
-func configureCoding(db *pgxpool.Pool, public, admin *http.ServeMux, events *handler.SlackEventHandler, installations repository.InstallationRepository, client slack.APIClient, links secure.LinkSigner, onboarding *service.OnboardingService) error {
+func configureCoding(db *pgxpool.Pool, public, admin *http.ServeMux, events *handler.SlackEventHandler, interactions *handler.SlackInteractionHandler, installations repository.InstallationRepository, client slack.APIClient, links secure.LinkSigner, onboarding *service.OnboardingService) error {
 	if os.Getenv("NUDGY_CODING_ENABLED") != "true" {
 		return nil
 	}
@@ -65,6 +65,7 @@ func configureCoding(db *pgxpool.Pool, public, admin *http.ServeMux, events *han
 	h := handler.NewCodingHandler(s, installations, client, links, base)
 	h.RegisterRoutes(public, admin)
 	events.WithCoding(h)
+	interactions.WithCoding(h)
 	onboarding.Register(service.ConnectionInvitation{Purpose: "github", Name: "GitHub", Description: "Nudgy’ye GitHub hesabını bağla; açılan GitHub ekranında hesabını ve bağlamak istediğin repoları seç.", Connected: s.Connected})
 	return nil
 }
