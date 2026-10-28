@@ -46,11 +46,13 @@ change, and removed permissions stop authorizing new tasks.
    delivery and goes only to that user's DM. Asking Nudgy to connect GitHub is
    still available to replace expired links, but is not needed for discovery.
 2. Open the private link. The Nudgy page opens GitHub's installation/repository
-   selection screen in a new tab. Choose the account and repositories and save.
+   selection screen in the same tab. Choose the account and repositories and save.
    GitHub redirects to `/github/setup`, then Nudgy starts PKCE authorization.
-   If an existing personal installation needs no selection changes (GitHub
-   disables Save), return to the Nudgy page and continue with the existing
-   selection. This fallback verifies the authenticated user's own installation.
+   The page has one action: select repositories on GitHub. It does not offer a
+   separate existing-selection button. GitHub may show installation settings
+   for accounts that already installed the App; saving a repository selection
+   update returns through the same setup callback. The old POST continuation
+   remains supported for already-open pages, but is not offered in the new UI.
    Installation and OAuth use separate single-use 10-minute states and HttpOnly
    browser cookies. The returned installation ID is never trusted: verify App ID,
    account ownership (or organization access), permissions, and at least one

@@ -23,7 +23,7 @@
     .prompt{display:flex;align-items:center;gap:12px;border-bottom:1px solid #ded4c7;padding:12px 0 16px;margin:0 0 22px}.prompt p{font-size:14px;line-height:1.6;margin:0;flex:1}.mention{color:#a33c24;font-weight:650}.copy{background:transparent;border:1px solid #d7ccbf;border-radius:7px;color:#62554a;padding:8px 10px;font-size:11px}.copy:hover{background:#eee4d6}
     .primary{display:inline-flex;align-items:center;gap:34px;text-decoration:none;padding:15px 20px;background:#332b28;color:#fff;border-radius:8px;font-size:14px;font-weight:650}.primary:hover{background:#4c3a30}a:focus-visible,button:focus-visible{outline:3px solid #ca4527;outline-offset:4px}
     .availability{font-size:12px;line-height:1.7;color:#776d65;margin:20px 0 0;max-width:430px}.availability strong{font-weight:600;color:#655749}.copy-status{min-height:18px;font-size:12px;color:#386344;margin:9px 0 0}
-    .setup-steps p{font-size:14px;line-height:1.7;color:#776d65;margin:0 0 18px}.setup-steps p strong{color:#332b28}.setup-steps .primary{margin-bottom:24px}.secondary{font:inherit;font-size:13px;background:#fffdf9;border:1px solid #d7ccbf;color:#332b28;border-radius:8px;padding:13px 16px;cursor:pointer}
+    .setup-steps p{font-size:14px;line-height:1.7;color:#776d65;margin:0 0 18px}.setup-steps p strong{color:#332b28}.setup-steps .primary{margin-bottom:24px}
     footer{min-height:77px;border-top:1px solid #e5dfd6;display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:11px;color:#8a7c70}.footer-dot{color:#ca4527;margin-right:6px}
     @media(max-width:760px){.shell{width:calc(100% - 40px)}.header{height:78px}.header-note{font-size:11px}main{grid-template-columns:1fr;gap:22px;padding:28px 0 38px;min-height:0}.art{min-height:210px}.orbit{width:175px;height:175px;outline-offset:10px}.mascot{width:172px}.bubble{top:10px;right:calc(50% - 145px);font-size:11px;padding:10px 12px}.star{left:calc(50% - 135px);bottom:6px;font-size:30px}.content{width:min(480px,100%);margin:auto}h1{font-size:37px;margin-top:14px;letter-spacing:-1.5px}.intro{font-size:15px}.account-help{margin-bottom:22px}footer{padding:20px 0;align-items:flex-start;flex-direction:column;gap:8px}.primary{width:100%;justify-content:space-between}}
   </style>
@@ -40,9 +40,8 @@
         {{if .Selecting}}
         <div class="setup-steps">
           <p><strong>1. Hesabını ve repolarını seç</strong><br>GitHub ekranında kendi hesabını seç, Nudgy’ye açmak istediğin repoları işaretle ve kaydet.</p>
-          <a class="primary" href="{{.InstallationURL}}" target="_blank" rel="noopener noreferrer">GitHub’da repolarını seç <span aria-hidden="true">↗</span></a>
-          <p><strong>2. Hesabını doğrula</strong><br>Kaydettikten sonra GitHub seni otomatik yönlendirir. Nudgy hesabına zaten kuruluysa ve repo seçimini değiştirmediysen aşağıdan devam et.</p>
-          <form method="post" action="/github/setup"><input type="hidden" name="state" value="{{.State}}"><button class="secondary" type="submit">Mevcut repo seçimimle devam et →</button></form>
+          <a class="primary" href="{{.InstallationURL}}" rel="noreferrer">GitHub’da repolarını seç <span aria-hidden="true">↗</span></a>
+          <p><strong>2. Bağlantıyı tamamla</strong><br>Kurulumu kaydettikten sonra GitHub seni hesap doğrulamasına yönlendirir. İzin verdiğinde bağlantın tamamlanır.</p>
         </div>
         {{end}}
         {{if .Success}}
