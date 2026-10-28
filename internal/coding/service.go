@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"log"
 	"sort"
 	"strings"
 	"time"
@@ -84,45 +85,59 @@ func (s *Service) BeginConnect(ctx context.Context, userID int64) (string, strin
 }
 
 func (s *Service) CompleteConnect(ctx context.Context, state, code string) error {
+	_, err := s.CompleteConnectAccount(ctx, state, code)
+	return err
+}
+
+func (s *Service) CompleteConnectAccount(ctx context.Context, state, code string) (Account, error) {
 	if !taskID.MatchString(state) || code == "" || len(code) > 1024 {
-		return ErrArguments
+		return Account{}, ErrArguments
 	}
 	saved, err := s.store.ConsumeOAuthState(ctx, stateHash(state))
 	if err != nil || !time.Now().Before(saved.Expires) {
-		return ErrConnect
+		return Account{}, ErrConnect
 	}
 	credentials, err := s.provider.Exchange(ctx, code, saved.Verifier)
 	if err != nil {
-		return ErrConnect
+		return Account{}, ErrConnect
 	}
 	id, login, err := s.provider.User(ctx, credentials.Access)
 	if err != nil || id <= 0 || login == "" {
-		return ErrConnect
+		return Account{}, ErrConnect
 	}
 	team, err := s.store.SlackTeam(ctx, saved.UserID)
 	if err != nil || team == "" {
-		return ErrConnect
+		return Account{}, ErrConnect
 	}
 	if err = s.store.SaveConnection(ctx, Connection{UserID: saved.UserID, Team: team, GitHubUserID: id, Login: login, Credentials: credentials}); err != nil {
-		return ErrUnavailable
+		return Account{}, ErrUnavailable
 	}
-	return nil
+	log.Printf("coding_event=github_connected user_id=%d github_user_id=%d", saved.UserID, id)
+	return Account{ID: id, Login: login}, nil
 }
 
 func (s *Service) Disconnect(ctx context.Context, userID int64) error {
 	return s.store.Disconnect(ctx, userID)
 }
 
-func (s *Service) Repositories(ctx context.Context, identity Identity) ([]Repository, error) {
+// ConnectionBindings is only exposed through the authenticated admin router.
+func (s *Service) ConnectionBindings(ctx context.Context) ([]ConnectionBinding, error) {
+	return s.store.ConnectionBindings(ctx)
+}
+
+// verifiedConnection checks both the Slack binding and the live token subject.
+// A corrupted/swapped token must fail before any repository data is requested.
+func (s *Service) verifiedConnection(ctx context.Context, identity Identity) (Account, string, error) {
 	if err := s.AuthorizeIdentity(ctx, identity); err != nil {
-		return nil, err
+		return Account{}, "", err
 	}
 	var token string
+	var account Account
 	err := s.store.WithConnection(ctx, identity.UserID, func(c *Connection) error {
-		if c.Team != identity.Team {
+		if c.UserID != identity.UserID || c.Team != identity.Team {
 			return ErrDenied
 		}
-		if c.Credentials.Access == "" {
+		if c.GitHubUserID <= 0 || c.Login == "" || !strings.HasPrefix(c.Credentials.Access, "ghu_") {
 			return ErrConnect
 		}
 		if !c.Credentials.Expires.IsZero() && time.Now().Add(time.Minute).After(c.Credentials.Expires) {
@@ -135,18 +150,48 @@ func (s *Service) Repositories(ctx context.Context, identity Identity) ([]Reposi
 			}
 			c.Credentials = next
 		}
+		if !strings.HasPrefix(c.Credentials.Access, "ghu_") {
+			return ErrConnect
+		}
+		id, login, err := s.provider.User(ctx, c.Credentials.Access)
+		if err != nil {
+			return err
+		}
+		if id != c.GitHubUserID || login == "" {
+			log.Printf("coding_event=github_identity_mismatch user_id=%d expected_github_user_id=%d actual_github_user_id=%d", identity.UserID, c.GitHubUserID, id)
+			return ErrConnect
+		}
+		account = Account{ID: id, Login: login}
 		token = c.Credentials.Access
 		return nil
 	})
 	if err != nil {
 		if errors.Is(err, ErrConnect) || errors.Is(err, ErrDenied) {
-			return nil, err
+			return Account{}, "", err
 		}
-		return nil, ErrUnavailable
+		return Account{}, "", ErrUnavailable
+	}
+	return account, token, nil
+}
+
+func (s *Service) Account(ctx context.Context, identity Identity) (Account, error) {
+	account, _, err := s.verifiedConnection(ctx, identity)
+	return account, err
+}
+
+func (s *Service) Repositories(ctx context.Context, identity Identity) ([]Repository, error) {
+	access, err := s.RepositoryAccess(ctx, identity)
+	return access.Repositories, err
+}
+
+func (s *Service) RepositoryAccess(ctx context.Context, identity Identity) (RepositoryAccess, error) {
+	account, token, err := s.verifiedConnection(ctx, identity)
+	if err != nil {
+		return RepositoryAccess{}, err
 	}
 	repos, err := s.provider.Repositories(ctx, token)
 	if err != nil {
-		return nil, err
+		return RepositoryAccess{}, err
 	}
 	result := make([]Repository, 0)
 	for _, repo := range repos {
@@ -155,7 +200,8 @@ func (s *Service) Repositories(ctx context.Context, identity Identity) ([]Reposi
 		}
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].FullName < result[j].FullName })
-	return result, nil
+	log.Printf("coding_event=repositories_listed user_id=%d github_user_id=%d count=%d", identity.UserID, account.ID, len(result))
+	return RepositoryAccess{Account: account, Repositories: result}, nil
 }
 
 // Prepare stores intent only. This phase has no executor, push, or PR API.

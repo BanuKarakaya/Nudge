@@ -48,6 +48,18 @@ func (s *codingHandlerStore) SaveConnection(_ context.Context, c coding.Connecti
 	return nil
 }
 
+func (s *codingHandlerStore) ConnectionBindings(context.Context) ([]coding.ConnectionBinding, error) {
+	return []coding.ConnectionBinding{{UserID: s.saved.UserID, Team: s.saved.Team, SlackUserID: "U", Account: coding.Account{ID: s.saved.GitHubUserID, Login: s.saved.Login}}}, nil
+}
+
+func (s *codingHandlerStore) WithConnection(_ context.Context, userID int64, fn func(*coding.Connection) error) error {
+	if userID != s.saved.UserID {
+		return coding.ErrConnect
+	}
+	c := s.saved
+	return fn(&c)
+}
+
 type codingHandlerProvider struct{ coding.Provider }
 
 func (codingHandlerProvider) AuthorizeURL(state, verifier string) string {
@@ -58,6 +70,10 @@ func (codingHandlerProvider) Exchange(context.Context, string, string) (coding.C
 }
 func (codingHandlerProvider) User(context.Context, string) (int64, string, error) {
 	return 42, "developer", nil
+}
+
+func (codingHandlerProvider) Repositories(context.Context, string) ([]coding.Repository, error) {
+	return []coding.Repository{{ID: 1, InstallationID: 2, FullName: "developer/private", DefaultBranch: "main"}}, nil
 }
 
 type codingInstallations struct{ conversationInstallations }
@@ -152,6 +168,9 @@ func TestGitHubCallbackRequiresSignedLinkBrowserCookieAndSingleUseState(t *testi
 	if ok.Code != 200 || store.saved.UserID != 1 || store.saved.Team != "T" || store.saved.GitHubUserID != 42 {
 		t.Fatalf("callback=%d connection=%d", ok.Code, store.saved.UserID)
 	}
+	if !strings.Contains(ok.Body.String(), "@developer") {
+		t.Fatal("verified GitHub account missing from confirmation")
+	}
 	if strings.Contains(ok.Body.String(), "ghu_") || ok.Header().Get("Cache-Control") != "no-store" {
 		t.Fatal("callback leaked secret or cached page")
 	}
@@ -189,7 +208,7 @@ func TestEnablingCodingToolsRebootsNativeThreadButPreservesDeliveredHistory(t *t
 	})}).WithCoding(codingHandler)
 	h.replyWithSummary(conversationEvent("GitHub repolarımı göster"))
 	got, err := store.Load(context.Background(), key)
-	if err != nil || got.AgentThreadID != "new-native" || got.AgentToolVersion != "coding-drafts-v2" {
+	if err != nil || got.AgentThreadID != "new-native" || got.AgentToolVersion != "coding-identity-v3" {
 		t.Fatalf("new tool version not persisted: %+v", got)
 	}
 }
@@ -203,5 +222,49 @@ func TestCodingRoutesRemainBehindAdminAuthorization(t *testing.T) {
 	public.ServeHTTP(w, httptest.NewRequest("DELETE", "https://nudgy.example/api/v1/coding/github/connection", nil))
 	if w.Code != http.StatusUnauthorized {
 		t.Fatal("anonymous disconnect")
+	}
+}
+
+func TestGitHubConfirmationEscapesAccountData(t *testing.T) {
+	w := httptest.NewRecorder()
+	renderGitHubConnectionPage(w, http.StatusOK, githubPageData{Success: true, Title: "GitHub’la tanıştık.", Login: `<img src=x onerror="alert(1)">`})
+	if strings.Contains(w.Body.String(), `<img src=x`) || !strings.Contains(w.Body.String(), "&lt;img") {
+		t.Fatal("unescaped GitHub account in HTML")
+	}
+	if w.Header().Get("Cache-Control") != "no-store" || w.Header().Get("Referrer-Policy") != "no-referrer" {
+		t.Fatal("account page must not be cached or leak OAuth URL through referer")
+	}
+}
+
+func TestGitHubDiagnosticsAreAdminOnlyAndNeverExposeCredentials(t *testing.T) {
+	h, store, _, _ := codingHandlerFixture(t)
+	store.saved = coding.Connection{UserID: 1, Team: "T", GitHubUserID: 42, Login: "developer", Credentials: coding.Credentials{Access: "ghu_secret", Refresh: "ghr_secret"}}
+	public, admin := http.NewServeMux(), http.NewServeMux()
+	h.RegisterRoutes(public, admin)
+	public.Handle("/api/v1/", RequireAPIToken("admin", admin))
+	for _, path := range []string{"connections", "connection"} {
+		for _, token := range []string{"", "wrong", "admin"} {
+			req := httptest.NewRequest("GET", "/api/v1/coding/github/"+path, nil)
+			req.Header.Set("X-User-ID", "1")
+			req.Header.Set("Authorization", "Bearer "+token)
+			w := httptest.NewRecorder()
+			public.ServeHTTP(w, req)
+			want := http.StatusUnauthorized
+			if token == "admin" {
+				want = http.StatusOK
+			}
+			if w.Code != want || strings.Contains(w.Body.String(), "ghu_") || strings.Contains(w.Body.String(), "ghr_") || w.Header().Get("Cache-Control") != "no-store" {
+				t.Fatalf("unsafe diagnostic route: path=%s status=%d body=%s", path, w.Code, w.Body.String())
+			}
+		}
+	}
+	store.saved.GitHubUserID = 999
+	req := httptest.NewRequest("GET", "/api/v1/coding/github/connection", nil)
+	req.Header.Set("Authorization", "Bearer admin")
+	req.Header.Set("X-User-ID", "1")
+	w := httptest.NewRecorder()
+	public.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden || strings.Contains(w.Body.String(), "developer/private") {
+		t.Fatal("diagnostic bypassed identity check")
 	}
 }

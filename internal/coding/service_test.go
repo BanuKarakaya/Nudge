@@ -36,7 +36,12 @@ func (s *memoryStore) WithConnection(_ context.Context, id int64, fn func(*Conne
 	if s.connection.UserID != id {
 		return ErrConnect
 	}
-	return fn(&s.connection)
+	next := s.connection
+	if err := fn(&next); err != nil {
+		return err
+	}
+	s.connection = next
+	return nil
 }
 func (s *memoryStore) PutOAuthState(_ context.Context, hash string, state OAuthState) error {
 	s.mu.Lock()
@@ -110,7 +115,7 @@ func (*fakeProvider) User(context.Context, string) (int64, string, error) {
 
 func fixture(t *testing.T) (*Service, *memoryStore, *fakeProvider, Identity) {
 	t.Helper()
-	store := &memoryStore{connection: Connection{UserID: 1, Team: "T", Credentials: Credentials{Access: "ghu_secret"}}}
+	store := &memoryStore{connection: Connection{UserID: 1, Team: "T", GitHubUserID: 55, Login: "developer", Credentials: Credentials{Access: "ghu_secret"}}}
 	p := &fakeProvider{repos: []Repository{{ID: 10, FullName: "owner/repo", DefaultBranch: "master", InstallationID: 2}, {ID: 11, FullName: "owner/another", DefaultBranch: "main", InstallationID: 2}}}
 	s, err := New(store, p)
 	if err != nil {
@@ -182,7 +187,7 @@ func TestPermissionAndTaskOwnershipBoundaries(t *testing.T) {
 
 func TestRefreshIsSerializedAndNeverUsesAnotherUsersToken(t *testing.T) {
 	s, store, p, i := fixture(t)
-	store.connection.Credentials = Credentials{Access: "old", Refresh: "refresh", Expires: time.Now().Add(-time.Hour), RefreshExpires: time.Now().Add(time.Hour)}
+	store.connection.Credentials = Credentials{Access: "ghu_old", Refresh: "refresh", Expires: time.Now().Add(-time.Hour), RefreshExpires: time.Now().Add(time.Hour)}
 	var wg sync.WaitGroup
 	for range 8 {
 		wg.Add(1)

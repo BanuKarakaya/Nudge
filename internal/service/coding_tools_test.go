@@ -26,7 +26,7 @@ func (*codingTestStore) WithConnection(_ context.Context, id int64, fn func(*cod
 	if id != 7 {
 		return coding.ErrConnect
 	}
-	return fn(&coding.Connection{UserID: id, Team: "T", Credentials: coding.Credentials{Access: "ghu_private"}})
+	return fn(&coding.Connection{UserID: id, Team: "T", GitHubUserID: 42, Login: "developer", Credentials: coding.Credentials{Access: "ghu_private"}})
 }
 func (s *codingTestStore) CreateDraft(_ context.Context, t coding.Task) (coding.Task, error) {
 	s.task = t
@@ -34,6 +34,10 @@ func (s *codingTestStore) CreateDraft(_ context.Context, t coding.Task) (coding.
 }
 
 type codingTestProvider struct{ coding.Provider }
+
+func (codingTestProvider) User(context.Context, string) (int64, string, error) {
+	return 42, "developer", nil
+}
 
 func (codingTestProvider) Repositories(context.Context, string) ([]coding.Repository, error) {
 	return []coding.Repository{{ID: 10, FullName: "owner/repo", DefaultBranch: "master", InstallationID: 20}}, nil
@@ -83,9 +87,26 @@ func TestCodingToolsRejectIdentityInjectionAndExposeNoConnectionLink(t *testing.
 func TestCodingToolsRejectMismatchedWorkspace(t *testing.T) {
 	s, _ := coding.New(&codingTestStore{}, codingTestProvider{})
 	tools := NewCodingTools(NewAgentTools(nil, nil, nil, 7, time.Now(), nil), s, coding.Identity{UserID: 7, Team: "OTHER"}, func(context.Context) error { t.Fatal("sent link to another workspace"); return nil })
-	for _, name := range []string{"github_connect", "repositories_list", "repository_task_prepare", "repository_task_cancel"} {
+	for _, name := range []string{"github_connect", "github_connection_status", "repositories_list", "repository_task_prepare", "repository_task_cancel"} {
 		if _, err := tools.Call(context.Background(), name, json.RawMessage(`{}`)); err == nil {
 			t.Fatalf("allowed %s", name)
+		}
+	}
+}
+
+func TestGitHubToolsReturnVerifiedAccountAndRejectIdentityArguments(t *testing.T) {
+	s, _ := coding.New(&codingTestStore{}, codingTestProvider{})
+	tools := NewCodingTools(NewAgentTools(nil, nil, nil, 7, time.Now(), nil), s, coding.Identity{UserID: 7, Team: "T"}, nil)
+	for _, name := range []string{"github_connection_status", "repositories_list"} {
+		raw, err := tools.Call(context.Background(), name, json.RawMessage(`{}`))
+		var result struct {
+			Account coding.Account `json:"github_account"`
+		}
+		if err != nil || json.Unmarshal([]byte(raw), &result) != nil || result.Account.ID != 42 || result.Account.Login != "developer" || strings.Contains(raw, "ghu_") {
+			t.Fatalf("unverified identity or token disclosure: %s %v", raw, err)
+		}
+		if _, err := tools.Call(context.Background(), name, json.RawMessage(`{"user_id":8,"login":"someone-else"}`)); err == nil {
+			t.Fatal("model selected another identity")
 		}
 	}
 }

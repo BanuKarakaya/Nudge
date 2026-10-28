@@ -169,7 +169,7 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 		}
 	}
 	analyticsRecord.UserID = userID
-	log.Printf("slack_request=%s stage=user_resolved elapsed_ms=%d", requestID, time.Since(started).Milliseconds())
+	log.Printf("slack_request=%s stage=user_resolved user_id=%d slack_user_id=%q team_id=%q elapsed_ms=%d", requestID, userID, event.Event.User, event.TeamID, time.Since(started).Milliseconds())
 	installation, err := h.installations.GetByUserID(ctx, userID)
 	if err != nil {
 		log.Printf("slack_request=%s stage=installation_lookup_failed elapsed_ms=%d error=%q", requestID, time.Since(started).Milliseconds(), err)
@@ -233,7 +233,7 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 			// delivered history once when coding tools are enabled or disabled.
 			toolVersion := ""
 			if h.coding != nil {
-				toolVersion = "coding-drafts-v2"
+				toolVersion = "coding-identity-v3"
 			}
 			if state.AgentToolVersion != toolVersion {
 				state.AgentThreadID = ""

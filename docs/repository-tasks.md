@@ -42,7 +42,8 @@ change, and removed permissions stop authorizing new tasks.
    delivery and goes only to that user's DM. Asking Nudgy to connect GitHub is
    still available to replace expired links, but is not needed for discovery.
 2. Open it and authorize the App. OAuth uses PKCE, a single-use 10-minute state
-   and a browser cookie binding the callback.
+   and a browser cookie binding the callback. The Nudgy confirmation page shows
+   the GitHub login returned by `/user`; check it before returning to Slack.
 3. Ask for repositories. Access requires the App's installation permissions and
    the user's current GitHub write permissions. Suspended installations, archived
    and disabled repositories are excluded.
@@ -50,7 +51,7 @@ change, and removed permissions stop authorizing new tasks.
    as an immutable **draft**, reports its ID and says execution is unavailable.
    The same user can inspect/cancel it in the same Slack thread.
 
-Tools: `github_connect`, `repositories_list`, `repository_task_prepare`,
+Tools: `github_connect`, `github_connection_status`, `repositories_list`, `repository_task_prepare`,
 `repository_task_status`, `repository_task_cancel`. Native Codex threads are
 renewed when the tool set changes, retaining delivered conversation history.
 Local greeting responses still bypass model calls.
@@ -70,6 +71,29 @@ The same person in another workspace needs a separate connection. Tokens are
 never shared with coworkers, and no workspace ID or repository list is entered
 manually. Existing connections inherit their workspace from the same user
 foreign key, so no credential migration or mass reconnection is needed.
+
+Before listing repositories or preparing a draft, Nudgy calls GitHub `/user`
+with the current user token (including after refresh) and compares the immutable
+GitHub ID to the saved connection. Missing identity, mismatched Slack owner,
+wrong token subject, or verification failure prevents repository access. A
+GitHub login rename is allowed when the numeric ID is unchanged. The repository
+tool returns the verified account alongside the list; it must not infer account
+identity from repository ownership. `github_connection_status` verifies the
+account without listing repository data.
+
+Connection and repository-list logs include internal Slack user ID and GitHub
+numeric ID, with repository count for listings; credentials and repository names
+are not logged. For an unexpected list, compare this verified identity with the
+requesting Slack user's connection before assuming collaboration permissions.
+These safeguards do not prove the cause of an earlier incident: a consistently
+linked but unintended GitHub account still requires checking the saved mapping
+and reconnecting through the correct user's private invitation.
+
+Admin diagnostics (require the existing `NUDGE_API_TOKEN` bearer; never public):
+`GET /api/v1/coding/github/connections` lists saved Slack/GitHub bindings without
+credentials (bounded to 1,000 connections). `GET /api/v1/coding/github/connection`
+with `X-User-ID` verifies that user's current GitHub identity and repository
+access. Both responses use `Cache-Control: no-store`; neither sends Slack messages.
 
 ## Next phase
 

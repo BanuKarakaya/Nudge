@@ -35,6 +35,25 @@ type Connection struct {
 	Credentials  Credentials
 }
 
+// Account is safe to display. Never return Connection or Credentials to a tool.
+type Account struct {
+	ID    int64  `json:"id"`
+	Login string `json:"login"`
+}
+
+// ConnectionBinding is admin-only diagnostic metadata; it contains no secrets.
+type ConnectionBinding struct {
+	UserID      int64   `json:"user_id"`
+	Team        string  `json:"team_id"`
+	SlackUserID string  `json:"slack_user_id"`
+	Account     Account `json:"github_account"`
+}
+
+type RepositoryAccess struct {
+	Account      Account      `json:"github_account"`
+	Repositories []Repository `json:"repositories"`
+}
+
 type Repository struct {
 	ID             int64  `json:"id"`
 	FullName       string `json:"full_name"`
@@ -64,6 +83,7 @@ type OAuthState struct {
 }
 
 type Store interface {
+	ConnectionBindings(context.Context) ([]ConnectionBinding, error)
 	SlackTeam(context.Context, int64) (string, error)
 	SaveConnection(context.Context, Connection) error
 	// WithConnection locks this user's credential across refresh and persistence.

@@ -163,6 +163,32 @@ func TestCodingStorePostgres(t *testing.T) {
 	if err := s.WithConnection(ctx, 2, func(*coding.Connection) error { t.Error("other user credential exposed"); return nil }); !errors.Is(err, coding.ErrConnect) {
 		t.Fatal(err)
 	}
+	// Two connected people in the same Slack workspace must retain separate
+	// encrypted credentials and immutable GitHub identities.
+	second := coding.Connection{UserID: 2, Team: "T", GitHubUserID: 66, Login: "second", Credentials: coding.Credentials{Access: "ghu_second_user"}}
+	if err := s.SaveConnection(ctx, second); err != nil {
+		t.Fatal(err)
+	}
+	bindings, err := s.ConnectionBindings(ctx)
+	if err != nil || len(bindings) != 3 || bindings[1].UserID != 2 || bindings[1].SlackUserID != "U2" || bindings[1].Account.ID != 66 {
+		t.Fatalf("incorrect diagnostic binding: %+v %v", bindings, err)
+	}
+	access, err := service.RepositoryAccess(ctx, coding.Identity{UserID: 2, Team: "T"})
+	if err != nil || access.Account.ID != 66 || len(access.Repositories) != 1 || access.Repositories[0].FullName != "second/private" {
+		t.Fatalf("same-workspace users mixed: %+v %v", access, err)
+	}
+	// Simulate a swapped ciphertext: valid encryption is insufficient proof of
+	// ownership. The live token subject must match before any repo API request.
+	if _, err := db.Exec(ctx, `UPDATE coding_connections SET credentials=(SELECT credentials FROM coding_connections WHERE user_id=1) WHERE user_id=2`); err != nil {
+		t.Fatal(err)
+	}
+	callsBefore := provider.calls
+	if _, err := service.Repositories(ctx, coding.Identity{UserID: 2, Team: "T"}); !errors.Is(err, coding.ErrConnect) || provider.calls != callsBefore {
+		t.Fatalf("swapped encrypted credentials reached repositories: %v", err)
+	}
+	if err := s.SaveConnection(ctx, second); err != nil {
+		t.Fatal(err)
+	}
 	state := coding.OAuthState{UserID: 1, Verifier: "pkce-secret", Expires: time.Now().Add(time.Minute)}
 	if err := s.PutOAuthState(ctx, "hash", state); err != nil {
 		t.Fatal(err)
@@ -242,11 +268,21 @@ type workspaceRepoProvider struct {
 	calls int
 }
 
+func (*workspaceRepoProvider) User(_ context.Context, token string) (int64, string, error) {
+	if token == "ghu_second_user" {
+		return 66, "second", nil
+	}
+	return 42, "test", nil
+}
+
 func (p *workspaceRepoProvider) Repositories(_ context.Context, token string) ([]coding.Repository, error) {
 	p.calls++
 	name := "owner/first"
 	if token == "ghu_other_workspace" {
 		name = "owner/second"
+	}
+	if token == "ghu_second_user" {
+		name = "second/private"
 	}
 	return []coding.Repository{{ID: 10, InstallationID: 20, FullName: name, DefaultBranch: "main"}}, nil
 }

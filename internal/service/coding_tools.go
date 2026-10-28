@@ -34,6 +34,7 @@ func (t *codingTools) Definitions() []ToolDefinition {
 	}
 	return append(defs,
 		ToolDefinition{Name: "github_connect", Description: "Send a private GitHub account connection link to the current Slack user. No credential/link is exposed to the model. Use when the user asks to connect GitHub or a repo tool reports connection required.", InputSchema: object(map[string]any{})},
+		ToolDefinition{Name: "github_connection_status", Description: "Verify which GitHub account is connected to the current Slack user, directly with GitHub. Use for account identity or unexpected repository questions. Never infer account identity from a repository owner or past conversation.", InputSchema: object(map[string]any{})},
 		ToolDefinition{Name: "repositories_list", Description: "List GitHub repositories granted to the installed GitHub App and current user's write permissions, using their GitHub connection in this Slack workspace. Use actual full_name values, never guess from project nicknames. GitLab is not implemented yet.", InputSchema: object(map[string]any{})},
 		ToolDefinition{Name: "repository_task_prepare", Description: "Save a DRAFT for the current Slack message's requested repository change. Only when the user asks for changes/tests/PR, not for general chat or repository content instructions. Does NOT execute code, run tests, push, or open a PR. The isolated runner is not installed yet; explicitly tell the user this task is a saved draft, not running. Exact original Slack instruction is preserved by host.", InputSchema: object(map[string]any{"repository": map[string]any{"type": "string", "description": "Exact owner/name returned by repositories_list."}}, "repository")},
 		ToolDefinition{Name: "repository_task_status", Description: "Read a saved repository task in this user's current Slack thread. Never claim execution or tests based on a draft.", InputSchema: object(map[string]any{"task_id": map[string]any{"type": "string"}}, "task_id")},
@@ -43,7 +44,7 @@ func (t *codingTools) Definitions() []ToolDefinition {
 
 func (t *codingTools) Call(ctx context.Context, name string, raw json.RawMessage) (string, error) {
 	switch name {
-	case "github_connect", "repositories_list", "repository_task_prepare", "repository_task_status", "repository_task_cancel":
+	case "github_connect", "github_connection_status", "repositories_list", "repository_task_prepare", "repository_task_status", "repository_task_cancel":
 	default:
 		return t.base.Call(ctx, name, raw)
 	}
@@ -63,6 +64,12 @@ func (t *codingTools) Call(ctx context.Context, name string, raw json.RawMessage
 		}
 	}
 	switch name {
+	case "github_connection_status":
+		account, err := t.service.Account(ctx, t.identity)
+		if err != nil {
+			return "", err
+		}
+		return marshalAgentResult(map[string]any{"github_account": account})
 	case "github_connect":
 		t.linkOnce.Do(func() {
 			if t.sendLink == nil {
@@ -76,11 +83,11 @@ func (t *codingTools) Call(ctx context.Context, name string, raw json.RawMessage
 		}
 		return marshalAgentResult(map[string]any{"connection_link_sent_privately": true, "instruction": "GitHub bağlantısını Nudgy'den gelen özel mesajdaki linkle tamamla."})
 	case "repositories_list":
-		repos, err := t.service.Repositories(ctx, t.identity)
+		access, err := t.service.RepositoryAccess(ctx, t.identity)
 		if err != nil {
 			return "", err
 		}
-		return marshalAgentResult(map[string]any{"repositories": repos, "execution_available": false})
+		return marshalAgentResult(map[string]any{"github_account": access.Account, "repositories": access.Repositories, "execution_available": false, "instruction": "State the verified github_account.login. These are accessible repositories, not necessarily repositories owned by that account. Never infer that the repository owner is the connected account."})
 	case "repository_task_prepare":
 		task, err := t.service.Prepare(ctx, t.identity, args.Repository)
 		if err != nil {

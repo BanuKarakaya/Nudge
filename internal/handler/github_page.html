@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f8f5ef">
+  <title>Nudgy · GitHub bağlantısı</title>
+  <link rel="icon" href="/dashboard/nudgy-mascot.webp" type="image/webp">
+  <style>
+    :root{font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#332b28;background:#f8f5ef;font-synthesis:none}
+    *{box-sizing:border-box}body{margin:0}a{color:inherit}button{font:inherit;cursor:pointer}
+    .shell{width:min(1040px,100% - 48px);margin:auto}.header{height:100px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e5dfd6}
+    .brand{display:flex;align-items:center;gap:8px;font-size:28px;letter-spacing:-1.5px;font-weight:800}.brand img{width:42px;height:42px;object-fit:contain}.header-note{font-size:12px;color:#776d65}
+    main{min-height:calc(100svh - 177px);display:grid;grid-template-columns:1fr 1.15fr;gap:64px;align-items:center;padding:64px 0}
+    .art{position:relative;display:grid;place-items:center;min-height:380px}.orbit{position:absolute;width:320px;height:320px;border-radius:50%;background:#eee4d6;outline:1px dashed #d9c6b0;outline-offset:16px}
+    .mascot{width:290px;max-width:100%;position:relative;transform:rotate(-7deg);filter:drop-shadow(0 22px 18px #6b3a221b)}
+    .bubble{position:absolute;top:14px;right:10px;transform:rotate(5deg);background:#fffdf8;border:1px solid #e5dfd6;border-radius:16px 16px 16px 2px;padding:14px 18px;font-size:14px}.star{position:absolute;left:12px;bottom:20px;font-size:42px;color:#ba8a4e}
+    .eyebrow{display:flex;align-items:center;gap:8px;text-transform:uppercase;font-weight:700;font-size:10px;letter-spacing:1.8px;color:#796551}.dot{width:7px;height:7px;border-radius:50%;background:#568569}
+    h1{font-size:clamp(34px,4.6vw,50px);line-height:1.1;letter-spacing:-2px;margin:20px 0 18px;font-weight:750;max-width:430px}h1 em{font-style:normal;color:#ca4527}
+    .intro{font-size:16px;line-height:1.7;color:#776d65;margin:0 0 28px;max-width:400px}
+    .account{display:flex;gap:14px;align-items:center;padding:18px;background:#fffdf9;border:1px solid #e4dacd;border-radius:12px}.github-icon{width:40px;height:40px;flex:none;border:1px solid #e7e0d6;border-radius:10px;display:grid;place-items:center;background:#f7f3ed}.github-icon svg{width:22px;height:22px}.account-text{min-width:0}.account-label{font-size:11px;color:#776d65;display:block;margin-bottom:4px}.login{font-size:16px;font-weight:700;overflow-wrap:anywhere}.verified{margin-left:auto;flex:none;border-radius:50%;background:#e8f0e7;color:#386344;width:25px;height:25px;display:grid;place-items:center}
+    .account-help{font-size:12px;line-height:1.6;color:#776d65;margin:12px 0 27px}.next-label{font-size:11px;letter-spacing:.7px;text-transform:uppercase;color:#796551;font-weight:650}
+    .prompt{display:flex;align-items:center;gap:12px;border-bottom:1px solid #ded4c7;padding:12px 0 16px;margin:0 0 22px}.prompt p{font-size:14px;line-height:1.6;margin:0;flex:1}.mention{color:#a33c24;font-weight:650}.copy{background:transparent;border:1px solid #d7ccbf;border-radius:7px;color:#62554a;padding:8px 10px;font-size:11px}.copy:hover{background:#eee4d6}
+    .primary{display:inline-flex;align-items:center;gap:34px;text-decoration:none;padding:15px 20px;background:#332b28;color:#fff;border-radius:8px;font-size:14px;font-weight:650}.primary:hover{background:#4c3a30}a:focus-visible,button:focus-visible{outline:3px solid #ca4527;outline-offset:4px}
+    .availability{font-size:12px;line-height:1.7;color:#776d65;margin:20px 0 0;max-width:430px}.availability strong{font-weight:600;color:#655749}.copy-status{min-height:18px;font-size:12px;color:#386344;margin:9px 0 0}
+    footer{min-height:77px;border-top:1px solid #e5dfd6;display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:11px;color:#8a7c70}.footer-dot{color:#ca4527;margin-right:6px}
+    @media(max-width:760px){.shell{width:calc(100% - 40px)}.header{height:78px}.header-note{font-size:11px}main{grid-template-columns:1fr;gap:22px;padding:28px 0 38px;min-height:0}.art{min-height:210px}.orbit{width:175px;height:175px;outline-offset:10px}.mascot{width:172px}.bubble{top:10px;right:calc(50% - 145px);font-size:11px;padding:10px 12px}.star{left:calc(50% - 135px);bottom:6px;font-size:30px}.content{width:min(480px,100%);margin:auto}h1{font-size:37px;margin-top:14px;letter-spacing:-1.5px}.intro{font-size:15px}.account-help{margin-bottom:22px}footer{padding:20px 0;align-items:flex-start;flex-direction:column;gap:8px}.primary{width:100%;justify-content:space-between}}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="header"><div class="brand"><img src="/dashboard/nudgy-mascot.webp" alt="">nudgy.</div><span class="header-note">Küçük bir yardımcı, hep yanında.</span></header>
+    <main>
+      <div class="art" aria-hidden="true"><div class="orbit"></div><img class="mascot" src="/dashboard/nudgy-mascot.webp" alt=""><span class="bubble">{{if .Success}}Tamamdır, buradayım!{{else}}Bir kez daha deneyelim.{{end}}</span><span class="star">✳</span></div>
+      <section class="content" aria-labelledby="page-title">
+        <div class="eyebrow"><span class="dot"></span>{{if .Success}}GitHub bağlantısı tamamlandı{{else}}GitHub bağlantısı{{end}}</div>
+        <h1 id="page-title">{{.Title}}</h1>
+        <p class="intro">{{.Description}}</p>
+        {{if .Success}}
+        <div class="account"><div class="github-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .7a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.55v-2.15c-3.21.7-3.89-1.36-3.89-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.71.08-.71 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.95.11-.75.4-1.25.73-1.54-2.56-.29-5.26-1.28-5.26-5.69 0-1.26.45-2.29 1.19-3.1-.12-.29-.51-1.47.11-3.06 0 0 .97-.31 3.16 1.18a11 11 0 0 1 5.75 0c2.2-1.49 3.16-1.18 3.16-1.18.63 1.59.24 2.77.12 3.06.74.81 1.18 1.84 1.18 3.1 0 4.42-2.7 5.39-5.28 5.68.42.36.78 1.06.78 2.14v3.17c0 .31.21.66.79.55A11.5 11.5 0 0 0 12 .7Z"/></svg></div><div class="account-text"><span class="account-label">Bağladığın GitHub hesabı</span><span class="login">@{{.Login}}</span></div><span class="verified" aria-label="Bağlandı">✓</span></div>
+        <p class="account-help">Bu hesap sana ait değilse Slack’te Nudgy’den yeni bir bağlantı iste ve GitHub’da doğru hesabı seç.</p>
+        <span class="next-label">Slack’te ilk adımın</span>
+        <div class="prompt"><p><span class="mention">@Nudgy</span> GitHub repolarımı getir</p><button class="copy" id="copy" type="button">Kopyala</button></div>
+        {{end}}
+        <a class="primary" href="https://slack.com/app">Slack’e dön <span aria-hidden="true">↗</span></a>
+        <p class="copy-status" id="copy-status" role="status" aria-live="polite"></p>
+        {{if .Success}}<p class="availability"><strong>Şimdilik:</strong> repolarını listeleyebilir, değişiklik isteklerini taslak olarak kaydedebilirsin. Kod çalıştırma ve PR açma henüz etkin değil.</p>{{end}}
+      </section>
+    </main>
+    <footer><span><span class="footer-dot">●</span> Meraklı insanlar için, küçük bir yardımcı.</span><span>Nudgy + GitHub</span></footer>
+  </div>
+  <script>
+    const copy = document.getElementById('copy');
+    if (copy) copy.addEventListener('click', async () => {
+      const status = document.getElementById('copy-status');
+      try { await navigator.clipboard.writeText('@Nudgy GitHub repolarımı getir'); status.textContent = 'Kopyalandı. Slack’te Nudgy’yi etiketleyip gönderebilirsin.'; }
+      catch { status.textContent = 'Mesajı yukarıdan seçip kopyalayabilirsin.'; }
+    });
+  </script>
+</body>
+</html>

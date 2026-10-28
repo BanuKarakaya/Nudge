@@ -34,6 +34,26 @@ func (s *CodingStore) encode(c coding.Credentials) (string, error) {
 	return s.cipher.Encrypt(string(raw))
 }
 
+func (s *CodingStore) ConnectionBindings(ctx context.Context) ([]coding.ConnectionBinding, error) {
+	rows, err := s.db.Query(ctx, `SELECT c.user_id,u.team_id,u.slack_user_id,c.github_user_id,c.login FROM coding_connections c JOIN users u ON u.id=c.user_id JOIN slack_installations i ON i.team_id=u.team_id ORDER BY c.user_id LIMIT 1001`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	bindings := make([]coding.ConnectionBinding, 0)
+	for rows.Next() {
+		var b coding.ConnectionBinding
+		if err := rows.Scan(&b.UserID, &b.Team, &b.SlackUserID, &b.Account.ID, &b.Account.Login); err != nil {
+			return nil, err
+		}
+		bindings = append(bindings, b)
+	}
+	if len(bindings) > 1000 {
+		return nil, coding.ErrUnavailable
+	}
+	return bindings, rows.Err()
+}
+
 func (s *CodingStore) SaveConnection(ctx context.Context, c coding.Connection) error {
 	value, err := s.encode(c.Credentials)
 	if err != nil {

@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -34,6 +33,38 @@ func (h *CodingHandler) RegisterRoutes(public, admin *http.ServeMux) {
 	public.HandleFunc("GET /github/install", h.install)
 	public.HandleFunc("GET /github/oauth/callback", h.callback)
 	// The admin router must already be wrapped by RequireAPIToken.
+	admin.HandleFunc("GET /api/v1/coding/github/connections", func(w http.ResponseWriter, r *http.Request) {
+		privatePageHeaders(w)
+		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		defer cancel()
+		bindings, err := h.service.ConnectionBindings(ctx)
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, "connections unavailable")
+			return
+		}
+		writeJSON(w, http.StatusOK, bindings)
+	})
+	admin.HandleFunc("GET /api/v1/coding/github/connection", func(w http.ResponseWriter, r *http.Request) {
+		privatePageHeaders(w)
+		userID, err := userIDFromHeader(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid user")
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+		installation, err := h.installations.GetByUserID(ctx, userID)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "user not found")
+			return
+		}
+		access, err := h.service.RepositoryAccess(ctx, coding.Identity{UserID: userID, Team: installation.TeamID})
+		if err != nil {
+			writeError(w, http.StatusForbidden, "GitHub access could not be verified")
+			return
+		}
+		writeJSON(w, http.StatusOK, access)
+	})
 	admin.HandleFunc("DELETE /api/v1/coding/github/connection", func(w http.ResponseWriter, r *http.Request) {
 		userID, err := userIDFromHeader(r)
 		if err != nil {
@@ -52,14 +83,14 @@ func (h *CodingHandler) install(w http.ResponseWriter, r *http.Request) {
 	privatePageHeaders(w)
 	userID, err := strconv.ParseInt(r.URL.Query().Get("user_id"), 10, 64)
 	if err != nil || !h.links.Verify(r.URL.Query().Get("token"), userID, "github", time.Now()) {
-		writeError(w, http.StatusUnauthorized, "invalid or expired connection link")
+		renderGitHubConnectionPage(w, http.StatusUnauthorized, githubPageData{Title: "Yeni bir bağlantı alalım.", Description: "Bu bağlantı geçersiz veya süresi dolmuş. Slack’te Nudgy’den GitHub hesabını bağlamak için yeni bir bağlantı iste."})
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 	state, redirect, err := h.service.BeginConnect(ctx, userID)
 	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, "GitHub connection unavailable")
+		renderGitHubConnectionPage(w, http.StatusServiceUnavailable, githubPageData{Title: "Küçük bir aksilik oldu.", Description: "GitHub bağlantısını şu an başlatamıyoruz. Biraz sonra tekrar deneyebilirsin."})
 		return
 	}
 	setOAuthCookie(w, r, "nudgy_github_oauth", state, "/github/oauth/callback")
@@ -70,21 +101,21 @@ func (h *CodingHandler) callback(w http.ResponseWriter, r *http.Request) {
 	privatePageHeaders(w)
 	state := r.URL.Query().Get("state")
 	if !consumeOAuthCookie(w, r, "nudgy_github_oauth", state, "/github/oauth/callback") {
-		writeError(w, http.StatusBadRequest, "OAuth browser session mismatch")
+		renderGitHubConnectionPage(w, http.StatusBadRequest, githubPageData{Title: "Bağlantıyı yeniden başlatalım.", Description: "Bu tarayıcıdaki bağlantı oturumunu doğrulayamadık. Slack’te Nudgy’den yeni bir bağlantı iste ve işlemi aynı tarayıcıda tamamla."})
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	if r.URL.Query().Get("error") != "" {
-		writeError(w, http.StatusBadRequest, "GitHub authorization declined")
+		renderGitHubConnectionPage(w, http.StatusBadRequest, githubPageData{Title: "Bağlantı tamamlanmadı.", Description: "GitHub izni verilmedi. Hazır olduğunda Slack’te Nudgy’den yeni bir bağlantı isteyebilirsin."})
 		return
 	}
-	if err := h.service.CompleteConnect(ctx, state, r.URL.Query().Get("code")); err != nil {
-		writeError(w, http.StatusBadRequest, "GitHub bağlantısı tamamlanamadı. Slack'ten yeni bağlantı linki iste.")
+	account, err := h.service.CompleteConnectAccount(ctx, state, r.URL.Query().Get("code"))
+	if err != nil {
+		renderGitHubConnectionPage(w, http.StatusBadRequest, githubPageData{Title: "Bağlantıyı tamamlayamadık.", Description: "Slack’te Nudgy’den yeni bir GitHub bağlantısı isteyip tekrar deneyebilirsin."})
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, `<!doctype html><html lang="tr"><meta charset="utf-8"><title>Nudgy · GitHub</title><h1>GitHub hesabın bağlandı</h1><p>Slack'e dönüp Nudgy'den erişebildiğin repoları listelemesini isteyebilirsin.</p><p>Kod çalıştırma ve PR açma henüz etkin değil; şu an yalnızca görev taslağı hazırlanır.</p></html>`)
+	renderGitHubConnectionPage(w, http.StatusOK, githubPageData{Success: true, Title: "GitHub’la tanıştık.", Description: "Projelerin için küçük bir yardımcı, artık Slack’te yanında.", Login: account.Login})
 }
 
 func (h *CodingHandler) Tools(base service.AgentTools, identity coding.Identity) service.AgentTools {
