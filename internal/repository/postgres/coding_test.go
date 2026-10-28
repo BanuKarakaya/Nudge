@@ -239,12 +239,66 @@ func TestCodingStorePostgres(t *testing.T) {
 			t.Fatal("cross-context cancellation allowed")
 		}
 	}
+
+	t.Run("durable edits", func(t *testing.T) {
+		job := coding.Edit{Task: coding.Task{ID: strings.Repeat("d", 32), Identity: identity, Repository: first.Repository, Instruction: "original signed request", Status: "editing"}, AccountID: 42, Snapshot: coding.Snapshot{Files: []coding.RepositoryFile{{Path: "private.go", Mode: "100644", Content: []byte("private source bytes")}}}}
+		created, err := s.CreateEdit(ctx, job)
+		if err != nil {
+			t.Fatal(err)
+		}
+		job.Task.ID = strings.Repeat("e", 32)
+		job.Task.Instruction = "retry attempted overwrite"
+		retry, err := s.CreateEdit(ctx, job)
+		if err != nil || retry.Task.ID != created.Task.ID || retry.Task.Instruction != "original signed request" {
+			t.Fatal("edit dedup failed", err)
+		}
+		var encrypted string
+		if err := db.QueryRow(ctx, `SELECT payload FROM coding_edits WHERE id=$1`, created.Task.ID).Scan(&encrypted); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(encrypted, "private source") || strings.Contains(encrypted, "original signed") {
+			t.Fatal("plaintext edit in database")
+		}
+		if _, err := s.GetEdit(ctx, 2, created.Task.ID); !errors.Is(err, coding.ErrNotFound) {
+			t.Fatal("cross-user edit read")
+		}
+		if err := s.WithEdit(ctx, 2, created.Task.ID, func(*coding.Edit) error { t.Fatal("cross-user edit lock"); return nil }); !errors.Is(err, coding.ErrNotFound) {
+			t.Fatal("cross-user edit mutation")
+		}
+		if err := s.WithEdit(ctx, 1, created.Task.ID, func(e *coding.Edit) error { e.Task.Status = "pushed"; return errors.New("abort") }); err == nil {
+			t.Fatal("expected rollback")
+		}
+		var editsWG sync.WaitGroup
+		for range 5 {
+			editsWG.Add(1)
+			go func() {
+				defer editsWG.Done()
+				if err := s.WithEdit(ctx, 1, created.Task.ID, func(e *coding.Edit) error { e.Review.Summary += "x"; return nil }); err != nil {
+					t.Error(err)
+				}
+			}()
+		}
+		editsWG.Wait()
+		// Reconstruct the store as after a Railway restart.
+		restarted, err := NewCodingStore(ctx, db, cipher)
+		if err != nil {
+			t.Fatal(err)
+		}
+		restored, err := restarted.GetEdit(ctx, 1, created.Task.ID)
+		if err != nil || restored.Task.Status != "editing" || restored.Review.Summary != "xxxxx" || restored.Task.Identity != identity || string(restored.Snapshot.Files[0].Content) != "private source bytes" {
+			t.Fatal("edit restart/locking failed", err)
+		}
+	})
 	state.Expires = time.Now().Add(time.Minute)
 	if err := s.PutOAuthState(ctx, "pending", state); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Disconnect(ctx, 1); err != nil {
 		t.Fatal(err)
+	}
+
+	if e, err := s.GetEdit(ctx, 1, strings.Repeat("d", 32)); err != nil || e.Task.Status != "cancelled" {
+		t.Fatal("disconnect retained pending edit", err)
 	}
 	if err := s.WithConnection(ctx, 1, func(*coding.Connection) error { return nil }); !errors.Is(err, coding.ErrConnect) {
 		t.Fatal("disconnect retained credentials")

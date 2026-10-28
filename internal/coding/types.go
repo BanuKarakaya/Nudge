@@ -1,5 +1,5 @@
-// Package coding contains repository access and task preparation, independent of
-// Slack, Codex and the eventual isolated execution backend.
+// Package coding contains repository access, source editing and approval-bound
+// publication. Repository scripts and tests are not executed.
 package coding
 
 import (

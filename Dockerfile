@@ -11,7 +11,7 @@ FROM node:22-bookworm-slim
 
 WORKDIR /app
 ARG CODEX_VERSION=0.164.0
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tzdata \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tzdata git \
     && rm -rf /var/lib/apt/lists/* \
     && npm install --global --ignore-scripts --no-audit --no-fund @openai/codex@${CODEX_VERSION} \
     && codex --version \

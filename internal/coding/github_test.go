@@ -48,6 +48,56 @@ func TestGitHubRejectsReadOnlyUninstalledSuspendedAndDifferentApp(t *testing.T) 
 	}
 }
 
+func TestPinnedRepositoryCheckRevalidatesAppSelectionAndUserRole(t *testing.T) {
+	role := "write"
+	selected := true
+	userID := int64(55)
+	var permissionCalls int
+	g := GitHub{AppID: 7, HTTPClient: &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
+		switch r.URL.Path {
+		case "/user/installations":
+			return response(`{"installations":[{"id":1,"app_id":7,"permissions":{"contents":"write","pull_requests":"write"}}]}`), nil
+		case "/user/installations/1/repositories":
+			if !selected {
+				return response(`{"repositories":[]}`), nil
+			}
+			return response(`{"repositories":[{"id":10,"full_name":"owner/repo","default_branch":"main","permissions":{"push":true}},{"id":11,"full_name":"owner/unrelated","default_branch":"main","permissions":{"push":true}}]}`), nil
+		case "/repos/owner/repo/collaborators/developer/permission":
+			permissionCalls++
+			raw, _ := json.Marshal(map[string]any{"permission": role, "user": map[string]any{"id": userID, "login": "developer"}})
+			return response(string(raw)), nil
+		default:
+			t.Fatal("queried unrelated repository", r.URL.Path)
+			return nil, ErrDenied
+		}
+	})}}
+	repo := Repository{ID: 10, InstallationID: 1, FullName: "owner/repo", DefaultBranch: "main"}
+	user := Account{ID: 55, Login: "developer"}
+	ctx := context.Background()
+	if err := g.CheckRepository(ctx, "ghu_private", user, repo); err != nil || permissionCalls != 1 {
+		t.Fatal("pinned check failed", err)
+	}
+	role = "read"
+	if err := g.CheckRepository(ctx, "ghu_private", user, repo); !errors.Is(err, ErrDenied) {
+		t.Fatal("read-only user accepted")
+	}
+	role = "write"
+	userID = 999
+	if err := g.CheckRepository(ctx, "ghu_private", user, repo); !errors.Is(err, ErrDenied) {
+		t.Fatal("another user's role accepted")
+	}
+	userID = 55
+	selected = false
+	if err := g.CheckRepository(ctx, "ghu_private", user, repo); !errors.Is(err, ErrDenied) {
+		t.Fatal("unselected repo accepted")
+	}
+	selected = true
+	g.AppID = 8
+	if err := g.CheckRepository(ctx, "ghu_private", user, repo); !errors.Is(err, ErrDenied) {
+		t.Fatal("different App accepted")
+	}
+}
+
 func TestGitHubOAuthPKCEAndErrorRedaction(t *testing.T) {
 	g := GitHub{ClientID: "client", ClientSecret: "secret", RedirectURL: "https://nudgy.example/github/oauth/callback"}
 	u, err := url.Parse(g.AuthorizeURL("state", "verifier"))

@@ -121,6 +121,9 @@ func (s *CodingStore) Disconnect(ctx context.Context, userID int64) error {
 		return err
 	}
 	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `UPDATE coding_edits SET status='cancelled' WHERE user_id=$1 AND status NOT IN ('pushed','cancelled')`, userID); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(ctx, `DELETE FROM coding_connections WHERE user_id=$1`, userID); err != nil {
 		return err
 	}

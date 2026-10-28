@@ -159,8 +159,70 @@ func (g GitHub) Repositories(ctx context.Context, token string) ([]Repository, e
 	if userID <= 0 || !githubLogin.MatchString(login) {
 		return nil, ErrConnect
 	}
+	installations, err := g.writableInstallations(ctx, token)
+	if err != nil {
+		return nil, err
+	}
 	var repos []Repository
 	seen := make(map[int64]bool)
+	for _, id := range installations {
+		items, err := g.installationRepos(ctx, token, id)
+		if err != nil {
+			return nil, err
+		}
+		for _, repo := range items {
+			if seen[repo.ID] {
+				continue
+			}
+			seen[repo.ID] = true
+			allowed, err := g.repositoryPermission(ctx, token, Account{ID: userID, Login: login}, repo)
+			if err != nil {
+				return nil, err
+			}
+			if allowed {
+				repos = append(repos, repo)
+			}
+		}
+	}
+	return repos, nil
+}
+
+// A coding tool checks just its pinned repository rather than querying every
+// collaborator permission in the user's account on every file read/write.
+func (g GitHub) CheckRepository(ctx context.Context, token string, user Account, repo Repository) error {
+	if !strings.HasPrefix(token, "ghu_") || user.ID <= 0 || !githubLogin.MatchString(user.Login) || !ValidRepository(repo.FullName) {
+		return ErrDenied
+	}
+	ids, err := g.writableInstallations(ctx, token)
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if id != repo.InstallationID {
+			continue
+		}
+		items, err := g.installationRepos(ctx, token, id)
+		if err != nil {
+			return err
+		}
+		for _, item := range items {
+			if item != repo {
+				continue
+			}
+			allowed, err := g.repositoryPermission(ctx, token, user, item)
+			if err != nil {
+				return err
+			}
+			if allowed {
+				return nil
+			}
+		}
+	}
+	return ErrDenied
+}
+
+func (g GitHub) writableInstallations(ctx context.Context, token string) ([]int64, error) {
+	var ids []int64
 	for page := 1; page <= 20; page++ {
 		var response struct {
 			Installations []struct {
@@ -177,31 +239,15 @@ func (g GitHub) Repositories(ctx context.Context, token string) ([]Repository, e
 			return nil, err
 		}
 		for _, installation := range response.Installations {
-			if installation.ID <= 0 || installation.AppID != g.AppID || installation.SuspendedAt != nil || installation.Permissions.Contents != "write" || installation.Permissions.PullRequests != "write" {
-				continue
-			}
-			items, err := g.installationRepos(ctx, token, installation.ID)
-			if err != nil {
-				return nil, err
-			}
-			for _, repo := range items {
-				if !seen[repo.ID] {
-					seen[repo.ID] = true
-					allowed, err := g.repositoryPermission(ctx, token, Account{ID: userID, Login: login}, repo)
-					if err != nil {
-						return nil, err
-					}
-					if allowed {
-						repos = append(repos, repo)
-					}
-				}
+			if installation.ID > 0 && installation.AppID == g.AppID && installation.SuspendedAt == nil && installation.Permissions.Contents == "write" && installation.Permissions.PullRequests == "write" {
+				ids = append(ids, installation.ID)
 			}
 		}
 		if len(response.Installations) < 100 {
-			return repos, nil
+			return ids, nil
 		}
 	}
-	return nil, ErrUnavailable // Never present a partial page traversal as complete.
+	return nil, ErrUnavailable
 }
 
 // Installation inventory is only a candidate list. Confirm the named user's

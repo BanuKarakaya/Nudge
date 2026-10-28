@@ -15,6 +15,8 @@ import (
 type Service struct {
 	store    Store
 	provider Provider
+	edits    EditStore
+	git      GitWorkspace
 }
 
 // GitHub is authoritative for repository permissions. Slack identity is resolved
