@@ -68,6 +68,26 @@ func (s *Service) BeginConnect(ctx context.Context, userID int64) (string, strin
 	if err != nil {
 		return "", "", err
 	}
+	if err := s.store.PutOAuthState(ctx, stateHash(state), OAuthState{UserID: userID, Phase: "install", Expires: time.Now().Add(10 * time.Minute)}); err != nil {
+		return "", "", ErrUnavailable
+	}
+	return state, s.provider.InstallationURL(state), nil
+}
+
+// ContinueConnect starts PKCE authorization only after the repository selection
+// redirect. The installation ID remains untrusted until checked with GitHub.
+func (s *Service) ContinueConnect(ctx context.Context, installState string, installationID int64) (string, string, error) {
+	if !taskID.MatchString(installState) || installationID < 0 {
+		return "", "", ErrArguments
+	}
+	saved, err := s.store.ConsumeOAuthState(ctx, stateHash(installState))
+	if err != nil || saved.Phase != "install" || !time.Now().Before(saved.Expires) {
+		return "", "", ErrConnect
+	}
+	state, err := RandomID()
+	if err != nil {
+		return "", "", err
+	}
 	// 64 characters meets PKCE's 43-character minimum.
 	a, err := RandomID()
 	if err != nil {
@@ -78,7 +98,7 @@ func (s *Service) BeginConnect(ctx context.Context, userID int64) (string, strin
 		return "", "", err
 	}
 	verifier := a + b
-	if err := s.store.PutOAuthState(ctx, stateHash(state), OAuthState{UserID: userID, Verifier: verifier, Expires: time.Now().Add(10 * time.Minute)}); err != nil {
+	if err := s.store.PutOAuthState(ctx, stateHash(state), OAuthState{UserID: saved.UserID, Verifier: verifier, Expires: time.Now().Add(10 * time.Minute), Phase: "oauth", InstallationID: installationID}); err != nil {
 		return "", "", ErrUnavailable
 	}
 	return state, s.provider.AuthorizeURL(state, verifier), nil
@@ -94,7 +114,7 @@ func (s *Service) CompleteConnectAccount(ctx context.Context, state, code string
 		return Account{}, ErrArguments
 	}
 	saved, err := s.store.ConsumeOAuthState(ctx, stateHash(state))
-	if err != nil || !time.Now().Before(saved.Expires) {
+	if err != nil || saved.Phase != "oauth" || saved.InstallationID < 0 || !time.Now().Before(saved.Expires) {
 		return Account{}, ErrConnect
 	}
 	credentials, err := s.provider.Exchange(ctx, code, saved.Verifier)
@@ -104,6 +124,9 @@ func (s *Service) CompleteConnectAccount(ctx context.Context, state, code string
 	id, login, err := s.provider.User(ctx, credentials.Access)
 	if err != nil || id <= 0 || login == "" {
 		return Account{}, ErrConnect
+	}
+	if err := s.provider.VerifyInstallation(ctx, credentials.Access, saved.InstallationID, Account{ID: id, Login: login}); err != nil {
+		return Account{}, err
 	}
 	team, err := s.store.SlackTeam(ctx, saved.UserID)
 	if err != nil || team == "" {

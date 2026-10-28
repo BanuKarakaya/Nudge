@@ -9,7 +9,10 @@ or publish PRs. GitLab is not implemented yet.
 
 Create a GitHub App with OAuth callback
 `https://YOUR_NUDGE_HOST/github/oauth/callback`. Enable expiring user access
-tokens. Grant repository **Contents: read/write**, **Pull requests: read/write**,
+tokens. Leave **Request user authorization (OAuth) during installation** OFF.
+Set **Setup URL** to `https://YOUR_NUDGE_HOST/github/setup` and enable
+**Redirect on update**. Make the App public so other users can install it.
+The setup redirect starts the separate PKCE OAuth step automatically. Grant repository **Contents: read/write**, **Pull requests: read/write**,
 and **Metadata: read**. Install only on selected repositories. No webhook or App
 private key is needed in this phase. Write permissions establish eligibility
 for future coding tasks; this phase only uses read endpoints.
@@ -17,6 +20,7 @@ for future coding tasks; this phase only uses read endpoints.
 ```text
 NUDGY_CODING_ENABLED=true
 NUDGY_GITHUB_APP_ID=<numeric App ID>
+NUDGY_GITHUB_APP_SLUG=nudgy-github
 NUDGY_GITHUB_CLIENT_ID=<App OAuth client ID>
 NUDGY_GITHUB_CLIENT_SECRET=<App OAuth client secret>
 NUDGY_CODING_ENCRYPTION_KEY=<separate base64-encoded 32-byte random key>
@@ -41,9 +45,20 @@ change, and removed permissions stop authorizing new tasks.
    are discovered at startup too. The signed link is valid for 20 minutes after
    delivery and goes only to that user's DM. Asking Nudgy to connect GitHub is
    still available to replace expired links, but is not needed for discovery.
-2. Open it and authorize the App. OAuth uses PKCE, a single-use 10-minute state
-   and a browser cookie binding the callback. The Nudgy confirmation page shows
-   the GitHub login returned by `/user`; check it before returning to Slack.
+2. Open the private link. The Nudgy page opens GitHub's installation/repository
+   selection screen in a new tab. Choose the account and repositories and save.
+   GitHub redirects to `/github/setup`, then Nudgy starts PKCE authorization.
+   If an existing personal installation needs no selection changes (GitHub
+   disables Save), return to the Nudgy page and continue with the existing
+   selection. This fallback verifies the authenticated user's own installation.
+   Installation and OAuth use separate single-use 10-minute states and HttpOnly
+   browser cookies. The returned installation ID is never trusted: verify App ID,
+   account ownership (or organization access), permissions, and at least one
+   selected writable repository before saving the connection. A declined,
+   expired, pending organization approval, or unverified installation never
+   replaces an existing connection or produces a success page.
+   The confirmation page shows the verified GitHub login and returns to Slack;
+   connecting does not list repos to Slack, prepare tasks, or modify code.
 3. Ask for repositories. Access requires the App's installation permissions and
    the user's current GitHub write permissions. Suspended installations, archived
    and disabled repositories are excluded. Installation inventory is only a

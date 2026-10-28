@@ -62,6 +62,15 @@ func (s *codingHandlerStore) WithConnection(_ context.Context, userID int64, fn 
 
 type codingHandlerProvider struct{ coding.Provider }
 
+func (codingHandlerProvider) InstallationURL(state string) string {
+	return "https://github.com/apps/nudgy-github/installations/new?state=" + state
+}
+func (codingHandlerProvider) VerifyInstallation(_ context.Context, token string, installationID int64, account coding.Account) error {
+	if token != "ghu_never_expose" || installationID != 2 || account.ID != 42 {
+		return coding.ErrDenied
+	}
+	return nil
+}
 func (codingHandlerProvider) AuthorizeURL(state, verifier string) string {
 	return "https://github.com/login/oauth/authorize?state=" + state
 }
@@ -146,11 +155,26 @@ func TestGitHubCallbackRequiresSignedLinkBrowserCookieAndSingleUseState(t *testi
 	link, _ := links.URL("https://nudgy.example", 1, "github", time.Now())
 	start := httptest.NewRecorder()
 	h.install(start, httptest.NewRequest("GET", link, nil))
-	if start.Code != 302 {
+	if start.Code != 200 {
 		t.Fatalf("install=%d %s", start.Code, start.Body.String())
 	}
-	u, _ := url.Parse(start.Header().Get("Location"))
+	var u *url.URL
+	installState := start.Result().Cookies()[0].Value
+	if !strings.Contains(start.Body.String(), "/apps/nudgy-github/installations/new?state=") || store.saved.UserID != 0 {
+		t.Fatal("connection did not start with repo selection")
+	}
+	setupRequest := httptest.NewRequest("GET", "https://nudgy.example/github/setup?installation_id=2&setup_action=install&state="+installState, nil)
+	setupRequest.AddCookie(start.Result().Cookies()[0])
+	setup := httptest.NewRecorder()
+	h.setup(setup, setupRequest)
+	if setup.Code != 302 || store.saved.UserID != 0 {
+		t.Fatal("setup must continue to OAuth without saving a connection")
+	}
+	u, _ = url.Parse(setup.Header().Get("Location"))
 	state := u.Query().Get("state")
+	if u.Path != "/login/oauth/authorize" || state == installState {
+		t.Fatal("OAuth state not rotated")
+	}
 	callback := "https://nudgy.example/github/oauth/callback?code=code&state=" + state
 	bad := httptest.NewRecorder()
 	h.callback(bad, httptest.NewRequest("GET", callback, nil))
@@ -158,7 +182,12 @@ func TestGitHubCallbackRequiresSignedLinkBrowserCookieAndSingleUseState(t *testi
 		t.Fatal("cookie-less callback accepted")
 	}
 	request := httptest.NewRequest("GET", callback, nil)
-	cookies := start.Result().Cookies()
+	var cookies []*http.Cookie
+	for _, cookie := range setup.Result().Cookies() {
+		if cookie.Name == "nudgy_github_oauth" {
+			cookies = append(cookies, cookie)
+		}
+	}
 	if len(cookies) != 1 || !cookies[0].Secure || !cookies[0].HttpOnly {
 		t.Fatal("insecure OAuth cookie")
 	}
@@ -170,6 +199,9 @@ func TestGitHubCallbackRequiresSignedLinkBrowserCookieAndSingleUseState(t *testi
 	}
 	if !strings.Contains(ok.Body.String(), "@developer") {
 		t.Fatal("verified GitHub account missing from confirmation")
+	}
+	if strings.Contains(ok.Body.String(), "GitHub repolarımı getir") || strings.Contains(ok.Body.String(), `id="copy"`) {
+		t.Fatal("connection page solicits unrelated actions")
 	}
 	if strings.Contains(ok.Body.String(), "ghu_") || ok.Header().Get("Cache-Control") != "no-store" {
 		t.Fatal("callback leaked secret or cached page")
@@ -208,7 +240,7 @@ func TestEnablingCodingToolsRebootsNativeThreadButPreservesDeliveredHistory(t *t
 	})}).WithCoding(codingHandler)
 	h.replyWithSummary(conversationEvent("GitHub repolarımı göster"))
 	got, err := store.Load(context.Background(), key)
-	if err != nil || got.AgentThreadID != "new-native" || got.AgentToolVersion != "coding-identity-v3" {
+	if err != nil || got.AgentThreadID != "new-native" || got.AgentToolVersion != "coding-connect-v4" {
 		t.Fatalf("new tool version not persisted: %+v", got)
 	}
 }
@@ -266,5 +298,61 @@ func TestGitHubDiagnosticsAreAdminOnlyAndNeverExposeCredentials(t *testing.T) {
 	public.ServeHTTP(w, req)
 	if w.Code != http.StatusForbidden || strings.Contains(w.Body.String(), "developer/private") {
 		t.Fatal("diagnostic bypassed identity check")
+	}
+}
+
+func TestGitHubSetupRejectsUnboundAndPendingSelections(t *testing.T) {
+	for _, tc := range []struct {
+		name, method, query, origin string
+		cookie                      bool
+		want                        int
+	}{
+		{"missing browser", "GET", "installation_id=2&setup_action=install", "", false, 400},
+		{"wrong state", "GET", "installation_id=2&setup_action=install&state=wrong", "", true, 400},
+		{"missing installation", "GET", "setup_action=install", "", true, 400},
+		{"pending approval", "GET", "installation_id=2&setup_action=request", "", true, 400},
+		{"cross-origin form", "POST", "", "https://attacker.invalid", true, 403},
+		{"missing form state", "POST", "", "https://nudgy.example", true, 400},
+		{"existing update without query state", "GET", "installation_id=2&setup_action=update", "", true, 302},
+		{"existing personal selection", "POST", "valid-form", "https://nudgy.example", true, 302},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, store, links, _ := codingHandlerFixture(t)
+			link, _ := links.URL("https://nudgy.example", 1, "github", time.Now())
+			start := httptest.NewRecorder()
+			h.install(start, httptest.NewRequest("GET", link, nil))
+			cookie := start.Result().Cookies()[0]
+			var req *http.Request
+			if tc.method == "POST" {
+				body := ""
+				if tc.query == "valid-form" {
+					body = url.Values{"state": {cookie.Value}}.Encode()
+				}
+				req = httptest.NewRequest("POST", "https://nudgy.example/github/setup", strings.NewReader(body))
+				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			} else {
+				req = httptest.NewRequest("GET", "https://nudgy.example/github/setup?"+tc.query, nil)
+			}
+			if tc.cookie {
+				req.AddCookie(cookie)
+			}
+			req.Header.Set("Origin", tc.origin)
+			w := httptest.NewRecorder()
+			h.setup(w, req)
+			if w.Code != tc.want || store.saved.UserID != 0 {
+				t.Fatalf("setup status=%d want=%d saved=%d", w.Code, tc.want, store.saved.UserID)
+			}
+			if tc.want == 302 {
+				u, _ := url.Parse(w.Header().Get("Location"))
+				if u.Host != "github.com" || u.Path != "/login/oauth/authorize" || u.Query().Get("state") == cookie.Value {
+					t.Fatal("setup did not start a separate OAuth session")
+				}
+				replay := httptest.NewRecorder()
+				h.setup(replay, req)
+				if replay.Code == 302 {
+					t.Fatal("selection replay accepted")
+				}
+			}
+		})
 	}
 }

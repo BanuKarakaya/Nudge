@@ -14,6 +14,8 @@ var githubPageTemplate = template.Must(template.New("github-connection").Parse(g
 
 type githubPageData struct {
 	Success                   bool
+	Selecting                 bool
+	InstallationURL, State    string
 	Title, Description, Login string
 }
 

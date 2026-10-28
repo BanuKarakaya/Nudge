@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS coding_oauth_states (
     verifier TEXT NOT NULL,
     expires_at TIMESTAMPTZ NOT NULL
 );
+ALTER TABLE coding_oauth_states ADD COLUMN IF NOT EXISTS phase TEXT NOT NULL DEFAULT 'legacy';
+ALTER TABLE coding_oauth_states ADD COLUMN IF NOT EXISTS installation_id BIGINT NOT NULL DEFAULT 0;
 CREATE TABLE IF NOT EXISTS coding_tasks (
     id TEXT PRIMARY KEY,
     user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

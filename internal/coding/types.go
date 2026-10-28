@@ -77,9 +77,11 @@ type Task struct {
 }
 
 type OAuthState struct {
-	UserID   int64
-	Verifier string
-	Expires  time.Time
+	UserID         int64
+	Verifier       string
+	Expires        time.Time
+	Phase          string
+	InstallationID int64
 }
 
 type Store interface {
@@ -97,6 +99,8 @@ type Store interface {
 }
 
 type Provider interface {
+	InstallationURL(state string) string
+	VerifyInstallation(context.Context, string, int64, Account) error
 	AuthorizeURL(state, verifier string) string
 	Exchange(context.Context, string, string) (Credentials, error)
 	Refresh(context.Context, string) (Credentials, error)

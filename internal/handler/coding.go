@@ -31,6 +31,8 @@ func NewCodingHandler(s *coding.Service, installations repository.InstallationRe
 
 func (h *CodingHandler) RegisterRoutes(public, admin *http.ServeMux) {
 	public.HandleFunc("GET /github/install", h.install)
+	public.HandleFunc("GET /github/setup", h.setup)
+	public.HandleFunc("POST /github/setup", h.setup)
 	public.HandleFunc("GET /github/oauth/callback", h.callback)
 	// The admin router must already be wrapped by RequireAPIToken.
 	admin.HandleFunc("GET /api/v1/coding/github/connections", func(w http.ResponseWriter, r *http.Request) {
@@ -93,7 +95,55 @@ func (h *CodingHandler) install(w http.ResponseWriter, r *http.Request) {
 		renderGitHubConnectionPage(w, http.StatusServiceUnavailable, githubPageData{Title: "Küçük bir aksilik oldu.", Description: "GitHub bağlantısını şu an başlatamıyoruz. Biraz sonra tekrar deneyebilirsin."})
 		return
 	}
-	setOAuthCookie(w, r, "nudgy_github_oauth", state, "/github/oauth/callback")
+	setOAuthCookie(w, r, "nudgy_github_install", state, "/github/setup")
+	renderGitHubConnectionPage(w, http.StatusOK, githubPageData{Selecting: true, Title: "GitHub’ını bağlayalım.", Description: "Nudgy’nin erişeceği repoları GitHub’da seç, ardından hesabını doğrula.", InstallationURL: redirect, State: state})
+}
+
+func (h *CodingHandler) setup(w http.ResponseWriter, r *http.Request) {
+	privatePageHeaders(w)
+	// GitHub can omit state after an existing installation is updated. The
+	// private, HttpOnly browser cookie still binds this one-use setup session;
+	// PKCE OAuth and GitHub API verification follow before any account is saved.
+	cookie, cookieErr := r.Cookie("nudgy_github_install")
+	state := r.URL.Query().Get("state")
+	manual := r.Method == http.MethodPost
+	if manual {
+		if origin := r.Header.Get("Origin"); origin != "" && origin != h.publicURL {
+			writeError(w, http.StatusForbidden, "invalid origin")
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 4096)
+		if err := r.ParseForm(); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid form")
+			return
+		}
+		state = r.PostForm.Get("state")
+	}
+	if !manual && state == "" && cookieErr == nil {
+		state = cookie.Value
+	}
+	if !consumeOAuthCookie(w, r, "nudgy_github_install", state, "/github/setup") {
+		renderGitHubConnectionPage(w, http.StatusBadRequest, githubPageData{Title: "Bağlantıyı yeniden başlatalım.", Description: "Slack’te Nudgy’nin sana gönderdiği özel bağlantıyı açıp hesabını ve repolarını seç."})
+		return
+	}
+	var installationID int64
+	var err error
+	if !manual {
+		installationID, err = strconv.ParseInt(r.URL.Query().Get("installation_id"), 10, 64)
+	}
+	action := r.URL.Query().Get("setup_action")
+	if !manual && (err != nil || installationID <= 0 || (action != "install" && action != "update")) {
+		renderGitHubConnectionPage(w, http.StatusBadRequest, githubPageData{Title: "Repo seçimi tamamlanmadı.", Description: "GitHub’da hesabını ve bağlamak istediğin repoları seçip kurulumu kaydet. Kuruluş izni gerekiyorsa önce yöneticinin onaylaması gerekir."})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	oauthState, redirect, err := h.service.ContinueConnect(ctx, state, installationID)
+	if err != nil {
+		renderGitHubConnectionPage(w, http.StatusBadRequest, githubPageData{Title: "Bağlantıyı yeniden başlatalım.", Description: "Bağlantı oturumunun süresi dolmuş olabilir. Slack’te Nudgy’den yeni bir bağlantı iste."})
+		return
+	}
+	setOAuthCookie(w, r, "nudgy_github_oauth", oauthState, "/github/oauth/callback")
 	http.Redirect(w, r, redirect, http.StatusFound)
 }
 
@@ -112,10 +162,10 @@ func (h *CodingHandler) callback(w http.ResponseWriter, r *http.Request) {
 	}
 	account, err := h.service.CompleteConnectAccount(ctx, state, r.URL.Query().Get("code"))
 	if err != nil {
-		renderGitHubConnectionPage(w, http.StatusBadRequest, githubPageData{Title: "Bağlantıyı tamamlayamadık.", Description: "Slack’te Nudgy’den yeni bir GitHub bağlantısı isteyip tekrar deneyebilirsin."})
+		renderGitHubConnectionPage(w, http.StatusBadRequest, githubPageData{Title: "Bağlantıyı tamamlayamadık.", Description: "GitHub hesabını ve seçtiğin repoların erişimini doğrulayamadık. Repo seçimini ve yetkilendirmeyi aynı hesapla tamamlamak için Slack’te Nudgy’den yeni bir bağlantı iste."})
 		return
 	}
-	renderGitHubConnectionPage(w, http.StatusOK, githubPageData{Success: true, Title: "GitHub’la tanıştık.", Description: "Projelerin için küçük bir yardımcı, artık Slack’te yanında.", Login: account.Login})
+	renderGitHubConnectionPage(w, http.StatusOK, githubPageData{Success: true, Title: "GitHub’ın bağlandı.", Description: "Hesabın ve seçtiğin repolar için bağlantı tamamlandı. Slack’e dönebilirsin.", Login: account.Login})
 }
 
 func (h *CodingHandler) Tools(base service.AgentTools, identity coding.Identity) service.AgentTools {
@@ -140,6 +190,6 @@ func (h *CodingHandler) Tools(base service.AgentTools, identity coding.Identity)
 		if err != nil {
 			return err
 		}
-		return h.client.PostMessage(ctx, installation.BotToken, channel, "GitHub hesabını Nudgy'ye bağlamak için özel bağlantın:\n"+link+"\nBu linki paylaşma. Şirket yöneticisinin GitHub App'i izin verilen repolara kurmuş olması gerekir.")
+		return h.client.PostMessage(ctx, installation.BotToken, channel, "GitHub hesabını Nudgy’ye bağlamak için özel bağlantın:\n"+link+"\nGitHub’da kendi hesabını ve bağlamak istediğin repoları seç, ardından Nudgy’ye izin ver. Bu bağlantı yalnızca hesabını ve repo izinlerini bağlar. Linki paylaşma.")
 	})
 }

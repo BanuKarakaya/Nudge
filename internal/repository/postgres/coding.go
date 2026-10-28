@@ -146,7 +146,7 @@ func (s *CodingStore) PutOAuthState(ctx context.Context, hash string, state codi
 	if _, err = tx.Exec(ctx, `DELETE FROM coding_oauth_states WHERE expires_at <= NOW() OR user_id=$1`, state.UserID); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO coding_oauth_states(state_hash,user_id,verifier,expires_at) VALUES($1,$2,$3,$4)`, hash, state.UserID, verifier, state.Expires); err != nil {
+	if _, err = tx.Exec(ctx, `INSERT INTO coding_oauth_states(state_hash,user_id,verifier,expires_at,phase,installation_id) VALUES($1,$2,$3,$4,$5,$6)`, hash, state.UserID, verifier, state.Expires, state.Phase, state.InstallationID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -155,7 +155,7 @@ func (s *CodingStore) PutOAuthState(ctx context.Context, hash string, state codi
 func (s *CodingStore) ConsumeOAuthState(ctx context.Context, hash string) (coding.OAuthState, error) {
 	var state coding.OAuthState
 	var encrypted string
-	err := s.db.QueryRow(ctx, `DELETE FROM coding_oauth_states WHERE state_hash=$1 AND expires_at>NOW() RETURNING user_id,verifier,expires_at`, hash).Scan(&state.UserID, &encrypted, &state.Expires)
+	err := s.db.QueryRow(ctx, `DELETE FROM coding_oauth_states WHERE state_hash=$1 AND expires_at>NOW() RETURNING user_id,verifier,expires_at,phase,installation_id`, hash).Scan(&state.UserID, &encrypted, &state.Expires, &state.Phase, &state.InstallationID)
 	if err != nil {
 		return state, coding.ErrConnect
 	}

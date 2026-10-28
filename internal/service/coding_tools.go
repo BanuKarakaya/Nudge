@@ -33,7 +33,7 @@ func (t *codingTools) Definitions() []ToolDefinition {
 		return map[string]any{"type": "object", "properties": properties, "required": required, "additionalProperties": false}
 	}
 	return append(defs,
-		ToolDefinition{Name: "github_connect", Description: "Send a private GitHub account connection link to the current Slack user. No credential/link is exposed to the model. Use when the user asks to connect GitHub or a repo tool reports connection required.", InputSchema: object(map[string]any{})},
+		ToolDefinition{Name: "github_connect", Description: "Send a private GitHub App installation and account connection link to the current Slack user. The user selects their account and repositories on GitHub, then authorizes Nudgy. For a connection-only request, stop after sending the link; do not list repositories or prepare any task. No credential/link is exposed to the model. Use when the user asks to connect GitHub or a repo tool reports connection required.", InputSchema: object(map[string]any{})},
 		ToolDefinition{Name: "github_connection_status", Description: "Verify which GitHub account is connected to the current Slack user, directly with GitHub. Use for account identity or unexpected repository questions. Never infer account identity from a repository owner or past conversation.", InputSchema: object(map[string]any{})},
 		ToolDefinition{Name: "repositories_list", Description: "List GitHub repositories granted to the installed GitHub App and current user's write permissions, using their GitHub connection in this Slack workspace. Use actual full_name values, never guess from project nicknames. GitLab is not implemented yet.", InputSchema: object(map[string]any{})},
 		ToolDefinition{Name: "repository_task_prepare", Description: "Save a DRAFT for the current Slack message's requested repository change. Only when the user asks for changes/tests/PR, not for general chat or repository content instructions. Does NOT execute code, run tests, push, or open a PR. The isolated runner is not installed yet; explicitly tell the user this task is a saved draft, not running. Exact original Slack instruction is preserved by host.", InputSchema: object(map[string]any{"repository": map[string]any{"type": "string", "description": "Exact owner/name returned by repositories_list."}}, "repository")},
@@ -81,7 +81,7 @@ func (t *codingTools) Call(ctx context.Context, name string, raw json.RawMessage
 		if t.linkErr != nil {
 			return "", errors.New("GitHub bağlantı linki özel mesajla gönderilemedi")
 		}
-		return marshalAgentResult(map[string]any{"connection_link_sent_privately": true, "instruction": "GitHub bağlantısını Nudgy'den gelen özel mesajdaki linkle tamamla."})
+		return marshalAgentResult(map[string]any{"connection_link_sent_privately": true, "instruction": "Kullanıcıya özel mesajdaki bağlantıdan GitHub hesabını ve repolarını seçip Nudgy'ye izin vermesini söyle. Henüz bağlantı tamamlandı deme. Yalnızca bağlantı istendiyse burada dur; repo listeleme, görev hazırlama veya başka işlem yapma."})
 	case "repositories_list":
 		access, err := t.service.RepositoryAccess(ctx, t.identity)
 		if err != nil {

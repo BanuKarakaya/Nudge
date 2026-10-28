@@ -33,7 +33,11 @@ func configureCoding(db *pgxpool.Pool, public, admin *http.ServeMux, events *han
 	if err != nil || u.Scheme != "https" || u.Host == "" || u.Path != "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 		return errors.New("coding requires an HTTPS NUDGE_PUBLIC_URL origin")
 	}
-	provider := coding.GitHub{AppID: appID, ClientID: os.Getenv("NUDGY_GITHUB_CLIENT_ID"), ClientSecret: os.Getenv("NUDGY_GITHUB_CLIENT_SECRET"), RedirectURL: base + "/github/oauth/callback"}
+	appSlug := strings.TrimSpace(os.Getenv("NUDGY_GITHUB_APP_SLUG"))
+	if appSlug == "" {
+		appSlug = "nudgy-github"
+	}
+	provider := coding.GitHub{AppID: appID, AppSlug: appSlug, ClientID: os.Getenv("NUDGY_GITHUB_CLIENT_ID"), ClientSecret: os.Getenv("NUDGY_GITHUB_CLIENT_SECRET"), RedirectURL: base + "/github/oauth/callback"}
 	if provider.Validate() != nil {
 		return errors.New("GitHub App configuration is incomplete")
 	}
@@ -54,6 +58,6 @@ func configureCoding(db *pgxpool.Pool, public, admin *http.ServeMux, events *han
 	h := handler.NewCodingHandler(s, installations, client, links, base)
 	h.RegisterRoutes(public, admin)
 	events.WithCoding(h)
-	onboarding.Register(service.ConnectionInvitation{Purpose: "github", Name: "GitHub", Description: "Erişebildiğin projeleri listelemek ve kod değişikliği görevleri hazırlamak için bağlayabilirsin. Kod çalıştırma ve PR açma henüz etkin değil.", Connected: s.Connected})
+	onboarding.Register(service.ConnectionInvitation{Purpose: "github", Name: "GitHub", Description: "Nudgy’ye GitHub hesabını bağla; açılan GitHub ekranında hesabını ve bağlamak istediğin repoları seç.", Connected: s.Connected})
 	return nil
 }

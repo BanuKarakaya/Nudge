@@ -23,6 +23,7 @@
     .prompt{display:flex;align-items:center;gap:12px;border-bottom:1px solid #ded4c7;padding:12px 0 16px;margin:0 0 22px}.prompt p{font-size:14px;line-height:1.6;margin:0;flex:1}.mention{color:#a33c24;font-weight:650}.copy{background:transparent;border:1px solid #d7ccbf;border-radius:7px;color:#62554a;padding:8px 10px;font-size:11px}.copy:hover{background:#eee4d6}
     .primary{display:inline-flex;align-items:center;gap:34px;text-decoration:none;padding:15px 20px;background:#332b28;color:#fff;border-radius:8px;font-size:14px;font-weight:650}.primary:hover{background:#4c3a30}a:focus-visible,button:focus-visible{outline:3px solid #ca4527;outline-offset:4px}
     .availability{font-size:12px;line-height:1.7;color:#776d65;margin:20px 0 0;max-width:430px}.availability strong{font-weight:600;color:#655749}.copy-status{min-height:18px;font-size:12px;color:#386344;margin:9px 0 0}
+    .setup-steps p{font-size:14px;line-height:1.7;color:#776d65;margin:0 0 18px}.setup-steps p strong{color:#332b28}.setup-steps .primary{margin-bottom:24px}.secondary{font:inherit;font-size:13px;background:#fffdf9;border:1px solid #d7ccbf;color:#332b28;border-radius:8px;padding:13px 16px;cursor:pointer}
     footer{min-height:77px;border-top:1px solid #e5dfd6;display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:11px;color:#8a7c70}.footer-dot{color:#ca4527;margin-right:6px}
     @media(max-width:760px){.shell{width:calc(100% - 40px)}.header{height:78px}.header-note{font-size:11px}main{grid-template-columns:1fr;gap:22px;padding:28px 0 38px;min-height:0}.art{min-height:210px}.orbit{width:175px;height:175px;outline-offset:10px}.mascot{width:172px}.bubble{top:10px;right:calc(50% - 145px);font-size:11px;padding:10px 12px}.star{left:calc(50% - 135px);bottom:6px;font-size:30px}.content{width:min(480px,100%);margin:auto}h1{font-size:37px;margin-top:14px;letter-spacing:-1.5px}.intro{font-size:15px}.account-help{margin-bottom:22px}footer{padding:20px 0;align-items:flex-start;flex-direction:column;gap:8px}.primary{width:100%;justify-content:space-between}}
   </style>
@@ -31,31 +32,27 @@
   <div class="shell">
     <header class="header"><div class="brand"><img src="/dashboard/nudgy-mascot.webp" alt="">nudgy.</div><span class="header-note">Küçük bir yardımcı, hep yanında.</span></header>
     <main>
-      <div class="art" aria-hidden="true"><div class="orbit"></div><img class="mascot" src="/dashboard/nudgy-mascot.webp" alt=""><span class="bubble">{{if .Success}}Tamamdır, buradayım!{{else}}Bir kez daha deneyelim.{{end}}</span><span class="star">✳</span></div>
+      <div class="art" aria-hidden="true"><div class="orbit"></div><img class="mascot" src="/dashboard/nudgy-mascot.webp" alt=""><span class="bubble">{{if .Selecting}}Hadi, birlikte bağlayalım!{{else if .Success}}Tamamdır, buradayım!{{else}}Bir kez daha deneyelim.{{end}}</span><span class="star">✳</span></div>
       <section class="content" aria-labelledby="page-title">
         <div class="eyebrow"><span class="dot"></span>{{if .Success}}GitHub bağlantısı tamamlandı{{else}}GitHub bağlantısı{{end}}</div>
         <h1 id="page-title">{{.Title}}</h1>
         <p class="intro">{{.Description}}</p>
+        {{if .Selecting}}
+        <div class="setup-steps">
+          <p><strong>1. Hesabını ve repolarını seç</strong><br>GitHub ekranında kendi hesabını seç, Nudgy’ye açmak istediğin repoları işaretle ve kaydet.</p>
+          <a class="primary" href="{{.InstallationURL}}" target="_blank" rel="noopener noreferrer">GitHub’da repolarını seç <span aria-hidden="true">↗</span></a>
+          <p><strong>2. Hesabını doğrula</strong><br>Kaydettikten sonra GitHub seni otomatik yönlendirir. Nudgy hesabına zaten kuruluysa ve repo seçimini değiştirmediysen aşağıdan devam et.</p>
+          <form method="post" action="/github/setup"><input type="hidden" name="state" value="{{.State}}"><button class="secondary" type="submit">Mevcut repo seçimimle devam et →</button></form>
+        </div>
+        {{end}}
         {{if .Success}}
         <div class="account"><div class="github-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .7a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.55v-2.15c-3.21.7-3.89-1.36-3.89-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.71.08-.71 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.95.11-.75.4-1.25.73-1.54-2.56-.29-5.26-1.28-5.26-5.69 0-1.26.45-2.29 1.19-3.1-.12-.29-.51-1.47.11-3.06 0 0 .97-.31 3.16 1.18a11 11 0 0 1 5.75 0c2.2-1.49 3.16-1.18 3.16-1.18.63 1.59.24 2.77.12 3.06.74.81 1.18 1.84 1.18 3.1 0 4.42-2.7 5.39-5.28 5.68.42.36.78 1.06.78 2.14v3.17c0 .31.21.66.79.55A11.5 11.5 0 0 0 12 .7Z"/></svg></div><div class="account-text"><span class="account-label">Bağladığın GitHub hesabı</span><span class="login">@{{.Login}}</span></div><span class="verified" aria-label="Bağlandı">✓</span></div>
         <p class="account-help">Bu hesap sana ait değilse Slack’te Nudgy’den yeni bir bağlantı iste ve GitHub’da doğru hesabı seç.</p>
-        <span class="next-label">Slack’te ilk adımın</span>
-        <div class="prompt"><p><span class="mention">@Nudgy</span> GitHub repolarımı getir</p><button class="copy" id="copy" type="button">Kopyala</button></div>
         {{end}}
-        <a class="primary" href="https://slack.com/app">Slack’e dön <span aria-hidden="true">↗</span></a>
-        <p class="copy-status" id="copy-status" role="status" aria-live="polite"></p>
-        {{if .Success}}<p class="availability"><strong>Şimdilik:</strong> repolarını listeleyebilir, değişiklik isteklerini taslak olarak kaydedebilirsin. Kod çalıştırma ve PR açma henüz etkin değil.</p>{{end}}
+        {{if not .Selecting}}<a class="primary" href="https://slack.com/app">Slack’e dön <span aria-hidden="true">↗</span></a>{{end}}
       </section>
     </main>
     <footer><span><span class="footer-dot">●</span> Meraklı insanlar için, küçük bir yardımcı.</span><span>Nudgy + GitHub</span></footer>
   </div>
-  <script>
-    const copy = document.getElementById('copy');
-    if (copy) copy.addEventListener('click', async () => {
-      const status = document.getElementById('copy-status');
-      try { await navigator.clipboard.writeText('@Nudgy GitHub repolarımı getir'); status.textContent = 'Kopyalandı. Slack’te Nudgy’yi etiketleyip gönderebilirsin.'; }
-      catch { status.textContent = 'Mesajı yukarıdan seçip kopyalayabilirsin.'; }
-    });
-  </script>
 </body>
 </html>

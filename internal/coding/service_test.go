@@ -103,6 +103,15 @@ func (p *fakeProvider) Refresh(context.Context, string) (Credentials, error) {
 	p.refreshes++
 	return Credentials{Access: "ghu_new", Refresh: "ghr_new", Expires: time.Now().Add(time.Hour), RefreshExpires: time.Now().Add(24 * time.Hour)}, nil
 }
+func (*fakeProvider) InstallationURL(state string) string {
+	return "https://github.com/apps/nudgy-github/installations/new?state=" + state
+}
+func (*fakeProvider) VerifyInstallation(_ context.Context, token string, installationID int64, account Account) error {
+	if token != "ghu_new" || installationID != 2 || account.ID != 55 {
+		return ErrDenied
+	}
+	return nil
+}
 func (*fakeProvider) AuthorizeURL(state, verifier string) string {
 	return "https://github.com/login/oauth/authorize?state=" + state
 }
@@ -216,6 +225,13 @@ func TestOAuthStateIsSingleUseHashedAndExpires(t *testing.T) {
 	}
 	if _, ok := store.states[state]; ok {
 		t.Fatal("raw bearer state stored")
+	}
+	if store.states[stateHash(state)].Phase != "install" {
+		t.Fatal("repo selection was skipped")
+	}
+	state, _, err = s.ContinueConnect(context.Background(), state, 2)
+	if err != nil {
+		t.Fatal(err)
 	}
 	if len(store.states[stateHash(state)].Verifier) < 43 {
 		t.Fatal("weak PKCE verifier")

@@ -189,7 +189,7 @@ func TestCodingStorePostgres(t *testing.T) {
 	if err := s.SaveConnection(ctx, second); err != nil {
 		t.Fatal(err)
 	}
-	state := coding.OAuthState{UserID: 1, Verifier: "pkce-secret", Expires: time.Now().Add(time.Minute)}
+	state := coding.OAuthState{UserID: 1, Verifier: "pkce-secret", Phase: "oauth", InstallationID: 123, Expires: time.Now().Add(time.Minute)}
 	if err := s.PutOAuthState(ctx, "hash", state); err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +199,7 @@ func TestCodingStorePostgres(t *testing.T) {
 	if strings.Contains(encrypted, state.Verifier) {
 		t.Fatal("PKCE plaintext")
 	}
-	if got, err := s.ConsumeOAuthState(ctx, "hash"); err != nil || got.Verifier != state.Verifier {
+	if got, err := s.ConsumeOAuthState(ctx, "hash"); err != nil || got.Verifier != state.Verifier || got.Phase != "oauth" || got.InstallationID != 123 {
 		t.Fatalf("state roundtrip: %v", err)
 	}
 	if _, err := s.ConsumeOAuthState(ctx, "hash"); !errors.Is(err, coding.ErrConnect) {

@@ -20,15 +20,81 @@ import (
 type GitHub struct {
 	AppID                               int64
 	ClientID, ClientSecret, RedirectURL string
+	AppSlug                             string
 	HTTPClient                          *http.Client
 }
 
 func (g GitHub) Validate() error {
 	u, err := url.Parse(g.RedirectURL)
-	if g.AppID <= 0 || g.ClientID == "" || g.ClientSecret == "" || err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Path != "/github/oauth/callback" {
+	if g.AppID <= 0 || !githubLogin.MatchString(g.AppSlug) || g.ClientID == "" || g.ClientSecret == "" || err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Path != "/github/oauth/callback" {
 		return ErrArguments
 	}
 	return nil
+}
+
+func (g GitHub) InstallationURL(state string) string {
+	return "https://github.com/apps/" + g.AppSlug + "/installations/new?" + url.Values{"state": {state}}.Encode()
+}
+
+// VerifyInstallation binds the GitHub redirect to the authenticated user and
+// requires at least one selected, usable repository before saving credentials.
+func (g GitHub) VerifyInstallation(ctx context.Context, token string, installationID int64, user Account) error {
+	if !strings.HasPrefix(token, "ghu_") || installationID < 0 || user.ID <= 0 || !githubLogin.MatchString(user.Login) {
+		return ErrConnect
+	}
+	for page := 1; page <= 20; page++ {
+		var response struct {
+			Installations []struct {
+				ID      int64 `json:"id"`
+				AppID   int64 `json:"app_id"`
+				Account struct {
+					ID   int64  `json:"id"`
+					Type string `json:"type"`
+				} `json:"account"`
+				SuspendedAt *time.Time `json:"suspended_at"`
+				Permissions struct {
+					Contents     string `json:"contents"`
+					PullRequests string `json:"pull_requests"`
+				} `json:"permissions"`
+			} `json:"installations"`
+		}
+		if err := g.request(ctx, fmt.Sprintf("https://api.github.com/user/installations?per_page=100&page=%d", page), token, nil, &response); err != nil {
+			return err
+		}
+		for _, installation := range response.Installations {
+			if installationID == 0 && (installation.AppID != g.AppID || installation.Account.ID != user.ID || installation.Account.Type != "User") {
+				continue
+			}
+			if installationID > 0 && installation.ID != installationID {
+				continue
+			}
+			if installation.ID <= 0 || installation.AppID != g.AppID || installation.SuspendedAt != nil || installation.Permissions.Contents != "write" || installation.Permissions.PullRequests != "write" {
+				return ErrDenied
+			}
+			// A personal installation must belong to the connecting account, not a coworker.
+			if installation.Account.ID <= 0 || (installation.Account.Type != "Organization" && (installation.Account.Type != "User" || installation.Account.ID != user.ID)) {
+				return ErrDenied
+			}
+			repos, err := g.installationRepos(ctx, token, installation.ID)
+			if err != nil {
+				return err
+			}
+			for _, repo := range repos {
+				allowed, err := g.repositoryPermission(ctx, token, user, repo)
+				if err != nil {
+					return err
+				}
+				if allowed {
+					return nil
+				}
+			}
+			return ErrDenied
+		}
+		if len(response.Installations) < 100 {
+			return ErrDenied
+		}
+	}
+	return ErrUnavailable
 }
 
 func (g GitHub) AuthorizeURL(state, verifier string) string {
