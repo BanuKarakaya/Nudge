@@ -55,6 +55,13 @@ func configureCoding(db *pgxpool.Pool, public, admin *http.ServeMux, events *han
 	if err != nil {
 		return errors.New("invalid coding service configuration")
 	}
+	git, err := coding.NewLocalGit()
+	if err != nil {
+		return err
+	}
+	if err := s.EnableEditing(store, git); err != nil {
+		return err
+	}
 	h := handler.NewCodingHandler(s, installations, client, links, base)
 	h.RegisterRoutes(public, admin)
 	events.WithCoding(h)

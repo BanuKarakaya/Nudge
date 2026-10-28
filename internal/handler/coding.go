@@ -34,6 +34,7 @@ func (h *CodingHandler) RegisterRoutes(public, admin *http.ServeMux) {
 	public.HandleFunc("GET /github/setup", h.setup)
 	public.HandleFunc("POST /github/setup", h.setup)
 	public.HandleFunc("GET /github/oauth/callback", h.callback)
+	public.HandleFunc("GET /github/review", h.review)
 	// The admin router must already be wrapped by RequireAPIToken.
 	admin.HandleFunc("GET /api/v1/coding/github/connections", func(w http.ResponseWriter, r *http.Request) {
 		privatePageHeaders(w)
@@ -195,5 +196,5 @@ func (h *CodingHandler) Tools(base service.AgentTools, identity coding.Identity)
 			return err
 		}
 		return h.client.PostMessage(ctx, installation.BotToken, channel, "GitHub hesabını Nudgy’ye bağlamak için özel bağlantın:\n"+link+"\nGitHub’da kendi hesabını ve bağlamak istediğin repoları seç, ardından Nudgy’ye izin ver. Bu bağlantı yalnızca hesabını ve repo izinlerini bağlar. Linki paylaşma.")
-	})
+	}, func(ctx context.Context, info coding.EditInfo) error { return h.sendEditReview(ctx, identity, info) })
 }

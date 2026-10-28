@@ -1,9 +1,12 @@
-# Repository tasks: connection and draft phase
+# Repository editing on Railway
 
 Nudgy can connect a Slack user's GitHub account, list permitted repositories,
-and persist a task containing their original Slack request. Disabled by default.
-This phase does **not** clone repositories, execute code/tests, push branches,
-or publish PRs. GitLab is not implemented yet.
+clone repositories into separate temporary Git workspaces on the existing Railway
+service, and edit source files through bounded tools. Disabled unless
+`NUDGY_CODING_ENABLED=true`. Prepared source is encrypted in PostgreSQL so it
+survives Railway restarts. Automatic tests, repository scripts, PRs and merges
+are not run. A later explicit user approval publishes the reviewed code to a
+new `codex/nudgy-<task-id>` branch. GitLab is not implemented yet.
 
 ## GitHub App setup
 
@@ -14,8 +17,8 @@ Set **Setup URL** to `https://YOUR_NUDGE_HOST/github/setup` and enable
 **Redirect on update**. Make the App public so other users can install it.
 The setup redirect starts the separate PKCE OAuth step automatically. Grant repository **Contents: read/write**, **Pull requests: read/write**,
 and **Metadata: read**. Install only on selected repositories. No webhook or App
-private key is needed in this phase. Write permissions establish eligibility
-for future coding tasks; this phase only uses read endpoints.
+private key is needed. The linked user access token authorizes cloning and,
+after approval, pushing the new branch. The runtime image includes Git.
 
 ```text
 NUDGY_CODING_ENABLED=true
@@ -70,12 +73,39 @@ change, and removed permissions stop authorizing new tasks.
    Repositories whose role cannot be verified (403/404) are excluded; network,
    rate-limit (429), and server failures fail the whole listing instead of
    presenting a partial success.
-4. Request a change in `owner/repository`. Nudgy saves the original Slack request
-   as an immutable **draft**, reports its ID and says execution is unavailable.
-   The same user can inspect/cancel it in the same Slack thread.
+4. Request a change in `owner/repository`. Nudgy pins the verified GitHub account,
+   repo, default-branch commit and original signed Slack request. It clones the
+   repo into a separate temporary bare Git directory, reads source, and saves
+   actual file edits in the encrypted task workspace. Native shell/host file
+   tools remain disabled. No project hooks, filters, submodules or tests run.
+5. Finishing freezes the changed bytes, base commit, branch and summary under a
+   SHA-256 review digest. A private DM contains a 24-hour review link, before/after
+   source views, and a ZIP of the complete edited working copy (without `.git`).
+   The user tests that copy in their own environment. `tests=not_run` is always
+   shown; the model cannot manufacture successful test results.
+6. The user sends `pushla <task-id> <full-review-digest>` in the **same Slack
+   conversation**, mentioning Nudgy when needed. The host matches the entire
+   current signed message, originating owner/workspace/channel/thread and a later
+   event. Model arguments, previous conversation, repository text, vague OKs and
+   the preparation event cannot authorize push. If files change, the old review
+   link and approval become invalid.
+7. Current account and repository write permissions are verified again. Git
+   reconstructs the frozen changes, creates a deterministic commit and pushes
+   only its new branch with an explicit empty ref lease. Existing unrelated refs
+   cannot be replaced; the default branch is never updated. If the default branch
+   moved, prepare a new task against current code and test again. Successful-push
+   retries recover the same commit even if the response/database write was lost.
+   Row locks serialize concurrent approvals across service instances.
+
+The turn retains the existing 120-second agent and 45-second tool budgets. Large
+changes can require more than one Slack turn. `repository_tasks_list` recovers
+saved tasks after a timeout/restart; read status and continue the same task.
+A failed clone remains cancellable. Old legacy drafts never start automatically.
 
 Tools: `github_connect`, `github_connection_status`, `repositories_list`, `repository_task_prepare`,
-`repository_task_status`, `repository_task_cancel`. Native Codex threads are
+`repository_task_status`, `repository_task_cancel`, `repository_tasks_list`,
+`repository_file_read`, `repository_file_write`, `repository_edit_finish`,
+`repository_push`. Native Codex threads are
 renewed when the tool set changes, retaining delivered conversation history.
 Local greeting responses still bypass model calls.
 
@@ -83,7 +113,7 @@ Credentials and PKCE verifiers are encrypted in PostgreSQL. Refresh runs under
 a row lock; OAuth state is hashed. Identity comes from verified Slack events,
 never model arguments. Repeated events return the original task. Authenticated
 admin `DELETE /api/v1/coding/github/connection` removes local credentials and
-cancels drafts; users can revoke authorization in GitHub settings too.
+cancels pending edits and drafts; users can revoke authorization in GitHub settings too.
 
 Slack–GitHub association is automatic and per user within each workspace:
 the signed private invitation identifies a persisted Slack user row; that row
@@ -95,7 +125,7 @@ never shared with coworkers, and no workspace ID or repository list is entered
 manually. Existing connections inherit their workspace from the same user
 foreign key, so no credential migration or mass reconnection is needed.
 
-Before listing repositories or preparing a draft, Nudgy calls GitHub `/user`
+Before accessing repository tasks, Nudgy calls GitHub `/user`
 with the current user token (including after refresh) and compares the immutable
 GitHub ID to the saved connection. Missing identity, mismatched Slack owner,
 wrong token subject, or verification failure prevents repository access. A
@@ -118,15 +148,26 @@ credentials (bounded to 1,000 connections). `GET /api/v1/coding/github/connectio
 with `X-User-ID` verifies that user's current GitHub identity and repository
 access. Both responses use `Cache-Control: no-store`; neither sends Slack messages.
 
-## Next phase
+## Boundaries
 
-Execution requires a durable queue and isolated per-task workers with resource
-limits and temporary scoped credentials. Repository code/tests must not execute
-inside the production bot container. Recheck authorization before execution and
-PR publication. Existing drafts must not execute automatically after deployment.
-Workers will create a branch, run Codex edits/tests and publish a PR with the
-actual diff and test report; merging remains separate. Match runners to projects:
-PipePulse requires macOS for its native Swift build/tests.
+The app runs only fixed Git commands on the existing Railway service. Credentials
+are supplied only to Git network subprocesses through a minimal environment;
+no token is stored in Git URLs/config, exposed to the model, or included in an
+archive. Hooks, inherited Git configuration, redirects and non-HTTPS transports
+are disabled. Repository content is read as Git blobs, never executed.
+
+Working copies are limited to 32 MiB and 5,000 regular files; symlinks/submodules
+are rejected explicitly. Clone disk usage is monitored against 128 MiB and each
+Git operation has a 40-second budget. Each user may have 10 open tasks. Edits are
+limited to 200 files / 8 MiB total, with 1 MiB per text write. GitHub Actions
+workflow edits are rejected because that extra permission was not requested.
+Pending source, original instructions and frozen reviews are encrypted at rest.
+Explicit task cancellation clears its source; disconnect invalidates pending
+reviews. Completed reviews currently remain stored.
+
+Automatic builds/tests would need an execution sandbox separate from the bot.
+They are outside this manual-testing workflow. Neither connecting GitHub nor
+requesting a repository list starts a coding task or writes to GitHub.
 
 ## Verification
 

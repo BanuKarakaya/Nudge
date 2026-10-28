@@ -111,10 +111,11 @@ Codex decides when to request it and writes the final Slack answer.
 
 Tool calls are checked against both active native thread and turn IDs. Calls are
 deduplicated by call ID within the run. Default data tools are read-only. The
-optional [repository task tools](repository-tasks.md) connect GitHub and persist
-user-bound task drafts; they cannot edit repositories or execute code. Repository
-writes require isolated workers, durable idempotency and explicit authorization,
-not merely a new schema.
+optional [repository editing tools](repository-tasks.md) clone GitHub source,
+read/write a user-bound encrypted workspace and freeze it for manual testing.
+Only an exact later signed approval can push that frozen version to a new branch.
+Repository scripts/tests and native shell tools remain disabled; there is no PR
+or merge operation. Pending edits survive restarts and can be resumed.
 Bounds: four concurrent children, 120 seconds per run (including slot wait),
 45 seconds per tool, 256 tool calls, 2 MiB tool result and 35,000 final characters.
 These are resource limits, not restrictions on which RSS entries can be read.

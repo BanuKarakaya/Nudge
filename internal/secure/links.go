@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -30,8 +31,10 @@ type linkClaims struct {
 	Expires int64  `json:"e"`
 }
 
+var codingReviewPurpose = regexp.MustCompile(`^coding-review:[0-9a-f]{32}:[0-9a-f]{64}$`)
+
 func (s LinkSigner) Token(userID int64, purpose string, expires time.Time) (string, error) {
-	if len(s.key) != 32 || userID <= 0 || (purpose != "feedbin" && purpose != "raindrop" && purpose != "github") {
+	if len(s.key) != 32 || userID <= 0 || (purpose != "feedbin" && purpose != "raindrop" && purpose != "github" && !codingReviewPurpose.MatchString(purpose)) {
 		return "", errors.New("invalid account link configuration")
 	}
 	raw, _ := json.Marshal(linkClaims{userID, purpose, expires.Unix()})
