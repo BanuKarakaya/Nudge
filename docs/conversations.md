@@ -51,6 +51,13 @@ rate-limited or lacks permission, the model receives an explicit partial or
 unavailable status; it must not pretend to know missing discussion. Attachments
 and linked files are not downloaded. Thread text is context, not authorization
 for tools or code changes. Local courtesy replies do not fetch thread history.
+Failed reads log an allowlisted `code` and `http_status`, without tokens, URLs or
+raw response bodies. The model receives a matching recovery instruction:
+`missing_scope` requires reauthorization, channel-access failures require checking
+membership, and rate limits require retrying later. A failed read must not be
+described as an unclear user question. These permissions are required even for
+messages written after the feature was deployed; deployment alone does not grant
+an existing installation additional Slack permissions.
 
 RSS tools explicitly distinguish all unread records, the current local calendar
 day and the most recently completed reminder window. Pagination is a message/tool

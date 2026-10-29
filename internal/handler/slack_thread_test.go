@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -145,5 +147,35 @@ func TestOrdinarySlackMessagesDoNotStartThreadProcessing(t *testing.T) {
 	h.handle(response, req)
 	if response.Code != http.StatusOK {
 		t.Fatalf("unexpected status: %d", response.Code)
+	}
+}
+
+func TestThreadFailureExplainsRecoveryAndLogsOnlySafeDiagnostics(t *testing.T) {
+	for _, tc := range []struct {
+		code, recovery string
+	}{
+		{"missing_scope", "/slack/install"},
+		{"not_in_channel", "invited to this channel"},
+		{"not_allowed_token_type", "authentication must be corrected"},
+		{"ratelimited", "retry shortly"},
+		{"secret-token", "Do not assume permissions are missing"},
+	} {
+		t.Run(tc.code, func(t *testing.T) {
+			var logs bytes.Buffer
+			previous := log.Writer()
+			log.SetOutput(&logs)
+			defer log.SetOutput(previous)
+			client := &threadContextClient{fetch: func(context.Context, string, string, string, string) (slack.ThreadHistory, error) {
+				return slack.ThreadHistory{}, &slack.ThreadReadError{Code: tc.code, HTTPStatus: 200}
+			}}
+			h := &SlackEventHandler{client: client}
+			event := conversationEvent("latifin beni sevdiğini ne yaparak ispat etmesini istedim")
+			event.Event.ThreadTS, event.Event.TS = "1.0", "3.0"
+			input := h.threadContext(context.Background(), "secret-token", event)
+			if !strings.Contains(input, tc.recovery) || !strings.Contains(input, "Do not call the user's question unclear") ||
+				!strings.Contains(logs.String(), "http_status=200") || strings.Contains(input+logs.String(), "secret-token") {
+				t.Fatalf("incorrect recovery or unsafe diagnostics: input=%s logs=%s", input, logs.String())
+			}
+		})
 	}
 }

@@ -128,3 +128,40 @@ func TestThreadHistoryStopsAtPageBudgetAndCancellation(t *testing.T) {
 		t.Fatalf("cancellation ignored: calls=%d err=%v", calls, err)
 	}
 }
+
+func TestThreadReadFailureReportsSafeActionableCodes(t *testing.T) {
+	for _, tc := range []struct {
+		name, body, code string
+		status           int
+	}{
+		{"permissions", `{"ok":false,"error":"missing_scope"}`, "missing_scope", 200},
+		{"token type", `{"ok":false,"error":"not_allowed_token_type"}`, "not_allowed_token_type", 200},
+		{"rate limit", "private diagnostic", "ratelimited", 429},
+		{"invalid response", "private diagnostic", "invalid_response", 200},
+		{"untrusted code", `{"ok":false,"error":"secret-token-or-request-url"}`, "request_failed", 200},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := APIClient{HTTPClient: &http.Client{Transport: threadTransport(func(*http.Request) (*http.Response, error) {
+				return threadResponse(tc.status, tc.body), nil
+			})}}
+			_, err := client.ThreadHistory(context.Background(), "secret", "C", "1.0", "3.0")
+			code, status := ThreadReadFailure(err)
+			if err == nil || code != tc.code || status != tc.status || strings.Contains(err.Error(), "private diagnostic") || strings.Contains(err.Error(), "secret-token") {
+				t.Fatalf("unsafe or incorrect diagnostic: code=%s status=%d err=%v", code, status, err)
+			}
+		})
+	}
+	for _, tc := range []struct {
+		err  error
+		code string
+	}{
+		{fmt.Errorf("wrapped: %w", context.DeadlineExceeded), "timeout"},
+		{context.Canceled, "canceled"},
+		{fmt.Errorf("https://private.example/secret"), "request_failed"},
+	} {
+		code, status := ThreadReadFailure(tc.err)
+		if code != tc.code || status != 0 {
+			t.Fatalf("wrong fallback diagnostic: %s %d", code, status)
+		}
+	}
+}

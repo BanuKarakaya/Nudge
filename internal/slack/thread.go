@@ -3,6 +3,7 @@ package slack
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -24,6 +25,44 @@ type ThreadMessage struct {
 type ThreadHistory struct {
 	Messages  []ThreadMessage `json:"messages"`
 	Truncated bool            `json:"truncated"`
+}
+
+// ThreadReadError retains only safe diagnostics, never response bodies, request
+// URLs or credentials. The handler can explain an actionable failure to users.
+type ThreadReadError struct {
+	Code       string
+	HTTPStatus int
+}
+
+func (e *ThreadReadError) Error() string {
+	return fmt.Sprintf("Slack thread read failed: %s (HTTP %d)", e.Code, e.HTTPStatus)
+}
+
+// ThreadReadFailure deliberately does not expose arbitrary error strings.
+func ThreadReadFailure(err error) (string, int) {
+	var failure *ThreadReadError
+	if errors.As(err, &failure) {
+		return safeThreadErrorCode(failure.Code), failure.HTTPStatus
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timeout", 0
+	}
+	if errors.Is(err, context.Canceled) {
+		return "canceled", 0
+	}
+	return "request_failed", 0
+}
+
+func safeThreadErrorCode(code string) string {
+	switch code {
+	case "missing_scope", "not_in_channel", "channel_not_found", "thread_not_found",
+		"not_allowed_token_type", "no_permission", "access_denied", "invalid_auth",
+		"token_revoked", "token_expired", "account_inactive", "ratelimited",
+		"http_error", "invalid_response", "pagination_incomplete", "page_limit":
+		return code
+	default:
+		return "request_failed"
+	}
 }
 
 // ThreadHistory reads only the mentioned thread, strictly before the triggering
@@ -63,13 +102,17 @@ func (c APIClient) ThreadHistory(ctx context.Context, token, channel, threadTS, 
 			}
 			defer resp.Body.Close()
 			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-				return fmt.Errorf("Slack conversations.replies returned HTTP %d", resp.StatusCode)
+				code := "http_error"
+				if resp.StatusCode == http.StatusTooManyRequests {
+					code = "ratelimited"
+				}
+				return &ThreadReadError{Code: code, HTTPStatus: resp.StatusCode}
 			}
 			if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&result); err != nil {
-				return err
+				return &ThreadReadError{Code: "invalid_response", HTTPStatus: resp.StatusCode}
 			}
 			if !result.OK {
-				return fmt.Errorf("Slack conversations.replies failed: %s", result.Error)
+				return &ThreadReadError{Code: safeThreadErrorCode(result.Error), HTTPStatus: resp.StatusCode}
 			}
 			return nil
 		}()
@@ -99,18 +142,18 @@ func (c APIClient) ThreadHistory(ctx context.Context, token, channel, threadTS, 
 		if cursor == "" {
 			if result.HasMore {
 				history.Truncated = true
-				return history, fmt.Errorf("Slack thread history pagination cursor missing")
+				return history, &ThreadReadError{Code: "pagination_incomplete"}
 			}
 			return history, nil
 		}
 		if seenCursors[cursor] {
 			history.Truncated = true
-			return history, fmt.Errorf("Slack thread history pagination cursor repeated")
+			return history, &ThreadReadError{Code: "pagination_incomplete"}
 		}
 		seenCursors[cursor] = true
 	}
 	history.Truncated = true
-	return history, fmt.Errorf("Slack thread history page limit reached")
+	return history, &ThreadReadError{Code: "page_limit"}
 }
 
 // Compare decimal Slack timestamps without floating-point precision loss.

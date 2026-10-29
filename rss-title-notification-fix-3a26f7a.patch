@@ -1,0 +1,596 @@
+From 3a26f7a666f7bcf5119bea27d51c6e5dbcac2f50 Mon Sep 17 00:00:00 2001
+From: BanuKarakaya <nurbanukarakaya03@gmail.com>
+Date: Tue, 27 Oct 2026 23:12:25 +0300
+Subject: [PATCH] fix: send scheduled RSS titles without AI generation
+
+---
+ cmd/server/main.go                            |   4 +-
+ docs/codex-harness.md                         |   6 +-
+ docs/conversations.md                         |  20 +--
+ internal/repository/postgres/notification.go  |  61 +++++++++-
+ .../repository/postgres/notification_test.go  |  76 ++++++++++++
+ internal/scheduler/feedbin.go                 |   7 +-
+ internal/scheduler/feedbin_titles_test.go     | 114 ++++++++++++++++++
+ internal/service/feedbin_titles.go            |  77 ++++++++++++
+ internal/service/feedbin_titles_test.go       |  85 +++++++++++++
+ 9 files changed, 435 insertions(+), 15 deletions(-)
+ create mode 100644 internal/scheduler/feedbin_titles_test.go
+ create mode 100644 internal/service/feedbin_titles.go
+ create mode 100644 internal/service/feedbin_titles_test.go
+
+diff --git a/cmd/server/main.go b/cmd/server/main.go
+index 17f4e4e..a625303 100644
+--- a/cmd/server/main.go
++++ b/cmd/server/main.go
+@@ -252,13 +252,13 @@ func main() {
+ 			reminderTimezone,
+ 			installationRepository,
+ 			feedbinRepository,
+-			digestGenerator,
++			service.NewFeedbinTitles(feedbinDigestService),
+ 			notificationRepository,
+ 			slackAPIClient,
+ 		)
+ 		go feedbinReminder.Run(context.Background())
+ 		log.Printf("onboarding reconciliation at 13:45, Raindrop reminder at 22:00 (%s)", reminderTimezone)
+-		log.Printf("Feedbin reminder enabled at 23:00 (%s)", reminderTimezone)
++		log.Printf("Feedbin title/link reminder enabled at 23:00 (%s), no AI generation", reminderTimezone)
+ 	} else {
+ 		log.Printf("daily reminder disabled: set NUDGE_REMINDER_USER_ID")
+ 	}
+diff --git a/docs/codex-harness.md b/docs/codex-harness.md
+index d1c45ce..918f7e9 100644
+--- a/docs/codex-harness.md
++++ b/docs/codex-harness.md
+@@ -131,9 +131,11 @@ output is success. Commentary, deltas, EOF and failed/interrupted turns cannot
+ be mistaken for a final response. An acknowledged routing interruption only
+ permits the next model turn; it is never a successful user reply. Tool results can fail within a successful turn;
+ Codex must explain that rather than fabricate data.
+-For scheduled digests, a conversational explanation is not successful delivery:
++The 23:00 scheduled RSS notification sends titles and links directly, without
++using this runtime. The protected AI test-digest endpoint still uses the digest
++generator; a conversational explanation is not successful generation:
+ at least one RSS retrieval must succeed and no RSS retrieval may have failed.
+-Otherwise generation fails before enqueue, preserving the scheduler's retry.
++Otherwise generation fails instead of treating a retrieval error as an empty inventory.
+ Stable partial-answer items are joined in order, deduplicated by native item ID.
+ 
+ The thinking reaction is managed by the Slack transport, before waiting/generation
+diff --git a/docs/conversations.md b/docs/conversations.md
+index 21fd17a..c41563c 100644
+--- a/docs/conversations.md
++++ b/docs/conversations.md
+@@ -17,8 +17,9 @@ Repository editing, test execution and PR publication are not implemented yet.
+ 
+ Go no longer selects intent/action enums, routes free/complex models, repairs
+ model JSON, or retries summaries through other models. Apart from the local
+-courtesy replies above, Codex calls user-bound data tools and writes the final reply. It also
+-creates scheduled RSS summaries; Go still owns schedules and reliable delivery.
++courtesy replies above, Codex calls user-bound data tools and writes the final reply.
++The daily RSS notification is a direct list of titles and links; it does not call
++a model. Go owns schedules and reliable delivery.
+ 
+ Conversation transcripts and native thread IDs are stored in Postgres, keyed by
+ workspace, channel, Slack thread and user. Native Codex history lives on the
+@@ -88,9 +89,10 @@ Rotating the signing key invalidates outstanding links. Slack/Raindrop OAuth
+ state is process-local, so their callbacks need the initiating server instance;
+ GitHub OAuth state is stored in PostgreSQL.
+ 
+-## Scheduled summaries and reliable delivery
++## Scheduled titles and reliable delivery
+ 
+-The 23:00 RSS job summarizes the completed local-calendar window
++The 23:00 RSS job sends each connected workspace member their own unread RSS
++titles and source links from the completed local-calendar window
+ `[previous day 23:00, scheduled day 23:00)`. For example, the October 23 job
+ covers October 22 23:00 through October 23 22:59:59. Entries at the ending
+ boundary belong to the next job. Preparation retries keep the original scheduled
+@@ -107,9 +109,13 @@ claimed after restart. The worker runs even if new scheduled reminders are
+ disabled. It polls at most every 15 seconds when idle or after an error.
+ 
+ Each bookmark has its own durable delivery key; one failed bookmark does not
+-resend the already completed part of the batch. Feedbin digest payloads are
+-stored once, so delivery retries do not regenerate summaries or incur AI calls.
+-Preparation errors (Feedbin/AI, Slack DM lookup, enqueue failures) are aggregated
++resend the already completed part of the batch. RSS titles are fetched directly
++from Feedbin without an AI or category lookup. Long text lists are split at
++line boundaries into at most 30,000 Unicode characters per message (an oversized
++single line is split at character boundaries). All parts are committed in one
++transaction, and the original user/type/period key deduplicates the whole list.
++Each part retries independently; successful parts are not replayed.
++Preparation errors (Feedbin, Slack DM lookup, enqueue failures) are aggregated
+ and retried up to five times in the same process. These pre-enqueue attempts are
+ not durable across restart. A schedule missed while the server is down is not
+ backfilled automatically.
+diff --git a/internal/repository/postgres/notification.go b/internal/repository/postgres/notification.go
+index a257d63..7cfba20 100644
+--- a/internal/repository/postgres/notification.go
++++ b/internal/repository/postgres/notification.go
+@@ -6,6 +6,7 @@ import (
+ 	"encoding/hex"
+ 	"encoding/json"
+ 	"errors"
++	"fmt"
+ 	"time"
+ 
+ 	"github.com/jackc/pgx/v5/pgxpool"
+@@ -42,9 +43,63 @@ func (r *NotificationRepository) Enqueue(ctx context.Context, userID int64, kind
+ 	if err != nil {
+ 		return err
+ 	}
+-	_, err = r.db.Exec(ctx, `INSERT INTO notifications (user_id, notification_type, period_key, delivery_status, payload, sent_at)
+- VALUES ($1,$2,$3,'pending',$4,NULL) ON CONFLICT (user_id, notification_type, period_key) DO NOTHING`, userID, kind, period, payload)
+-	return err
++	const insert = `INSERT INTO notifications (user_id, notification_type, period_key, delivery_status, payload, sent_at)
++ VALUES ($1,$2,$3,'pending',$4,NULL) ON CONFLICT (user_id, notification_type, period_key) DO NOTHING`
++	parts := splitNotificationText(message.Text)
++	if special || message.Bookmark != nil || len(parts) <= 1 {
++		_, err = r.db.Exec(ctx, insert, userID, kind, period, payload)
++		return err
++	}
++	// Commit the entire snapshot together. The first row keeps the original
++	// period key, so Exists and concurrent/repeated preparations deduplicate
++	// the whole list, including against messages queued by the old generator.
++	tx, err := r.db.Begin(ctx)
++	if err != nil {
++		return err
++	}
++	defer tx.Rollback(context.Background())
++	for i, part := range parts {
++		message.Text = part
++		payload, err = json.Marshal(message)
++		if err != nil {
++			return err
++		}
++		key := period
++		if i > 0 {
++			key = fmt.Sprintf("%s/part/%d", period, i+1)
++		}
++		result, err := tx.Exec(ctx, insert, userID, kind, key, payload)
++		if err != nil {
++			return err
++		}
++		if i == 0 && result.RowsAffected() == 0 {
++			return nil
++		}
++	}
++	return tx.Commit(ctx)
++}
++
++// Stay below Slack's text truncation limit, preserving full lines where possible
++// and Unicode characters even for a pathological single oversized line.
++func splitNotificationText(text string) []string {
++	const maxChars = 30000
++	chars := []rune(text)
++	var parts []string
++	for len(chars) > maxChars {
++		end := maxChars
++		for i := end - 1; i >= 0; i-- {
++			if chars[i] == '\n' {
++				end = i + 1
++				break
++			}
++		}
++		parts = append(parts, string(chars[:end]))
++		chars = chars[end:]
++	}
++	if len(chars) > 0 {
++		parts = append(parts, string(chars))
++	}
++	return parts
+ }
+ func (r *NotificationRepository) ClaimNext(ctx context.Context) (repository.NotificationDelivery, error) {
+ 	var d repository.NotificationDelivery
+diff --git a/internal/repository/postgres/notification_test.go b/internal/repository/postgres/notification_test.go
+index 0c30e6c..db3a978 100644
+--- a/internal/repository/postgres/notification_test.go
++++ b/internal/repository/postgres/notification_test.go
+@@ -148,6 +148,61 @@ func TestNotificationDeliveryPostgres(t *testing.T) {
+ 	if total != 3 || sent != 3 {
+ 		t.Fatalf("rows=%d sent=%d", total, sent)
+ 	}
++	// Large lists are committed atomically and deduplicated as one snapshot.
++	large := repository.NotificationMessage{Channel: "D", Text: strings.Repeat("• <https://example.com|Türkçe başlık>\n", 3000)}
++	parts := splitNotificationText(large.Text)
++	// A failure on a later part must also roll back the original period row.
++	if _, err := db.Exec(ctx, `ALTER TABLE notifications ADD CONSTRAINT reject_test_part CHECK (period_key <> 'rollback/part/2')`); err != nil {
++		t.Fatal(err)
++	}
++	if err := q.Enqueue(ctx, 1, "daily_feedbin", "rollback", large); err == nil {
++		t.Fatal("expected part insertion failure")
++	}
++	if exists, err := q.Exists(ctx, 1, "daily_feedbin", "rollback"); err != nil || exists {
++		t.Fatalf("partial batch committed: %v %v", exists, err)
++	}
++	if _, err := db.Exec(ctx, `ALTER TABLE notifications DROP CONSTRAINT reject_test_part`); err != nil {
++		t.Fatal(err)
++	}
++	for i := 0; i < 2; i++ {
++		if err := q.Enqueue(ctx, 1, "daily_feedbin", "large", large); err != nil {
++			t.Fatal(err)
++		}
++	}
++	// A changed inventory on retry must not append additional parts.
++	changed := large
++	changed.Text += large.Text
++	if err := q.Enqueue(ctx, 1, "daily_feedbin", "large", changed); err != nil {
++		t.Fatal(err)
++	}
++	var retriable repository.NotificationDelivery
++	for i, text := range parts {
++		d, err := q.ClaimNext(ctx)
++		if err != nil || d.Message.Text != text {
++			t.Fatalf("part %d: %+v %v", i, d, err)
++		}
++		if i == 1 {
++			retriable = d
++			if err := q.Retry(ctx, d, time.Hour); err != nil {
++				t.Fatal(err)
++			}
++		} else if err := q.Complete(ctx, d); err != nil {
++			t.Fatal(err)
++		}
++	}
++	if _, err := q.ClaimNext(ctx); !errors.Is(err, pgx.ErrNoRows) {
++		t.Fatalf("duplicate parts queued: %v", err)
++	}
++	if _, err := db.Exec(ctx, `UPDATE notifications SET available_at=NOW()-INTERVAL '1 second' WHERE id=$1`, retriable.ID); err != nil {
++		t.Fatal(err)
++	}
++	d, err := q.ClaimNext(ctx)
++	if err != nil || d.ID != retriable.ID || d.Message.Text != parts[1] {
++		t.Fatalf("wrong part retried: %+v %v", d, err)
++	}
++	if err := q.Complete(ctx, d); err != nil {
++		t.Fatal(err)
++	}
+ 	// Typed onboarding deliveries need no channel or pre-generated bearer link.
+ 	for _, message := range []repository.NotificationMessage{{Connection: "github"}, {WorkspaceOnboarding: true}} {
+ 		if err := q.Enqueue(ctx, 1, "onboarding", fmt.Sprint(message), message); err != nil {
+@@ -167,3 +222,24 @@ func TestNotificationDeliveryPostgres(t *testing.T) {
+ 		}
+ 	}
+ }
++
++func TestSplitNotificationTextPreservesUnicodeAndLines(t *testing.T) {
++	for _, original := range []string{"", "short", strings.Repeat("ğ📰", 30000), strings.Repeat("• <https://example.com/article|Türkçe başlık>\n", 3000)} {
++		parts := splitNotificationText(original)
++		if strings.Join(parts, "") != original {
++			t.Fatal("text lost or duplicated")
++		}
++		for _, part := range parts {
++			if len([]rune(part)) > 30000 || part == "" {
++				t.Fatalf("invalid part length: %d", len([]rune(part)))
++			}
++		}
++		if strings.HasPrefix(original, "•") {
++			for _, part := range parts {
++				if !strings.HasPrefix(part, "• <") || !strings.HasSuffix(part, ">\n") {
++					t.Fatal("article link split across messages")
++				}
++			}
++		}
++	}
++}
+diff --git a/internal/scheduler/feedbin.go b/internal/scheduler/feedbin.go
+index e913ab7..547cd19 100644
+--- a/internal/scheduler/feedbin.go
++++ b/internal/scheduler/feedbin.go
+@@ -4,6 +4,7 @@ import (
+ 	"context"
+ 	"errors"
+ 	"fmt"
++	"log"
+ 	"time"
+ 
+ 	"github.com/jackc/pgx/v5"
+@@ -88,7 +89,11 @@ func (r *FeedbinReminder) processMember(ctx context.Context, teamID, botToken, s
+ 	if err != nil {
+ 		return fmt.Errorf("open direct message: %w", err)
+ 	}
+-	return r.notifications.Enqueue(ctx, userID, feedbinNotificationType, periodKey, repository.NotificationMessage{Channel: dmChannel, Text: digest})
++	if err := r.notifications.Enqueue(ctx, userID, feedbinNotificationType, periodKey, repository.NotificationMessage{Channel: dmChannel, Text: digest}); err != nil {
++		return err
++	}
++	log.Printf("Feedbin reminder queued user=%s period=%s", slackUserID, periodKey)
++	return nil
+ }
+ 
+ func (r *FeedbinReminder) nextEvent(now time.Time) time.Time {
+diff --git a/internal/scheduler/feedbin_titles_test.go b/internal/scheduler/feedbin_titles_test.go
+new file mode 100644
+index 0000000..3d5cf38
+--- /dev/null
++++ b/internal/scheduler/feedbin_titles_test.go
+@@ -0,0 +1,114 @@
++package scheduler
++
++import (
++	"context"
++	"errors"
++	"strings"
++	"testing"
++	"time"
++
++	"nudge/internal/domain"
++	"nudge/internal/feedbin"
++	"nudge/internal/repository"
++	"nudge/internal/service"
++)
++
++type titleInstallations struct {
++	repository.InstallationRepository
++}
++
++func (titleInstallations) GetByUserID(context.Context, int64) (domain.SlackInstallation, error) {
++	return domain.SlackInstallation{TeamID: "T", BotToken: "test"}, nil
++}
++func (titleInstallations) UpsertUser(_ context.Context, team, user string) (int64, error) {
++	if team != "T" {
++		return 0, errors.New("wrong workspace")
++	}
++	if user == "U07NH5V88TC" {
++		return 2, nil
++	}
++	return 1, nil
++}
++
++type titleConnections struct {
++	repository.FeedbinConnectionRepository
++}
++
++func (titleConnections) GetByUserID(_ context.Context, id int64) (domain.FeedbinConnection, error) {
++	if id == 2 {
++		return domain.FeedbinConnection{Email: "latif", Password: "latif-test"}, nil
++	}
++	return domain.FeedbinConnection{Email: "banu", Password: "banu-test"}, nil
++}
++
++type titleSlack struct{}
++
++func (titleSlack) ListUsers(context.Context, string) ([]domain.SlackMember, error) {
++	return []domain.SlackMember{{ID: "U07NW2BGCSD"}, {ID: "U07NH5V88TC"}}, nil
++}
++func (titleSlack) OpenDirectMessage(_ context.Context, _, user string) (string, error) {
++	return "D-" + user, nil
++}
++
++type titleSource struct {
++	since    time.Time
++	failBanu bool
++}
++
++func (s titleSource) ListUnreadSince(_ context.Context, email, password string, since time.Time) ([]feedbin.Entry, error) {
++	if !since.Equal(s.since) || password != email+"-test" {
++		return nil, errors.New("wrong bound account/window")
++	}
++	if s.failBanu && email == "banu" {
++		return nil, errors.New("temporary provider failure")
++	}
++	return []feedbin.Entry{{ID: 1, Title: email + " RSS", URL: "https://example.com/" + email, CreatedAt: since}}, nil
++}
++func (titleSource) ListTaggings(context.Context, string, string) ([]feedbin.Tagging, error) {
++	panic("scheduled titles must not need categories")
++}
++
++func TestScheduledTitlesReachBothWorkspaceMembersAt2300(t *testing.T) {
++	loc, err := time.LoadLocation("Europe/Istanbul")
++	if err != nil {
++		t.Fatal(err)
++	}
++	now := time.Date(2026, 10, 27, 23, 0, 0, 0, loc)
++	for _, failBanu := range []bool{false, true} {
++		q := &memoryOutbox{}
++		generator := service.NewFeedbinTitles(service.NewFeedbinDigestService(titleConnections{}, titleSource{since: now.AddDate(0, 0, -1), failBanu: failBanu}))
++		r := NewFeedbinReminder(1, loc, titleInstallations{}, titleConnections{}, generator, q, titleSlack{})
++		if got := r.nextEvent(now.Add(-time.Second)); !got.Equal(now) {
++			t.Fatalf("scheduled %s, want %s", got, now)
++		}
++		if got := r.nextEvent(now); !got.Equal(now.AddDate(0, 0, 1)) {
++			t.Fatalf("next day scheduled %s", got)
++		}
++		if err := r.RunOnce(context.Background(), now); (err != nil) != failBanu {
++			t.Fatalf("run: %v", err)
++		}
++		want := 2
++		if failBanu {
++			want = 1
++		}
++		if len(q.pending) != want {
++			t.Fatalf("queued %d, want %d", len(q.pending), want)
++		}
++		foundLatif := false
++		for _, d := range q.pending {
++			if d.UserID == 2 {
++				foundLatif = true
++				if d.Message.Channel != "D-U07NH5V88TC" || !strings.Contains(d.Message.Text, "<https://example.com/latif|latif RSS>") || strings.Contains(d.Message.Text, "banu RSS") {
++					t.Fatalf("wrong recipient/content: %+v", d)
++				}
++			}
++		}
++		if !foundLatif {
++			t.Fatal("Latif skipped")
++		}
++		_ = r.RunOnce(context.Background(), now.Add(70*time.Minute))
++		if len(q.pending) != want {
++			t.Fatal("retry duplicated titles")
++		}
++	}
++}
+diff --git a/internal/service/feedbin_titles.go b/internal/service/feedbin_titles.go
+new file mode 100644
+index 0000000..aba6660
+--- /dev/null
++++ b/internal/service/feedbin_titles.go
+@@ -0,0 +1,77 @@
++package service
++
++import (
++	"context"
++	"errors"
++	"fmt"
++	"net/url"
++	"sort"
++	"strings"
++	"time"
++
++	"nudge/internal/feedbin"
++)
++
++// Scheduled titles do not depend on a model, article content or category lookup.
++// The outbox splits large lists into independently retryable Slack messages.
++type feedbinTitles struct{ digest *FeedbinDigestService }
++
++func NewFeedbinTitles(digest *FeedbinDigestService) DigestGenerator {
++	return &feedbinTitles{digest: digest}
++}
++
++func (g *feedbinTitles) Generate(ctx context.Context, userID int64, since, until time.Time) (string, error) {
++	if err := ctx.Err(); err != nil {
++		return "", err
++	}
++	if userID <= 0 || since.IsZero() || !since.Before(until) {
++		return "", errors.New("invalid RSS identity or window")
++	}
++	if g.digest == nil || g.digest.connections == nil || g.digest.client == nil {
++		return "", errors.New("RSS titles unavailable")
++	}
++	connection, err := g.digest.connections.GetByUserID(ctx, userID)
++	if err != nil {
++		return "", fmt.Errorf("load Feedbin connection: %w", err)
++	}
++	entries, err := g.digest.client.ListUnreadSince(ctx, connection.Email, connection.Password, since)
++	if err != nil {
++		return "", fmt.Errorf("load RSS titles: %w", err)
++	}
++	var items []feedbin.Entry
++	seen := make(map[int64]bool)
++	for _, entry := range entries {
++		if entry.CreatedAt.Before(since) || !entry.CreatedAt.Before(until) || seen[entry.ID] {
++			continue
++		}
++		seen[entry.ID] = true
++		items = append(items, entry)
++	}
++	sort.Slice(items, func(i, j int) bool {
++		if items[i].CreatedAt.Equal(items[j].CreatedAt) {
++			return items[i].ID < items[j].ID
++		}
++		return items[i].CreatedAt.Before(items[j].CreatedAt)
++	})
++	var text strings.Builder
++	fmt.Fprintf(&text, "📰 *Günlük RSS başlıkların*\n%s – %s\n\n", since.Format("02.01.2006 15:04"), until.Format("02.01.2006 15:04"))
++	if len(items) == 0 {
++		text.WriteString("Bu zaman aralığında okunmamış RSS yazın yok.")
++	}
++	for _, entry := range items {
++		title := strings.Join(strings.Fields(entry.Title), " ")
++		if title == "" {
++			title = "Başlıksız yazı"
++		}
++		// Feed titles cannot introduce Slack mentions or replace a link's label.
++		title = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", "|", "｜").Replace(title)
++		u, parseErr := url.Parse(strings.TrimSpace(entry.URL))
++		if parseErr == nil && (u.Scheme == "https" || u.Scheme == "http") && u.Host != "" {
++			link := strings.NewReplacer("|", "%7C", "<", "%3C", ">", "%3E", "&", "&amp;").Replace(u.String())
++			fmt.Fprintf(&text, "• <%s|%s>\n", link, title)
++		} else {
++			fmt.Fprintf(&text, "• %s (bağlantı bulunamadı)\n", title)
++		}
++	}
++	return text.String(), nil
++}
+diff --git a/internal/service/feedbin_titles_test.go b/internal/service/feedbin_titles_test.go
+new file mode 100644
+index 0000000..b6ab20d
+--- /dev/null
++++ b/internal/service/feedbin_titles_test.go
+@@ -0,0 +1,85 @@
++package service
++
++import (
++	"context"
++	"errors"
++	"fmt"
++	"strings"
++	"testing"
++	"time"
++
++	"nudge/internal/feedbin"
++)
++
++func TestFeedbinTitlesUsesBoundAccountAndExactWindowWithoutAI(t *testing.T) {
++	loc := time.FixedZone("Istanbul", 3*60*60)
++	until := time.Date(2026, 10, 27, 23, 0, 0, 0, loc)
++	since := until.AddDate(0, 0, -1)
++	connections := &digestConnections{}
++	source := &digestSource{tagErr: errors.New("categories unavailable"), entries: []feedbin.Entry{
++		{ID: 3, Title: "Son yazı", URL: "https://example.com/3", CreatedAt: until.Add(-time.Nanosecond)},
++		{ID: 1, Title: "Önceki gün", CreatedAt: since.Add(-time.Nanosecond)},
++		{ID: 2, Title: "Başlangıç & <@everyone> | haber", URL: "https://example.com/2?a=1&b=2", CreatedAt: since},
++		{ID: 2, Title: "Yinelenen", CreatedAt: since},
++		{ID: 4, Title: "Yarın", CreatedAt: until},
++	}}
++	text, err := NewFeedbinTitles(NewFeedbinDigestService(connections, source)).Generate(context.Background(), 42, since, until)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if len(connections.users) != 1 || connections.users[0] != 42 || source.calls != 1 {
++		t.Fatalf("wrong account/fetches: %+v %d", connections.users, source.calls)
++	}
++	for _, unwanted := range []string{"Önceki gün", "Yinelenen", "Yarın", "<@everyone>"} {
++		if strings.Contains(text, unwanted) {
++			t.Fatalf("unexpected %q in %s", unwanted, text)
++		}
++	}
++	if !strings.Contains(text, "26.10.2026 23:00 – 27.10.2026 23:00") || !strings.Contains(text, "<https://example.com/2?a=1&amp;b=2|Başlangıç &amp; &lt;@everyone&gt; ｜ haber>") || strings.Index(text, "Başlangıç") > strings.Index(text, "Son yazı") {
++		t.Fatal(text)
++	}
++}
++
++func TestFeedbinTitlesKeepsLargeInventoryAndDoesNotHideSourceFailure(t *testing.T) {
++	since := time.Date(2026, 10, 26, 20, 0, 0, 0, time.UTC)
++	source := &digestSource{}
++	for i := 0; i < 1000; i++ {
++		source.entries = append(source.entries, feedbin.Entry{ID: int64(i + 1), Title: fmt.Sprintf("Türkçe başlık %04d", i), URL: fmt.Sprintf("https://example.com/%d", i), CreatedAt: since})
++	}
++	generator := NewFeedbinTitles(NewFeedbinDigestService(&digestConnections{}, source))
++	text, err := generator.Generate(context.Background(), 42, since, since.Add(24*time.Hour))
++	if err != nil || strings.Count(text, "• <") != 1000 || !strings.Contains(text, "Türkçe başlık 0999") {
++		t.Fatalf("lost titles: %d, %v", len(text), err)
++	}
++	source.err = errors.New("Feedbin unavailable")
++	if text, err = generator.Generate(context.Background(), 42, since, since.Add(24*time.Hour)); err == nil || text != "" {
++		t.Fatalf("provider error hidden: %q %v", text, err)
++	}
++	source.err = nil
++	source.entries = nil
++	if text, err = generator.Generate(context.Background(), 42, since, since.Add(24*time.Hour)); err != nil || !strings.Contains(text, "okunmamış RSS yazın yok") {
++		t.Fatalf("empty inventory: %q %v", text, err)
++	}
++}
++
++func TestFeedbinTitlesRejectsInvalidJobs(t *testing.T) {
++	since := time.Now()
++	source := &digestSource{}
++	generator := NewFeedbinTitles(NewFeedbinDigestService(&digestConnections{}, source))
++	for _, job := range []struct {
++		user       int64
++		start, end time.Time
++	}{{0, since, since.Add(time.Hour)}, {1, time.Time{}, since}, {1, since, since}, {1, since, since.Add(-time.Hour)}} {
++		if _, err := generator.Generate(context.Background(), job.user, job.start, job.end); err == nil {
++			t.Fatal("accepted invalid job")
++		}
++	}
++	ctx, cancel := context.WithCancel(context.Background())
++	cancel()
++	if _, err := generator.Generate(ctx, 1, since, since.Add(time.Hour)); !errors.Is(err, context.Canceled) {
++		t.Fatal(err)
++	}
++	if source.calls != 0 {
++		t.Fatal("invalid job fetched RSS")
++	}
++}
+-- 
+2.50.1 (Apple Git-155)
+
