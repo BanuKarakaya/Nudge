@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -20,17 +21,18 @@ var (
 )
 
 type Credentials struct {
-	Access         string    `json:"access"`
-	Refresh        string    `json:"refresh"`
-	Expires        time.Time `json:"expires"`
-	RefreshExpires time.Time `json:"refresh_expires"`
+	SelectedProjects string    `json:"selected_projects,omitempty"`
+	Access           string    `json:"access"`
+	Refresh          string    `json:"refresh"`
+	Expires          time.Time `json:"expires"`
+	RefreshExpires   time.Time `json:"refresh_expires"`
 }
 
 type Connection struct {
 	UserID int64
 	// Resolved from the immutable Slack user record, never supplied by the model.
 	Team         string
-	GitHubUserID int64
+	GitHubUserID int64 // Legacy name: provider-scoped numeric account ID, including GitLab.
 	Login        string
 	Credentials  Credentials
 }
@@ -55,6 +57,7 @@ type RepositoryAccess struct {
 }
 
 type Repository struct {
+	Provider       string `json:"provider,omitempty"`
 	ID             int64  `json:"id"`
 	FullName       string `json:"full_name"`
 	DefaultBranch  string `json:"default_branch"`
@@ -82,6 +85,7 @@ type OAuthState struct {
 	Expires        time.Time
 	Phase          string
 	InstallationID int64
+	Pending        *Connection
 }
 
 type Store interface {
@@ -120,4 +124,69 @@ func RandomID() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b[:]), nil
+}
+
+// Empty provider preserves existing GitHub snapshots and review digests.
+func (r Repository) Kind() string {
+	if r.Provider == "gitlab" {
+		return "gitlab"
+	}
+	return "github"
+}
+func (r Repository) Valid() bool {
+	if r.ID <= 0 {
+		return false
+	}
+	if r.Provider == "gitlab" {
+		return ValidGitLabRepository(r.FullName) && r.InstallationID == 0
+	}
+	return (r.Provider == "" || r.Provider == "github") && r.InstallationID > 0 && ValidRepository(r.FullName)
+}
+func ValidGitLabRepository(name string) bool {
+	if len(name) > 512 {
+		return false
+	}
+	parts := strings.Split(name, "/")
+	if len(parts) < 2 {
+		return false
+	}
+	for _, part := range parts {
+		if part == "." || part == ".." || !gitLabPathPart.MatchString(part) || strings.HasSuffix(part, ".git") {
+			return false
+		}
+	}
+	return true
+}
+
+var gitLabPathPart = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,254}$`)
+
+func (r Repository) Origin() string {
+	if r.Kind() == "gitlab" {
+		return "https://gitlab.com"
+	}
+	return "https://github.com"
+}
+func (r Repository) BranchURL(branch string) string {
+	if r.Kind() == "gitlab" {
+		return r.Origin() + "/" + r.FullName + "/-/tree/" + branch
+	}
+	return r.Origin() + "/" + r.FullName + "/tree/" + branch
+}
+func (s *Service) Kind() string {
+	if s.kind == "gitlab" {
+		return "gitlab"
+	}
+	return "github"
+}
+func (s *Service) DisplayName() string {
+	if s.Kind() == "gitlab" {
+		return "GitLab"
+	}
+	return "GitHub"
+}
+func (s *Service) validName(name string) bool {
+	if s.Kind() == "gitlab" {
+		return ValidGitLabRepository(name)
+	}
+	return ValidRepository(name)
 }

@@ -116,6 +116,7 @@ read/write a user-bound encrypted workspace, freeze it and automatically publish
 a new branch in the same repository when repository_edit_finish succeeds. Users
 clone/fetch that branch for manual testing; no extra push approval is requested.
 The host fixes the target branch and rechecks owner identity and write permission.
+GitLab.com exposes the same workflow through namespaced `gitlab_*` tools and a separate connection/project selection ([setup](gitlab.md)). Provider choice is explicit; GitHub and GitLab credentials/tasks cannot be substituted.
 Repository scripts/tests and native shell tools remain disabled; there is no PR
 or merge operation. Pending edits survive restarts and can be resumed.
 Bounds: four concurrent children, 120 seconds per run (including slot wait),

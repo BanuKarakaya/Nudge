@@ -160,8 +160,8 @@ func (s *OnboardingService) DeliverInvitation(ctx context.Context, userID int64,
 			return err
 		}
 		text := fmt.Sprintf("👋 *Nudgy · %s bağlantısı*\n%s\n\n<%s|%s hesabını bağla>\n\nBu bağlantı sana özeldir. Yalnızca kullanmak istediğin servisleri bağlayabilirsin.", inv.Name, inv.Description, link, inv.Name)
-		if purpose == "github" {
-			text += "\nLink 20 dakika geçerlidir. Süresi dolarsa Nudgy’den yeni GitHub bağlantısı isteyebilirsin."
+		if purpose == "github" || purpose == "gitlab" {
+			text += "\nLink 20 dakika geçerlidir. Süresi dolarsa Nudgy’den yeni " + inv.Name + " bağlantısı isteyebilirsin."
 		}
 		return s.client.PostMessage(ctx, installation.BotToken, channel, text)
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -13,8 +14,9 @@ import (
 )
 
 type CodingStore struct {
-	db     *pgxpool.Pool
-	cipher secure.Cipher
+	provider string
+	db       *pgxpool.Pool
+	cipher   secure.Cipher
 }
 
 var _ coding.Store = (*CodingStore)(nil)
@@ -35,7 +37,7 @@ func (s *CodingStore) encode(c coding.Credentials) (string, error) {
 }
 
 func (s *CodingStore) ConnectionBindings(ctx context.Context) ([]coding.ConnectionBinding, error) {
-	rows, err := s.db.Query(ctx, `SELECT c.user_id,u.team_id,u.slack_user_id,c.github_user_id,c.login FROM coding_connections c JOIN users u ON u.id=c.user_id JOIN slack_installations i ON i.team_id=u.team_id ORDER BY c.user_id LIMIT 1001`)
+	rows, err := s.db.Query(ctx, `SELECT c.user_id,u.team_id,u.slack_user_id,c.`+s.accountColumn()+`,c.login FROM `+s.table("coding_connections")+` c JOIN users u ON u.id=c.user_id JOIN slack_installations i ON i.team_id=u.team_id ORDER BY c.user_id LIMIT 1001`)
 	if err != nil {
 		return nil, err
 	}
@@ -59,9 +61,9 @@ func (s *CodingStore) SaveConnection(ctx context.Context, c coding.Connection) e
 	if err != nil {
 		return err
 	}
-	result, err := s.db.Exec(ctx, `INSERT INTO coding_connections(user_id,github_user_id,login,credentials)
+	result, err := s.db.Exec(ctx, `INSERT INTO `+s.table("coding_connections")+`(user_id,`+s.accountColumn()+`,login,credentials)
 SELECT u.id,$2,$3,$4 FROM users u JOIN slack_installations i ON i.team_id=u.team_id WHERE u.id=$1 AND u.team_id=$5
-ON CONFLICT(user_id) DO UPDATE SET github_user_id=EXCLUDED.github_user_id,login=EXCLUDED.login,credentials=EXCLUDED.credentials,updated_at=NOW()`, c.UserID, c.GitHubUserID, c.Login, value, c.Team)
+ON CONFLICT(user_id) DO UPDATE SET `+s.accountColumn()+`=EXCLUDED.`+s.accountColumn()+`,login=EXCLUDED.login,credentials=EXCLUDED.credentials,updated_at=NOW()`, c.UserID, c.GitHubUserID, c.Login, value, c.Team)
 	if err == nil && result.RowsAffected() != 1 {
 		return coding.ErrDenied
 	}
@@ -85,7 +87,7 @@ func (s *CodingStore) WithConnection(ctx context.Context, userID int64, fn func(
 	defer tx.Rollback(ctx)
 	var c coding.Connection
 	var encrypted string
-	err = tx.QueryRow(ctx, `SELECT c.user_id,u.team_id,c.github_user_id,c.login,c.credentials FROM coding_connections c JOIN users u ON u.id=c.user_id JOIN slack_installations i ON i.team_id=u.team_id WHERE c.user_id=$1 FOR UPDATE OF c`, userID).Scan(&c.UserID, &c.Team, &c.GitHubUserID, &c.Login, &encrypted)
+	err = tx.QueryRow(ctx, `SELECT c.user_id,u.team_id,c.`+s.accountColumn()+`,c.login,c.credentials FROM `+s.table("coding_connections")+` c JOIN users u ON u.id=c.user_id JOIN slack_installations i ON i.team_id=u.team_id WHERE c.user_id=$1 FOR UPDATE OF c`, userID).Scan(&c.UserID, &c.Team, &c.GitHubUserID, &c.Login, &encrypted)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return coding.ErrConnect
 	}
@@ -108,7 +110,7 @@ func (s *CodingStore) WithConnection(ctx context.Context, userID int64, fn func(
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `UPDATE coding_connections SET credentials=$2,updated_at=NOW() WHERE user_id=$1`, userID, value); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE `+s.table("coding_connections")+` SET credentials=$2,updated_at=NOW() WHERE user_id=$1`, userID, value); err != nil {
 			return err
 		}
 	}
@@ -121,23 +123,31 @@ func (s *CodingStore) Disconnect(ctx context.Context, userID int64) error {
 		return err
 	}
 	defer tx.Rollback(ctx)
-	if _, err := tx.Exec(ctx, `UPDATE coding_edits SET status='cancelled' WHERE user_id=$1 AND status NOT IN ('pushed','cancelled')`, userID); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE `+s.table("coding_edits")+` SET status='cancelled' WHERE user_id=$1 AND status NOT IN ('pushed','cancelled')`, userID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM coding_connections WHERE user_id=$1`, userID); err != nil {
+	if _, err := tx.Exec(ctx, `DELETE FROM `+s.table("coding_connections")+` WHERE user_id=$1`, userID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM coding_oauth_states WHERE user_id=$1`, userID); err != nil {
+	if _, err := tx.Exec(ctx, `DELETE FROM `+s.table("coding_oauth_states")+` WHERE user_id=$1`, userID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE coding_tasks SET status='cancelled' WHERE user_id=$1 AND status='draft'`, userID); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE `+s.table("coding_tasks")+` SET status='cancelled' WHERE user_id=$1 AND status='draft'`, userID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
 }
 
 func (s *CodingStore) PutOAuthState(ctx context.Context, hash string, state coding.OAuthState) error {
-	verifier, err := s.cipher.Encrypt(state.Verifier)
+	plain := state.Verifier
+	if s.provider == "gitlab" {
+		raw, err := json.Marshal(state)
+		if err != nil {
+			return err
+		}
+		plain = string(raw)
+	}
+	verifier, err := s.cipher.Encrypt(plain)
 	if err != nil {
 		return err
 	}
@@ -146,10 +156,10 @@ func (s *CodingStore) PutOAuthState(ctx context.Context, hash string, state codi
 		return err
 	}
 	defer tx.Rollback(ctx)
-	if _, err = tx.Exec(ctx, `DELETE FROM coding_oauth_states WHERE expires_at <= NOW() OR user_id=$1`, state.UserID); err != nil {
+	if _, err = tx.Exec(ctx, `DELETE FROM `+s.table("coding_oauth_states")+` WHERE expires_at <= NOW() OR user_id=$1`, state.UserID); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO coding_oauth_states(state_hash,user_id,verifier,expires_at,phase,installation_id) VALUES($1,$2,$3,$4,$5,$6)`, hash, state.UserID, verifier, state.Expires, state.Phase, state.InstallationID); err != nil {
+	if _, err = tx.Exec(ctx, `INSERT INTO `+s.table("coding_oauth_states")+`(state_hash,user_id,verifier,expires_at,phase,installation_id) VALUES($1,$2,$3,$4,$5,$6)`, hash, state.UserID, verifier, state.Expires, state.Phase, state.InstallationID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -158,11 +168,22 @@ func (s *CodingStore) PutOAuthState(ctx context.Context, hash string, state codi
 func (s *CodingStore) ConsumeOAuthState(ctx context.Context, hash string) (coding.OAuthState, error) {
 	var state coding.OAuthState
 	var encrypted string
-	err := s.db.QueryRow(ctx, `DELETE FROM coding_oauth_states WHERE state_hash=$1 AND expires_at>NOW() RETURNING user_id,verifier,expires_at,phase,installation_id`, hash).Scan(&state.UserID, &encrypted, &state.Expires, &state.Phase, &state.InstallationID)
+	err := s.db.QueryRow(ctx, `DELETE FROM `+s.table("coding_oauth_states")+` WHERE state_hash=$1 AND expires_at>NOW() RETURNING user_id,verifier,expires_at,phase,installation_id`, hash).Scan(&state.UserID, &encrypted, &state.Expires, &state.Phase, &state.InstallationID)
 	if err != nil {
 		return state, coding.ErrConnect
 	}
 	state.Verifier, err = s.cipher.Decrypt(encrypted)
+	if err == nil && s.provider == "gitlab" {
+		var decoded coding.OAuthState
+		err = json.Unmarshal([]byte(state.Verifier), &decoded)
+		if err == nil && (decoded.UserID != state.UserID || decoded.Phase != state.Phase || decoded.InstallationID != state.InstallationID) {
+			return coding.OAuthState{}, coding.ErrConnect
+		}
+		if err == nil {
+			decoded.Expires = state.Expires
+			state = decoded
+		}
+	}
 	return state, err
 }
 
@@ -188,16 +209,35 @@ func (s *CodingStore) CreateDraft(ctx context.Context, t coding.Task) (coding.Ta
 		return coding.Task{}, err
 	}
 	// A retry of the same Slack event returns the original immutable draft.
-	return scanCodingTask(s.db.QueryRow(ctx, `INSERT INTO coding_tasks (`+codingColumns+`)
+	return scanCodingTask(s.db.QueryRow(ctx, `INSERT INTO `+s.table("coding_tasks")+` (`+codingColumns+`)
 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'draft',$10)
-ON CONFLICT(user_id,team_id,channel_id,event_id) DO UPDATE SET event_id=coding_tasks.event_id RETURNING `+codingColumns,
+ON CONFLICT(user_id,team_id,channel_id,event_id) DO UPDATE SET event_id=`+s.table("coding_tasks")+`.event_id RETURNING `+codingColumns,
 		t.ID, t.Identity.UserID, t.Identity.Team, t.Identity.Channel, t.Identity.Thread, t.Identity.Event, t.Provider, raw, t.Instruction, t.CreatedAt))
 }
 
 func (s *CodingStore) Task(ctx context.Context, i coding.Identity, id string) (coding.Task, error) {
-	return scanCodingTask(s.db.QueryRow(ctx, `SELECT `+codingColumns+` FROM coding_tasks WHERE id=$1 AND user_id=$2 AND team_id=$3 AND channel_id=$4 AND thread_ts=$5`, id, i.UserID, i.Team, i.Channel, i.Thread))
+	return scanCodingTask(s.db.QueryRow(ctx, `SELECT `+codingColumns+` FROM `+s.table("coding_tasks")+` WHERE id=$1 AND user_id=$2 AND team_id=$3 AND channel_id=$4 AND thread_ts=$5`, id, i.UserID, i.Team, i.Channel, i.Thread))
 }
 
 func (s *CodingStore) CancelDraft(ctx context.Context, i coding.Identity, id string) (coding.Task, error) {
-	return scanCodingTask(s.db.QueryRow(ctx, `UPDATE coding_tasks SET status='cancelled' WHERE id=$1 AND user_id=$2 AND team_id=$3 AND channel_id=$4 AND thread_ts=$5 AND status IN ('draft','cancelled') RETURNING `+codingColumns, id, i.UserID, i.Team, i.Channel, i.Thread))
+	return scanCodingTask(s.db.QueryRow(ctx, `UPDATE `+s.table("coding_tasks")+` SET status='cancelled' WHERE id=$1 AND user_id=$2 AND team_id=$3 AND channel_id=$4 AND thread_ts=$5 AND status IN ('draft','cancelled') RETURNING `+codingColumns, id, i.UserID, i.Team, i.Channel, i.Thread))
+}
+
+func NewGitLabStore(ctx context.Context, db *pgxpool.Pool, cipher secure.Cipher) (*CodingStore, error) {
+	if _, err := db.Exec(ctx, migrations.GitLabSchema); err != nil {
+		return nil, err
+	}
+	return &CodingStore{db: db, cipher: cipher, provider: "gitlab"}, nil
+}
+func (s *CodingStore) table(name string) string {
+	if s.provider == "gitlab" {
+		return strings.Replace(name, "coding_", "gitlab_", 1)
+	}
+	return name
+}
+func (s *CodingStore) accountColumn() string {
+	if s.provider == "gitlab" {
+		return "gitlab_user_id"
+	}
+	return "github_user_id"
 }

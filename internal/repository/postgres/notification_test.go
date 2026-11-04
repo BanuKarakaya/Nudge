@@ -204,7 +204,7 @@ func TestNotificationDeliveryPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Typed onboarding deliveries need no channel or pre-generated bearer link.
-	for _, message := range []repository.NotificationMessage{{Connection: "github"}, {WorkspaceOnboarding: true}} {
+	for _, message := range []repository.NotificationMessage{{Connection: "github"}, {Connection: "gitlab"}, {WorkspaceOnboarding: true}} {
 		if err := q.Enqueue(ctx, 1, "onboarding", fmt.Sprint(message), message); err != nil {
 			t.Fatal(err)
 		}

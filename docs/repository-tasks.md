@@ -6,7 +6,7 @@ service, and edit source files through bounded tools. Disabled unless
 `NUDGY_CODING_ENABLED=true`. Prepared source is encrypted in PostgreSQL so it
 survives Railway restarts. Automatic tests, repository scripts, PRs and merges
 are not run. Completing a coding task automatically publishes the prepared code
-to a new `codex/nudgy-<task-id>` branch for the user to clone and test. GitLab is not implemented yet.
+to a new `codex/nudgy-<task-id>` branch for the user to clone and test. GitLab.com uses the same editing/publishing workflow through a separate OAuth connection and project selection; see [GitLab setup](gitlab.md).
 
 ## GitHub App setup
 

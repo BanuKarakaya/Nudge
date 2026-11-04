@@ -37,19 +37,22 @@ func (h *CodingHandler) sendEditReview(ctx context.Context, identity coding.Iden
 	if err != nil || userID != identity.UserID {
 		return coding.ErrDenied
 	}
-	token, err := h.links.Token(identity.UserID, reviewPurpose(info.Task.ID, info.Digest), time.Now().Add(24*time.Hour))
+	token, err := h.links.Token(identity.UserID, h.reviewPurpose(info.Task.ID, info.Digest), time.Now().Add(24*time.Hour))
 	if err != nil {
 		return err
 	}
 	query := url.Values{"user_id": {strconv.FormatInt(identity.UserID, 10)}, "task_id": {info.Task.ID}, "digest": {info.Digest}, "token": {token}}
-	link := h.publicURL + "/github/review?" + query.Encode()
+	link := h.publicURL + "/" + h.service.Kind() + "/review?" + query.Encode()
 	channel, err := h.client.OpenDirectMessage(ctx, installation.BotToken, installation.SlackUserID)
 	if err != nil {
 		return err
 	}
 	message := "Kod değişiklikleri hazır: " + info.Task.Repository.FullName + "\nOtomatik test çalıştırmadım ve GitHub’a henüz pushlamadım. Özel sayfadan değişiklikleri inceleyip çalışma kopyasını indirerek test edebilirsin:\n" + link + "\nTestin tamamlanınca görevi istediğin konuşmadaki mesajın altında bulunan Pushla butonuna bas. Buton yalnızca senin bu sürümü onaylamanı sağlar. Link 24 saat geçerli; paylaşma."
+	if info.Task.Status != "pushed" && h.service.Kind() == "gitlab" {
+		message = "Kod değişiklikleri kaydedildi; GitLab’a henüz gönderilemedi: " + info.Task.Repository.FullName + "\nGönderimi tekrar denemek için aynı Slack konuşmasında görevi tamamlamamı iste. Otomatik test çalıştırılmadı.\nİsteğe bağlı özel inceleme bağlantısı (24 saat geçerli):\n" + link
+	}
 	if info.Task.Status == "pushed" {
-		message = "Değişiklikler GitHub’da test için hazır: " + info.Task.Repository.FullName + "\nDal: " + info.Branch + "\nhttps://github.com/" + info.Task.Repository.FullName + "/tree/" + info.Branch + "\nBu dalı clone/fetch ederek kendi bilgisayarında test edebilirsin. Otomatik test çalıştırılmadı. Ana dala birleştirilmedi.\nİstersen değişiklikleri özel sayfadan inceleyebilir veya ZIP indirebilirsin:\n" + link + "\nİnceleme bağlantısı 24 saat geçerli; paylaşma."
+		message = "Değişiklikler " + h.service.DisplayName() + " üzerinde test için hazır: " + info.Task.Repository.FullName + "\nDal: " + info.Branch + "\n" + info.Task.Repository.BranchURL(info.Branch) + "\nBu dalı clone/fetch ederek kendi bilgisayarında test edebilirsin. Otomatik test çalıştırılmadı. Ana dala birleştirilmedi.\nİstersen değişiklikleri özel sayfadan inceleyebilir veya ZIP indirebilirsin:\n" + link + "\nİnceleme bağlantısı 24 saat geçerli; paylaşma."
 	}
 	if err := h.client.PostMessage(ctx, installation.BotToken, channel, message); err != nil {
 		return errors.New("kod kaydedildi; özel inceleme mesajı gönderilemedi, bitirme işlemini tekrar dene")
@@ -62,6 +65,8 @@ type reviewFileView struct {
 	Delete              bool
 }
 type reviewPageView struct {
+	Provider     string
+	AutoPublish  bool
 	Edit         coding.Edit
 	Download     string
 	XcodeProject string
@@ -76,15 +81,15 @@ func (h *CodingHandler) review(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	id, digest := q.Get("task_id"), q.Get("digest")
 	userID, err := strconv.ParseInt(q.Get("user_id"), 10, 64)
-	if err != nil || !h.links.Verify(q.Get("token"), userID, reviewPurpose(id, digest), time.Now()) {
-		renderGitHubConnectionPage(w, http.StatusUnauthorized, githubPageData{Title: "İnceleme bağlantısı geçersiz.", Description: "Slack’te Nudgy’den bu görev için yeni bir inceleme bağlantısı iste."})
+	if err != nil || !h.links.Verify(q.Get("token"), userID, h.reviewPurpose(id, digest), time.Now()) {
+		h.renderConnectionPage(w, http.StatusUnauthorized, githubPageData{Title: "İnceleme bağlantısı geçersiz.", Description: "Slack’te Nudgy’den bu görev için yeni bir inceleme bağlantısı iste."})
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	e, err := h.service.ReviewEdit(ctx, userID, id, digest)
 	if err != nil {
-		renderGitHubConnectionPage(w, http.StatusForbidden, githubPageData{Title: "Bu sürüm artık incelenemiyor.", Description: "Kod değişmiş, görev iptal edilmiş veya GitHub erişimin değişmiş olabilir. Slack’te Nudgy’den güncel inceleme bağlantısını iste."})
+		h.renderConnectionPage(w, http.StatusForbidden, githubPageData{Title: "Bu sürüm artık incelenemiyor.", Description: "Kod değişmiş, görev iptal edilmiş veya repo erişimin değişmiş olabilir. Slack’te Nudgy’den güncel inceleme bağlantısını iste."})
 		return
 	}
 	if q.Get("download") == "zip" {
@@ -99,7 +104,7 @@ func (h *CodingHandler) review(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q.Set("download", "zip")
-	data := reviewPageView{Edit: e, Download: "/github/review?" + q.Encode(), XcodeProject: xcodeProject(e), Pushed: e.Task.Status == "pushed"}
+	data := reviewPageView{AutoPublish: h.service.Kind() == "gitlab", Provider: h.service.DisplayName(), Edit: e, Download: "/" + h.service.Kind() + "/review?" + q.Encode(), XcodeProject: xcodeProject(e), Pushed: e.Task.Status == "pushed"}
 	before := make(map[string][]byte)
 	for _, f := range e.Snapshot.Files {
 		before[f.Path] = f.Content
@@ -169,4 +174,11 @@ func xcodeProject(e coding.Edit) string {
 		}
 	}
 	return project
+}
+
+func (h *CodingHandler) reviewPurpose(id, digest string) string {
+	if h.service.Kind() == "gitlab" {
+		return "gitlab-review:" + id + ":" + digest
+	}
+	return reviewPurpose(id, digest)
 }

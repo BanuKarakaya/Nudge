@@ -29,8 +29,9 @@ func NewLocalGit() (*LocalGit, error) {
 }
 
 type gitDirectory struct {
-	engine     *LocalGit
-	root, repo string
+	engine           *LocalGit
+	root, repo       string
+	origin, username string
 }
 
 func (g *LocalGit) temporary(ctx context.Context) (*gitDirectory, context.Context, func(), error) {
@@ -95,9 +96,9 @@ func (d *gitDirectory) run(ctx context.Context, token string, input []byte, limi
 		"GIT_CONFIG_COUNT=4", "GIT_CONFIG_KEY_0=core.hooksPath", "GIT_CONFIG_VALUE_0=/dev/null",
 		"GIT_CONFIG_KEY_1=http.followRedirects", "GIT_CONFIG_VALUE_1=false",
 		"GIT_CONFIG_KEY_2=credential.helper", "GIT_CONFIG_VALUE_2=",
-		"GIT_CONFIG_KEY_3=http.https://github.com/.extraHeader", "GIT_CONFIG_VALUE_3="}
+		"GIT_CONFIG_KEY_3=http." + d.authOrigin() + "/.extraHeader", "GIT_CONFIG_VALUE_3="}
 	if token != "" {
-		cmd.Env[len(cmd.Env)-1] = "GIT_CONFIG_VALUE_3=AUTHORIZATION: basic " + base64.StdEncoding.EncodeToString([]byte("x-access-token:"+token))
+		cmd.Env[len(cmd.Env)-1] = "GIT_CONFIG_VALUE_3=AUTHORIZATION: basic " + base64.StdEncoding.EncodeToString([]byte(d.authUsername()+":"+token))
 	}
 	cmd.Env = append(cmd.Env, extraEnv...)
 	cmd.Stdin = bytes.NewReader(input)
@@ -115,13 +116,18 @@ func (d *gitDirectory) git(ctx context.Context, input []byte, limit int, args ..
 }
 
 func (d *gitDirectory) clone(ctx context.Context, token string, repo Repository) error {
-	if !ValidRepository(repo.FullName) || repo.ID <= 0 || repo.InstallationID <= 0 || repo.DefaultBranch == "" {
+	if !repo.Valid() || repo.DefaultBranch == "" {
 		return ErrArguments
+	}
+	d.origin = repo.Origin()
+	d.username = "x-access-token"
+	if repo.Kind() == "gitlab" {
+		d.username = "oauth2"
 	}
 	if _, err := d.run(ctx, "", nil, 1024, nil, "check-ref-format", "refs/heads/"+repo.DefaultBranch); err != nil {
 		return ErrArguments
 	}
-	_, err := d.run(ctx, token, nil, 4096, nil, "clone", "--bare", "--depth=1", "--single-branch", "--no-tags", "--template=", "--branch", repo.DefaultBranch, "--", "https://github.com/"+repo.FullName+".git", d.repo)
+	_, err := d.run(ctx, token, nil, 4096, nil, "clone", "--bare", "--depth=1", "--single-branch", "--no-tags", "--template=", "--branch", repo.DefaultBranch, "--", repo.Origin()+"/"+repo.FullName+".git", d.repo)
 	return err
 }
 
@@ -285,4 +291,17 @@ func (g *LocalGit) Push(ctx context.Context, token string, review Review) (strin
 		return "", err
 	}
 	return commit, nil
+}
+
+func (d *gitDirectory) authOrigin() string {
+	if d.origin == "https://gitlab.com" {
+		return d.origin
+	}
+	return "https://github.com"
+}
+func (d *gitDirectory) authUsername() string {
+	if d.username == "oauth2" {
+		return d.username
+	}
+	return "x-access-token"
 }

@@ -31,7 +31,7 @@ func (r *NotificationRepository) Exists(ctx context.Context, userID int64, kind,
 	return exists, err
 }
 func (r *NotificationRepository) Enqueue(ctx context.Context, userID int64, kind, period string, message repository.NotificationMessage) error {
-	invitation := message.Connection == "github" || message.Connection == "feedbin" || message.Connection == "raindrop"
+	invitation := message.Connection == "github" || message.Connection == "gitlab" || message.Connection == "feedbin" || message.Connection == "raindrop"
 	special := invitation || message.WorkspaceOnboarding
 	if userID <= 0 || kind == "" || period == "" ||
 		(message.Connection != "" && !invitation) || (invitation && message.WorkspaceOnboarding) ||

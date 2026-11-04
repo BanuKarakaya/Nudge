@@ -37,6 +37,7 @@ type SlackEventHandler struct {
 	timezone          *time.Location
 	analytics         repository.AnalyticsRepository
 	coding            *CodingHandler
+	gitlab            *CodingHandler
 }
 
 func (h *SlackEventHandler) WithCoding(handler *CodingHandler) *SlackEventHandler {
@@ -236,6 +237,9 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 			if h.coding != nil {
 				toolVersion = "coding-auto-publish-v3"
 			}
+			if h.gitlab != nil {
+				toolVersion += "+gitlab-v1"
+			}
 			if state.AgentToolVersion != toolVersion {
 				state.AgentThreadID = ""
 				state.AgentTokenUsage = nil
@@ -268,6 +272,13 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 					eventID = event.Event.TS
 				}
 				tools, codingReply = h.coding.ToolsForReply(tools, coding.Identity{UserID: userID, Team: event.TeamID, Channel: event.Event.Channel, Thread: threadTS, Event: eventID, Request: analyticsRecord.RequestText})
+			}
+			if h.gitlab != nil {
+				eventID := event.EventID
+				if eventID == "" {
+					eventID = event.Event.TS
+				}
+				tools, codingReply = h.gitlab.ToolsForReply(tools, coding.Identity{UserID: userID, Team: event.TeamID, Channel: event.Event.Channel, Thread: threadTS, Event: eventID, Request: analyticsRecord.RequestText}, codingReply)
 			}
 			log.Printf("slack_request=%s stage=agent_started", requestID)
 			result, err = h.runtime.Run(ctx, service.AgentRequest{
@@ -357,3 +368,8 @@ func slackRequestID(event slackEventEnvelope) string {
 }
 
 var slackUserMention = regexp.MustCompile(`<@[A-Z0-9]+>`)
+
+func (h *SlackEventHandler) WithGitLab(handler *CodingHandler) *SlackEventHandler {
+	h.gitlab = handler
+	return h
+}

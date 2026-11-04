@@ -74,7 +74,7 @@ func ValidFilePath(name string) bool {
 }
 
 func (r Review) Validate() error {
-	if !taskID.MatchString(r.TaskID) || !ValidRepository(r.Repository.FullName) || r.Repository.ID <= 0 || r.Repository.InstallationID <= 0 || !gitObjectID.MatchString(r.BaseCommit) || !gitObjectID.MatchString(r.BaseTree) {
+	if !taskID.MatchString(r.TaskID) || !r.Repository.Valid() || !gitObjectID.MatchString(r.BaseCommit) || !gitObjectID.MatchString(r.BaseTree) {
 		return ErrArguments
 	}
 	if r.Branch != "codex/nudgy-"+r.TaskID || len(r.Changes) == 0 || len(r.Changes) > MaxChangedFiles || len(r.Summary) > 16000 || r.CreatedAt.IsZero() {

@@ -315,6 +315,7 @@ func TestCodingStorePostgres(t *testing.T) {
 	if got, err := s.CancelDraft(ctx, identity, first.ID); err != nil || got.Status != "cancelled" {
 		t.Fatal("repeat cancel failed")
 	}
+	t.Run("GitLab isolation", func(t *testing.T) { testGitLabStoreIsolation(t, ctx, db, cipher, s) })
 }
 
 type workspaceRepoProvider struct {

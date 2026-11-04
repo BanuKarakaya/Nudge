@@ -12,7 +12,7 @@ import (
 var _ coding.EditStore = (*CodingStore)(nil)
 
 func (s *CodingStore) ListEditTasks(ctx context.Context, i coding.Identity, accountID int64) ([]coding.Task, error) {
-	rows, err := s.db.Query(ctx, `SELECT `+editColumns+` FROM coding_edits WHERE user_id=$1 AND team_id=$2 AND channel_id=$3 AND thread_ts=$4 ORDER BY created_at DESC LIMIT 20`, i.UserID, i.Team, i.Channel, i.Thread)
+	rows, err := s.db.Query(ctx, `SELECT `+editColumns+` FROM `+s.table("coding_edits")+` WHERE user_id=$1 AND team_id=$2 AND channel_id=$3 AND thread_ts=$4 ORDER BY created_at DESC LIMIT 20`, i.UserID, i.Team, i.Channel, i.Thread)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +79,7 @@ func (s *CodingStore) CreateEdit(ctx context.Context, e coding.Edit) (coding.Edi
 	if err := tx.QueryRow(ctx, `SELECT id FROM users WHERE id=$1 AND team_id=$2 FOR NO KEY UPDATE`, i.UserID, i.Team).Scan(&owner); err != nil {
 		return coding.Edit{}, coding.ErrDenied
 	}
-	existing, err := s.scanEdit(tx.QueryRow(ctx, `SELECT `+editColumns+` FROM coding_edits WHERE user_id=$1 AND team_id=$2 AND channel_id=$3 AND event_id=$4`, i.UserID, i.Team, i.Channel, i.Event))
+	existing, err := s.scanEdit(tx.QueryRow(ctx, `SELECT `+editColumns+` FROM `+s.table("coding_edits")+` WHERE user_id=$1 AND team_id=$2 AND channel_id=$3 AND event_id=$4`, i.UserID, i.Team, i.Channel, i.Event))
 	if err == nil {
 		return existing, tx.Commit(ctx)
 	}
@@ -87,15 +87,15 @@ func (s *CodingStore) CreateEdit(ctx context.Context, e coding.Edit) (coding.Edi
 		return coding.Edit{}, err
 	}
 	var active int
-	if err := tx.QueryRow(ctx, `SELECT COUNT(*) FROM coding_edits WHERE user_id=$1 AND status NOT IN ('pushed','cancelled')`, i.UserID).Scan(&active); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT COUNT(*) FROM `+s.table("coding_edits")+` WHERE user_id=$1 AND status NOT IN ('pushed','cancelled')`, i.UserID).Scan(&active); err != nil {
 		return coding.Edit{}, err
 	}
 	if active >= 10 {
 		return coding.Edit{}, errors.New("en fazla 10 açık kod görevi olabilir; önce mevcut bir görevi tamamla veya iptal et")
 	}
-	created, err := s.scanEdit(tx.QueryRow(ctx, `INSERT INTO coding_edits(id,user_id,team_id,channel_id,thread_ts,event_id,status,payload)
+	created, err := s.scanEdit(tx.QueryRow(ctx, `INSERT INTO `+s.table("coding_edits")+`(id,user_id,team_id,channel_id,thread_ts,event_id,status,payload)
 VALUES($1,$2,$3,$4,$5,$6,$7,$8)
-ON CONFLICT(user_id,team_id,channel_id,event_id) DO UPDATE SET event_id=coding_edits.event_id
+ON CONFLICT(user_id,team_id,channel_id,event_id) DO UPDATE SET event_id=`+s.table("coding_edits")+`.event_id
 RETURNING `+editColumns, e.Task.ID, i.UserID, i.Team, i.Channel, i.Thread, i.Event, e.Task.Status, value))
 	if err != nil {
 		return coding.Edit{}, err
@@ -104,7 +104,7 @@ RETURNING `+editColumns, e.Task.ID, i.UserID, i.Team, i.Channel, i.Thread, i.Eve
 }
 
 func (s *CodingStore) GetEdit(ctx context.Context, userID int64, id string) (coding.Edit, error) {
-	return s.scanEdit(s.db.QueryRow(ctx, `SELECT `+editColumns+` FROM coding_edits WHERE id=$1 AND user_id=$2`, id, userID))
+	return s.scanEdit(s.db.QueryRow(ctx, `SELECT `+editColumns+` FROM `+s.table("coding_edits")+` WHERE id=$1 AND user_id=$2`, id, userID))
 }
 
 func (s *CodingStore) WithEdit(ctx context.Context, userID int64, id string, fn func(*coding.Edit) error) error {
@@ -113,7 +113,7 @@ func (s *CodingStore) WithEdit(ctx context.Context, userID int64, id string, fn 
 		return err
 	}
 	defer tx.Rollback(context.Background())
-	e, err := s.scanEdit(tx.QueryRow(ctx, `SELECT `+editColumns+` FROM coding_edits WHERE id=$1 AND user_id=$2 FOR UPDATE`, id, userID))
+	e, err := s.scanEdit(tx.QueryRow(ctx, `SELECT `+editColumns+` FROM `+s.table("coding_edits")+` WHERE id=$1 AND user_id=$2 FOR UPDATE`, id, userID))
 	if err != nil {
 		return err
 	}
@@ -124,7 +124,7 @@ func (s *CodingStore) WithEdit(ctx context.Context, userID int64, id string, fn 
 	if err != nil {
 		return err
 	}
-	if _, err = tx.Exec(ctx, `UPDATE coding_edits SET payload=$3,status=$4,updated_at=NOW() WHERE id=$1 AND user_id=$2`, id, userID, value, e.Task.Status); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE `+s.table("coding_edits")+` SET payload=$3,status=$4,updated_at=NOW() WHERE id=$1 AND user_id=$2`, id, userID, value, e.Task.Status); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

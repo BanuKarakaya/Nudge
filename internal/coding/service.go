@@ -13,6 +13,7 @@ import (
 )
 
 type Service struct {
+	kind     string
 	store    Store
 	provider Provider
 	edits    EditStore
@@ -162,20 +163,21 @@ func (s *Service) verifiedConnection(ctx context.Context, identity Identity) (Ac
 		if c.UserID != identity.UserID || c.Team != identity.Team {
 			return ErrDenied
 		}
-		if c.GitHubUserID <= 0 || c.Login == "" || !strings.HasPrefix(c.Credentials.Access, "ghu_") {
+		if c.GitHubUserID <= 0 || c.Login == "" || !s.validToken(c.Credentials.Access) {
 			return ErrConnect
 		}
 		if !c.Credentials.Expires.IsZero() && time.Now().Add(time.Minute).After(c.Credentials.Expires) {
-			if c.Credentials.Refresh == "" || !time.Now().Before(c.Credentials.RefreshExpires) {
+			if c.Credentials.Refresh == "" || (!c.Credentials.RefreshExpires.IsZero() && !time.Now().Before(c.Credentials.RefreshExpires)) {
 				return ErrConnect
 			}
 			next, err := s.provider.Refresh(ctx, c.Credentials.Refresh)
 			if err != nil {
 				return ErrConnect
 			}
+			next.SelectedProjects = c.Credentials.SelectedProjects
 			c.Credentials = next
 		}
-		if !strings.HasPrefix(c.Credentials.Access, "ghu_") {
+		if !s.validToken(c.Credentials.Access) {
 			return ErrConnect
 		}
 		id, login, err := s.provider.User(ctx, c.Credentials.Access)
@@ -183,7 +185,7 @@ func (s *Service) verifiedConnection(ctx context.Context, identity Identity) (Ac
 			return err
 		}
 		if id != c.GitHubUserID || login == "" {
-			log.Printf("coding_event=github_identity_mismatch user_id=%d expected_github_user_id=%d actual_github_user_id=%d", identity.UserID, c.GitHubUserID, id)
+			log.Printf("coding_event=identity_mismatch provider=%s user_id=%d expected_account_id=%d actual_account_id=%d", s.Kind(), identity.UserID, c.GitHubUserID, id)
 			return ErrConnect
 		}
 		account = Account{ID: id, Login: login}
@@ -218,21 +220,25 @@ func (s *Service) RepositoryAccess(ctx context.Context, identity Identity) (Repo
 	if err != nil {
 		return RepositoryAccess{}, err
 	}
+	repos, err = s.filterSelected(ctx, identity.UserID, repos)
+	if err != nil {
+		return RepositoryAccess{}, err
+	}
 	result := make([]Repository, 0)
 	for _, repo := range repos {
-		if repo.ID > 0 && repo.InstallationID > 0 && ValidRepository(repo.FullName) && repo.DefaultBranch != "" {
+		if repo.Valid() && repo.Kind() == s.Kind() && repo.DefaultBranch != "" {
 			result = append(result, repo)
 		}
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].FullName < result[j].FullName })
-	log.Printf("coding_event=repositories_listed user_id=%d github_user_id=%d count=%d", identity.UserID, account.ID, len(result))
+	log.Printf("coding_event=repositories_listed provider=%s user_id=%d account_id=%d count=%d", s.Kind(), identity.UserID, account.ID, len(result))
 	return RepositoryAccess{Account: account, Repositories: result}, nil
 }
 
 // Prepare stores intent only. This phase has no executor, push, or PR API.
 // A future runner must require explicit approval and recheck current permissions.
 func (s *Service) Prepare(ctx context.Context, identity Identity, name string) (Task, error) {
-	if !ValidRepository(name) || identity.Event == "" || identity.Channel == "" || identity.Thread == "" || strings.TrimSpace(identity.Request) == "" || utf8.RuneCountInString(identity.Request) > 12000 {
+	if !s.validName(name) || identity.Event == "" || identity.Channel == "" || identity.Thread == "" || strings.TrimSpace(identity.Request) == "" || utf8.RuneCountInString(identity.Request) > 12000 {
 		return Task{}, ErrArguments
 	}
 	repos, err := s.Repositories(ctx, identity)
@@ -247,7 +253,7 @@ func (s *Service) Prepare(ctx context.Context, identity Identity, name string) (
 		if err != nil {
 			return Task{}, ErrUnavailable
 		}
-		task, err := s.store.CreateDraft(ctx, Task{ID: id, Identity: identity, Provider: "github", Repository: repo, Instruction: identity.Request, Status: "draft", CreatedAt: time.Now().UTC()})
+		task, err := s.store.CreateDraft(ctx, Task{ID: id, Identity: identity, Provider: s.Kind(), Repository: repo, Instruction: identity.Request, Status: "draft", CreatedAt: time.Now().UTC()})
 		if err != nil {
 			return Task{}, ErrUnavailable
 		}

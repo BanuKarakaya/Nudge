@@ -36,8 +36,11 @@ type codingReply struct {
 	reviews  map[string]coding.EditInfo
 }
 
-func (h *CodingHandler) ToolsForReply(base service.AgentTools, i coding.Identity) (service.AgentTools, *codingReply) {
+func (h *CodingHandler) ToolsForReply(base service.AgentTools, i coding.Identity, existing ...*codingReply) (service.AgentTools, *codingReply) {
 	reply := &codingReply{h: h, identity: i, reviews: make(map[string]coding.EditInfo)}
+	if len(existing) > 0 && existing[0] != nil {
+		reply = existing[0]
+	}
 	return h.Tools(base, i, func(info coding.EditInfo) {
 		reply.mu.Lock()
 		defer reply.mu.Unlock()
@@ -89,13 +92,13 @@ func (r *codingReply) blocks(text string) ([]map[string]any, error) {
 	for _, id := range ids {
 		info := r.reviews[id]
 		if info.Task.Status == "pushed" {
-			branchURL := "https://github.com/" + info.Task.Repository.FullName + "/tree/" + info.Branch
+			branchURL := info.Task.Repository.BranchURL(info.Branch)
 			blocks = append(blocks,
-				map[string]any{"type": "context", "elements": []map[string]string{{"type": "plain_text", "text": info.Task.Repository.FullName + " · Dal GitHub’da hazır. Bu dalı çekerek test edebilirsin. Otomatik test çalıştırılmadı."}}},
-				map[string]any{"type": "actions", "elements": []map[string]any{{"type": "button", "text": map[string]string{"type": "plain_text", "text": "GitHub’da dalı aç"}, "url": branchURL}}})
+				map[string]any{"type": "context", "elements": []map[string]string{{"type": "plain_text", "text": info.Task.Repository.FullName + " · Dal hazır. Bu dalı çekerek test edebilirsin. Otomatik test çalıştırılmadı."}}},
+				map[string]any{"type": "actions", "elements": []map[string]any{{"type": "button", "text": map[string]string{"type": "plain_text", "text": "Dalı aç"}, "url": branchURL}}})
 			continue
 		}
-		if info.Task.Status != "awaiting_user_test" {
+		if info.Task.Status != "awaiting_user_test" || info.Task.Repository.Kind() == "gitlab" {
 			continue
 		}
 		token, err := r.h.links.Token(r.identity.UserID, pushPurpose(id, info.Digest), time.Now().Add(24*time.Hour))

@@ -100,7 +100,7 @@ func sameScope(a, b Identity) bool {
 }
 
 func (s *Service) editAccess(ctx context.Context, i Identity, e Edit) (string, error) {
-	if !sameScope(i, e.Task.Identity) {
+	if !sameScope(i, e.Task.Identity) || e.Task.Repository.Kind() != s.Kind() {
 		return "", ErrNotFound
 	}
 	account, token, err := s.verifiedConnection(ctx, i)
@@ -108,6 +108,9 @@ func (s *Service) editAccess(ctx context.Context, i Identity, e Edit) (string, e
 		return "", err
 	}
 	if account.ID != e.AccountID {
+		return "", ErrDenied
+	}
+	if selected, err := s.filterSelected(ctx, i.UserID, []Repository{e.Task.Repository}); err != nil || len(selected) != 1 {
 		return "", ErrDenied
 	}
 	if checker, ok := s.provider.(interface {
@@ -134,7 +137,7 @@ func (s *Service) BeginEdit(ctx context.Context, i Identity, name string) (EditI
 	if !s.EditingAvailable() {
 		return EditInfo{}, ErrUnavailable
 	}
-	if !ValidRepository(name) || i.Event == "" || i.Channel == "" || i.Thread == "" || strings.TrimSpace(i.Request) == "" || len(i.Request) > 48000 {
+	if !s.validName(name) || i.Event == "" || i.Channel == "" || i.Thread == "" || strings.TrimSpace(i.Request) == "" || len(i.Request) > 48000 {
 		return EditInfo{}, ErrArguments
 	}
 	account, token, err := s.verifiedConnection(ctx, i)
@@ -145,9 +148,13 @@ func (s *Service) BeginEdit(ctx context.Context, i Identity, name string) (EditI
 	if err != nil {
 		return EditInfo{}, err
 	}
+	repos, err = s.filterSelected(ctx, i.UserID, repos)
+	if err != nil {
+		return EditInfo{}, err
+	}
 	var repo Repository
 	for _, candidate := range repos {
-		if strings.EqualFold(candidate.FullName, name) {
+		if candidate.Valid() && candidate.Kind() == s.Kind() && strings.EqualFold(candidate.FullName, name) {
 			repo = candidate
 			break
 		}
@@ -159,7 +166,7 @@ func (s *Service) BeginEdit(ctx context.Context, i Identity, name string) (EditI
 	if err != nil {
 		return EditInfo{}, err
 	}
-	e, err := s.edits.CreateEdit(ctx, Edit{Task: Task{ID: id, Identity: i, Provider: "github", Repository: repo, Instruction: i.Request, Status: "cloning", CreatedAt: time.Now().UTC()}, AccountID: account.ID})
+	e, err := s.edits.CreateEdit(ctx, Edit{Task: Task{ID: id, Identity: i, Provider: s.Kind(), Repository: repo, Instruction: i.Request, Status: "cloning", CreatedAt: time.Now().UTC()}, AccountID: account.ID})
 	if err != nil {
 		return EditInfo{}, err
 	}
@@ -405,7 +412,7 @@ func (s *Service) pushEdit(ctx context.Context, i Identity, id string, approved 
 	}
 	var result EditInfo
 	err := s.edits.WithEdit(ctx, i.UserID, id, func(e *Edit) error {
-		if !sameScope(i, e.Task.Identity) {
+		if !sameScope(i, e.Task.Identity) || e.Task.Repository.Kind() != s.Kind() {
 			return ErrNotFound
 		}
 		// The caller binds publishing to the frozen review: automatic completion
@@ -449,7 +456,7 @@ func (s *Service) CancelEdit(ctx context.Context, i Identity, id string) (EditIn
 		if err := s.AuthorizeIdentity(ctx, i); err != nil {
 			return err
 		}
-		if !sameScope(i, e.Task.Identity) {
+		if !sameScope(i, e.Task.Identity) || e.Task.Repository.Kind() != s.Kind() {
 			return ErrNotFound
 		}
 		if e.Task.Status == "pushed" {

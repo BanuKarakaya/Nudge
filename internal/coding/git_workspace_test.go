@@ -3,6 +3,7 @@ package coding
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -181,5 +182,34 @@ func TestGitTimeoutKillsTransportChildren(t *testing.T) {
 	}
 	if time.Since(start) > time.Second {
 		t.Fatal("transport child survived parent cancellation")
+	}
+}
+
+func TestGitLabWorkspacePublishesBranchWithoutChangingDefault(t *testing.T) {
+	g, repo, remote, run := localGitFixture(t)
+	original := g.binary
+	checked := filepath.Join(t.TempDir(), "checked-gitlab-git")
+	script := "#!/bin/sh\nif [ \"$1\" = clone ]; then\n [ \"$GIT_CONFIG_KEY_3\" = 'http.https://gitlab.com/.extraHeader' ] || exit 91\n [ \"$GIT_CONFIG_VALUE_3\" = 'AUTHORIZATION: basic " + base64.StdEncoding.EncodeToString([]byte("oauth2:"+glToken)) + "' ] || exit 92\n for arg do [ \"$arg\" != 'https://gitlab.com/team/subgroup/app.git' ] || found=yes; done\n [ \"$found\" = yes ] || exit 93\nfi\nexec " + strconv.Quote(original) + " \"$@\"\n"
+	if err := os.WriteFile(checked, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	g.binary = checked
+	repo.Provider = "gitlab"
+	repo.InstallationID = 0
+	repo.FullName = "team/subgroup/app"
+	snapshot, err := g.Clone(context.Background(), glToken, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	review := reviewFixture()
+	review.Repository = repo
+	review.BaseCommit = snapshot.Commit
+	review.BaseTree = snapshot.Tree
+	commit, err := g.Push(context.Background(), glToken, review)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run("--git-dir="+remote, "rev-parse", "refs/heads/main") != snapshot.Commit || run("--git-dir="+remote, "rev-parse", "refs/heads/"+review.Branch) != commit {
+		t.Fatal("wrong ref published")
 	}
 }

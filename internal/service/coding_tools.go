@@ -110,7 +110,7 @@ func (t *codingTools) Call(ctx context.Context, name string, raw json.RawMessage
 		if err != nil {
 			return "", err
 		}
-		return marshalAgentResult(map[string]any{"github_account": account})
+		return marshalAgentResult(map[string]any{t.service.Kind() + "_account": account})
 	case "github_connect":
 		t.linkOnce.Do(func() {
 			if t.sendLink == nil {
@@ -122,13 +122,13 @@ func (t *codingTools) Call(ctx context.Context, name string, raw json.RawMessage
 		if t.linkErr != nil {
 			return "", errors.New("GitHub bağlantı linki özel mesajla gönderilemedi")
 		}
-		return marshalAgentResult(map[string]any{"connection_link_sent_privately": true, "instruction": "Kullanıcıya özel mesajdaki bağlantıdan GitHub hesabını ve repolarını seçip Nudgy'ye izin vermesini söyle. Henüz bağlantı tamamlandı deme. Yalnızca bağlantı istendiyse burada dur; repo listeleme, görev hazırlama veya başka işlem yapma."})
+		return marshalAgentResult(map[string]any{"connection_link_sent_privately": true, "instruction": "Kullanıcıya özel mesajdaki bağlantıdan " + t.service.DisplayName() + " hesabını bağlayıp repolarını seçmesini söyle. Henüz tamamlandı deme. Yalnızca bağlantı istendiyse burada dur; başka işlem yapma."})
 	case "repositories_list":
 		access, err := t.service.RepositoryAccess(ctx, t.identity)
 		if err != nil {
 			return "", err
 		}
-		return marshalAgentResult(map[string]any{"github_account": access.Account, "repositories": access.Repositories, "code_editing_available": t.service.EditingAvailable(), "execution_available": false, "instruction": "State the verified github_account.login. These are accessible repositories, not necessarily repositories owned by that account. Never infer that the repository owner is the connected account."})
+		return marshalAgentResult(map[string]any{t.service.Kind() + "_account": access.Account, "repositories": access.Repositories, "code_editing_available": t.service.EditingAvailable(), "execution_available": false, "instruction": "State the verified account login. These are selected accessible repositories, not necessarily owned by that account. Never infer account identity from repository owner."})
 	case "repository_task_prepare":
 		task, err := t.service.Prepare(ctx, t.identity, args.Repository)
 		if err != nil {
@@ -182,9 +182,9 @@ func (t *codingTools) callEdit(ctx context.Context, name, id, repo, path, conten
 		info, err = t.service.FinishAndPublish(ctx, t.identity, id, summary)
 		if err == nil {
 			if t.sendReview == nil {
-				notificationError = "Dal GitHub’a pushlandı; özel inceleme mesajı gönderilemedi. Dalı GitHub’dan çekerek test edebilirsin."
+				notificationError = "Dal " + t.service.DisplayName() + " üzerinde hazır; özel inceleme mesajı gönderilemedi. Dalı çekerek test edebilirsin."
 			} else if notifyErr := t.sendReview(ctx, info); notifyErr != nil {
-				notificationError = "Dal GitHub’a pushlandı; özel inceleme mesajı gönderilemedi. Dalı GitHub’dan çekerek test edebilirsin."
+				notificationError = "Dal " + t.service.DisplayName() + " üzerinde hazır; özel inceleme mesajı gönderilemedi. Dalı çekerek test edebilirsin."
 			}
 		}
 	default:
@@ -195,6 +195,6 @@ func (t *codingTools) callEdit(ctx context.Context, name, id, repo, path, conten
 	}
 	info.ApprovalCommand = "" // Legacy approval material never enters model context.
 	info.Digest = ""
-	result, err := marshalAgentResult(map[string]any{"edit": info, "code_editing_available": true, "execution_available": false, "notification_error": notificationError, "notice": "Otomatik test çalıştırılmadı. status=pushed ise değişiklikler aynı reponun ayrı dalında GitHub’a gönderildi; kullanıcı bu dalı clone/fetch ederek test edebilir. Tekrar push onayı isteme. Ana dal değiştirilmedi, PR veya merge yapılmadı. awaiting_user_test ise henüz yayınlanmamış kayıtlı çalışma var; tamamlamak için repository_edit_finish kullan. Yalnızca başarılı push sonucunda GitHub’a gönderildi de."})
+	result, err := marshalAgentResult(map[string]any{"edit": info, "code_editing_available": true, "execution_available": false, "notification_error": notificationError, "notice": "Otomatik test çalıştırılmadı. status=pushed ise değişiklikler aynı reponun ayrı dalına gönderildi; kullanıcı bu dalı clone/fetch ederek test edebilir. Tekrar push onayı isteme. Ana dal değiştirilmedi, PR veya merge yapılmadı. awaiting_user_test ise henüz yayınlanmamış kayıtlı çalışma var; tamamlamak için repository_edit_finish kullan. Yalnızca başarılı push sonucunda uzak repoya gönderildi de."})
 	return result, true, err
 }

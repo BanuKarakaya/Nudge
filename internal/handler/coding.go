@@ -31,6 +31,10 @@ func NewCodingHandler(s *coding.Service, installations repository.InstallationRe
 }
 
 func (h *CodingHandler) RegisterRoutes(public, admin *http.ServeMux) {
+	if h.service.Kind() == "gitlab" {
+		h.registerGitLab(public, admin)
+		return
+	}
 	public.HandleFunc("GET /github/install", h.install)
 	public.HandleFunc("GET /github/setup", h.setup)
 	public.HandleFunc("POST /github/setup", h.setup)
@@ -175,7 +179,7 @@ func (h *CodingHandler) callback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *CodingHandler) Tools(base service.AgentTools, identity coding.Identity, ready ...func(coding.EditInfo)) service.AgentTools {
-	return service.NewCodingTools(base, h.service, identity, func(ctx context.Context) error {
+	tools := service.NewCodingTools(base, h.service, identity, func(ctx context.Context) error {
 		installation, err := h.installations.GetByUserID(ctx, identity.UserID)
 		if err != nil {
 			return err
@@ -188,7 +192,7 @@ func (h *CodingHandler) Tools(base service.AgentTools, identity coding.Identity,
 		if err != nil || userID != identity.UserID {
 			return coding.ErrDenied
 		}
-		link, err := h.links.URL(h.publicURL, identity.UserID, "github", time.Now())
+		link, err := h.links.URL(h.publicURL, identity.UserID, h.service.Kind(), time.Now())
 		if err != nil {
 			return err
 		}
@@ -196,11 +200,15 @@ func (h *CodingHandler) Tools(base service.AgentTools, identity coding.Identity,
 		if err != nil {
 			return err
 		}
-		return h.client.PostMessage(ctx, installation.BotToken, channel, "GitHub hesabını Nudgy’ye bağlamak için özel bağlantın:\n"+link+"\nGitHub’da kendi hesabını ve bağlamak istediğin repoları seç, ardından Nudgy’ye izin ver. Bu bağlantı yalnızca hesabını ve repo izinlerini bağlar. Linki paylaşma.")
+		return h.client.PostMessage(ctx, installation.BotToken, channel, h.service.DisplayName()+" hesabını Nudgy’ye bağlamak için özel bağlantın:\n"+link+"\nKendi hesabını doğrula ve Nudgy’ye bağlamak istediğin repoları seç. Bu bağlantı yalnızca hesabını ve repo izinlerini bağlar. Linki paylaşma.")
 	}, func(ctx context.Context, info coding.EditInfo) error {
 		for _, fn := range ready {
 			fn(info)
 		}
 		return h.sendEditReview(ctx, identity, info)
 	})
+	if h.service.Kind() == "gitlab" {
+		return service.GitLabTools(base, tools)
+	}
+	return tools
 }
