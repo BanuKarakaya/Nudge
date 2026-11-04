@@ -140,7 +140,7 @@ func TestReviewZIPContainsExactWorkingCopy(t *testing.T) {
 	}
 }
 
-func TestReviewExplainsHowToRunXcodeCopyWithoutPushing(t *testing.T) {
+func TestReviewExplainsHowToRunXcodeCopy(t *testing.T) {
 	h, store, link := reviewHandlerFixture(t)
 	store.edit.Snapshot.Files = append(store.edit.Snapshot.Files, coding.RepositoryFile{Path: "toDoList.xcodeproj/project.pbxproj", Mode: "100644", Content: []byte("project")})
 	w := httptest.NewRecorder()
@@ -148,7 +148,7 @@ func TestReviewExplainsHowToRunXcodeCopyWithoutPushing(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatal(w.Code)
 	}
-	for _, want := range []string{"workspace/toDoList.xcodeproj", "iPhone simülatörünü", "Run (⌘R)", "Push yapmadan test"} {
+	for _, want := range []string{"workspace/toDoList.xcodeproj", "iPhone simülatörünü", "Run (⌘R)", "GitHub’a gönderilmiş dalı"} {
 		if !strings.Contains(w.Body.String(), want) {
 			t.Fatal("missing simulator instruction", want)
 		}

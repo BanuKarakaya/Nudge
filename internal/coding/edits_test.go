@@ -283,3 +283,63 @@ func TestFailedPushRetainsFrozenReviewForRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestFinishAndPublishRetriesFrozenBranchWithoutApproval(t *testing.T) {
+	s, store, git, _, _, i, info := editFixture(t)
+	ctx := context.Background()
+	if _, err := s.WriteEditFile(ctx, i, info.Task.ID, "src/app.go", "after\n", false); err != nil {
+		t.Fatal(err)
+	}
+	git.failPush = true
+	if _, err := s.FinishAndPublish(ctx, i, info.Task.ID, "Update app"); err == nil {
+		t.Fatal("failed push reported success")
+	}
+	saved, _ := store.GetEdit(ctx, i.UserID, info.Task.ID)
+	if saved.Task.Status != "awaiting_user_test" || saved.Digest == "" || len(saved.Review.Changes) != 1 {
+		t.Fatal("failed push lost frozen source")
+	}
+	git.failPush = false
+	published, err := s.FinishAndPublish(ctx, i, info.Task.ID, "Retry summary must not change frozen bytes")
+	if err != nil || published.Task.Status != "pushed" || published.Commit == "" || published.Tests != "not_run" {
+		t.Fatal("automatic publish failed", err, published)
+	}
+	if published.Branch != "codex/nudgy-"+info.Task.ID || git.review.Repository != info.Task.Repository || git.review.Summary != "Update app" || published.Digest != saved.Digest {
+		t.Fatal("published the wrong repo/ref/review")
+	}
+	calls := git.pushes
+	again, err := s.FinishAndPublish(ctx, i, info.Task.ID, "Retry")
+	if err != nil || again.Commit != published.Commit || git.pushes != calls {
+		t.Fatal("duplicate publish", err)
+	}
+}
+
+func TestFinishAndPublishRejectsForeignScopeAndRevokedAccess(t *testing.T) {
+	for _, scenario := range []string{"user", "team", "channel", "thread", "revoked", "cancelled"} {
+		t.Run(scenario, func(t *testing.T) {
+			s, _, git, provider, _, i, info := editFixture(t)
+			finishFixture(t, s, i, info.Task.ID)
+			switch scenario {
+			case "user":
+				i.UserID++
+			case "team":
+				i.Team = "other"
+			case "channel":
+				i.Channel = "other"
+			case "thread":
+				i.Thread = "other"
+			case "revoked":
+				provider.repos = nil
+			case "cancelled":
+				if _, err := s.CancelEdit(context.Background(), i, info.Task.ID); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := s.FinishAndPublish(context.Background(), i, info.Task.ID, "Update"); err == nil {
+				t.Fatal("unauthorized publish")
+			}
+			if git.pushes != 0 {
+				t.Fatal("unauthorized call reached git")
+			}
+		})
+	}
+}

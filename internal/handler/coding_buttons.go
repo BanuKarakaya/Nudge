@@ -88,6 +88,13 @@ func (r *codingReply) blocks(text string) ([]map[string]any, error) {
 	sort.Strings(ids)
 	for _, id := range ids {
 		info := r.reviews[id]
+		if info.Task.Status == "pushed" {
+			branchURL := "https://github.com/" + info.Task.Repository.FullName + "/tree/" + info.Branch
+			blocks = append(blocks,
+				map[string]any{"type": "context", "elements": []map[string]string{{"type": "plain_text", "text": info.Task.Repository.FullName + " · Dal GitHub’da hazır. Bu dalı çekerek test edebilirsin. Otomatik test çalıştırılmadı."}}},
+				map[string]any{"type": "actions", "elements": []map[string]any{{"type": "button", "text": map[string]string{"type": "plain_text", "text": "GitHub’da dalı aç"}, "url": branchURL}}})
+			continue
+		}
 		if info.Task.Status != "awaiting_user_test" {
 			continue
 		}

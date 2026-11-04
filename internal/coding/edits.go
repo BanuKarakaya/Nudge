@@ -351,7 +351,7 @@ func (s *Service) FinishEdit(ctx context.Context, i Identity, id, summary string
 		if _, err := s.editAccess(ctx, i, *e); err != nil {
 			return err
 		}
-		if e.Task.Status == "awaiting_user_test" {
+		if e.Task.Status == "awaiting_user_test" || e.Task.Status == "pushed" {
 			result = editInfo(*e, false)
 			return nil
 		}
@@ -371,6 +371,19 @@ func (s *Service) FinishEdit(ctx context.Context, i Identity, id, summary string
 		return nil
 	})
 	return result, err
+}
+
+// FinishAndPublish freezes edits durably before publishing the task branch for
+// manual testing. Repeated calls reuse the frozen review and deterministic commit.
+// Identity is supplied by the signed Slack event; the model cannot choose a ref.
+func (s *Service) FinishAndPublish(ctx context.Context, i Identity, id, summary string) (EditInfo, error) {
+	info, err := s.FinishEdit(ctx, i, id, summary)
+	if err != nil {
+		return EditInfo{}, err
+	}
+	return s.pushEdit(ctx, i, id, func(e Edit) bool {
+		return i.Event != "" && info.Digest != "" && e.Digest == info.Digest
+	})
 }
 
 func (s *Service) PushEdit(ctx context.Context, i Identity, id string) (EditInfo, error) {
@@ -395,8 +408,8 @@ func (s *Service) pushEdit(ctx context.Context, i Identity, id string, approved 
 		if !sameScope(i, e.Task.Identity) {
 			return ErrNotFound
 		}
-		// Approval is the entire current, signed Slack message, never model args,
-		// history, repository instructions or the message that prepared the code.
+		// The caller binds publishing to the frozen review: automatic completion
+		// or a legacy owner approval. Scope and fresh GitHub access remain mandatory.
 		if e.Digest == "" || !approved(*e) {
 			return errors.New("push için güncel inceleme mesajındaki Pushla butonuna görevin sahibi basmalı")
 		}

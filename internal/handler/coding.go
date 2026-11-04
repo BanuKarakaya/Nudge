@@ -198,12 +198,9 @@ func (h *CodingHandler) Tools(base service.AgentTools, identity coding.Identity,
 		}
 		return h.client.PostMessage(ctx, installation.BotToken, channel, "GitHub hesabını Nudgy’ye bağlamak için özel bağlantın:\n"+link+"\nGitHub’da kendi hesabını ve bağlamak istediğin repoları seç, ardından Nudgy’ye izin ver. Bu bağlantı yalnızca hesabını ve repo izinlerini bağlar. Linki paylaşma.")
 	}, func(ctx context.Context, info coding.EditInfo) error {
-		if err := h.sendEditReview(ctx, identity, info); err != nil {
-			return err
-		}
 		for _, fn := range ready {
 			fn(info)
 		}
-		return nil
+		return h.sendEditReview(ctx, identity, info)
 	})
 }

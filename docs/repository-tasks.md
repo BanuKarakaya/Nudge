@@ -5,8 +5,8 @@ clone repositories into separate temporary Git workspaces on the existing Railwa
 service, and edit source files through bounded tools. Disabled unless
 `NUDGY_CODING_ENABLED=true`. Prepared source is encrypted in PostgreSQL so it
 survives Railway restarts. Automatic tests, repository scripts, PRs and merges
-are not run. A later explicit user approval publishes the reviewed code to a
-new `codex/nudgy-<task-id>` branch. GitLab is not implemented yet.
+are not run. Completing a coding task automatically publishes the prepared code
+to a new `codex/nudgy-<task-id>` branch for the user to clone and test. GitLab is not implemented yet.
 
 ## GitHub App setup
 
@@ -17,8 +17,7 @@ Set **Setup URL** to `https://YOUR_NUDGE_HOST/github/setup` and enable
 **Redirect on update**. Make the App public so other users can install it.
 The setup redirect starts the separate PKCE OAuth step automatically. Grant repository **Contents: read/write**, **Pull requests: read/write**,
 and **Metadata: read**. Install only on selected repositories. No webhook or App
-private key is needed. The linked user access token authorizes cloning and,
-after approval, pushing the new branch. The runtime image includes Git.
+private key is needed. The linked user access token authorizes cloning and publishing the task branch. The runtime image includes Git.
 
 ```text
 NUDGY_CODING_ENABLED=true
@@ -79,34 +78,27 @@ change, and removed permissions stop authorizing new tasks.
    actual file edits in the encrypted task workspace. Native shell/host file
    tools remain disabled. No project hooks, filters, submodules or tests run.
 5. Finishing freezes the changed bytes, base commit, branch and summary under a
-   SHA-256 review digest. A private DM contains a 24-hour review link, before/after
-   source views, and a ZIP of the complete edited working copy (without `.git`).
-   The user tests that copy in their own environment. `tests=not_run` is always
-   shown; the model cannot manufacture successful test results. For Xcode repos,
-   the review page identifies the downloaded workspace/project: open it in Xcode,
-   select the app scheme and iPhone simulator, then Run (⌘R). The existing local
-   checkout is not automatically updated and pushing first is not necessary.
-6. The host attaches a **Pushla** button below the model's original Slack reply.
-   The user tests the copy, then clicks once. No command, task ID or digest needs
-   to be copied. The button carries a 24-hour capability bound to owner, task and
-   review digest, with a separate purpose from the read-only review link.
-   The signed Slack `block_actions` request must also match the actual clicking
-   user, workspace, channel and thread. Other users, expired capabilities, changed
-   code and cancelled tasks cannot authorize a push. The handler acknowledges
-   within Slack's 3-second window, then performs the push asynchronously with a
-   bounded four-job limit. Success removes the clicked button and reports the
-   resulting branch in the same thread; failures notify the owner privately.
-   A restart during an in-flight request can require clicking again; persisted
-   review data and deterministic Git publishing make retries safe. Asking for
-   task status sends a fresh review link and replacement button, including for
-   tasks prepared before this UI was deployed.
-7. Current account and repository write permissions are verified again. Git
-   reconstructs the frozen changes, creates a deterministic commit and pushes
-   only its new branch with an explicit empty ref lease. Existing unrelated refs
-   cannot be replaced; the default branch is never updated. If the default branch
-   moved, prepare a new task against current code and test again. Successful-push
-   retries recover the same commit even if the response/database write was lost.
-   Row locks serialize concurrent approvals across service instances.
+   SHA-256 review digest, then automatically publishes a new `codex/nudgy-<task>`
+   branch in the same repository. There is no additional push approval for this
+   workflow. The user clones/fetches this branch and tests it locally. Tests and
+   repository scripts are not run by Nudgy; `tests=not_run` remains explicit.
+6. The Slack reply includes **GitHub’da dalı aç** and the published branch.
+   A private DM also provides an optional 24-hour review link with before/after
+   source and a ZIP. For Xcode repos, open the project from the cloned branch,
+   choose the app scheme and iPhone simulator, then Run (⌘R).
+   A DM delivery failure does not hide a successful push; the branch remains
+   available in the tool result and Slack reply. Status resends the review link
+   for published tasks without pushing again. Old unpublished tasks retain their
+   owner-bound Pushla buttons; explicitly finishing them uses the new workflow.
+7. Current account and repository write permissions are verified again before
+   publishing. Git reconstructs the frozen changes, creates a deterministic
+   commit and pushes only its new branch with an explicit empty ref lease.
+   Existing unrelated refs cannot be replaced; the default branch is never
+   updated. No PR or merge is performed. If the default branch moved, prepare a
+   new task against current code. A failed push leaves the frozen source saved;
+   repeat `repository_edit_finish` on the same task. Successful-push retries
+   recover the same commit even if the response/database write was lost.
+   Row locks serialize publishing across service instances.
 
 The turn retains the existing 120-second agent and 45-second tool budgets. Large
 changes can require more than one Slack turn. `repository_tasks_list` recovers
@@ -116,8 +108,8 @@ A failed clone remains cancellable. Old legacy drafts never start automatically.
 Tools: `github_connect`, `github_connection_status`, `repositories_list`, `repository_task_prepare`,
 `repository_task_status`, `repository_task_cancel`, `repository_tasks_list`,
 `repository_file_read`, `repository_file_write`, `repository_edit_finish`.
-Push is handled exclusively by signed button interactions, outside the model
-tool surface. Enable Slack Interactivity with request URL
+Publishing is part of `repository_edit_finish`; the model cannot choose the target
+branch or bypass owner/repository checks. Legacy Pushla messages still work. Enable Slack Interactivity with request URL
 `https://YOUR_NUDGE_HOST/slack/interactions` (the existing bookmark route). Native Codex threads are
 renewed when the tool set changes, retaining delivered conversation history.
 Local greeting responses still bypass model calls.

@@ -112,9 +112,10 @@ Codex decides when to request it and writes the final Slack answer.
 Tool calls are checked against both active native thread and turn IDs. Calls are
 deduplicated by call ID within the run. Default data tools are read-only. The
 optional [repository editing tools](repository-tasks.md) clone GitHub source,
-read/write a user-bound encrypted workspace and freeze it for manual testing.
-Only a verified owner click on the host-rendered Pushla button can push that
-frozen version to a new branch; push is not exposed as a model tool.
+read/write a user-bound encrypted workspace, freeze it and automatically publish
+a new branch in the same repository when repository_edit_finish succeeds. Users
+clone/fetch that branch for manual testing; no extra push approval is requested.
+The host fixes the target branch and rechecks owner identity and write permission.
 Repository scripts/tests and native shell tools remain disabled; there is no PR
 or merge operation. Pending edits survive restarts and can be resumed.
 Bounds: four concurrent children, 120 seconds per run (including slot wait),

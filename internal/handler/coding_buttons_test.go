@@ -3,6 +3,8 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -72,6 +74,7 @@ func (buttonInstallations) GetUserIDBySlackUserID(_ context.Context, team, user 
 }
 
 type buttonClient struct {
+	failDM  bool
 	sent    chan string
 	updates chan []map[string]any
 }
@@ -80,6 +83,9 @@ func (c *buttonClient) OpenDirectMessage(context.Context, string, string) (strin
 	return "D", nil
 }
 func (c *buttonClient) PostMessage(_ context.Context, _, _, text string) error {
+	if c.failDM {
+		return errors.New("DM unavailable")
+	}
 	c.sent <- text
 	return nil
 }
@@ -267,5 +273,57 @@ func TestAwaitingTaskCanResendButtonWithoutExposingApprovalMaterial(t *testing.T
 	blocks, err := reply.blocks("Review ready")
 	if err != nil || len(blocks) < 2 {
 		t.Fatal("existing task did not get replacement button", err)
+	}
+}
+
+func TestFinishToolPublishesBeforeReportingBranchForTesting(t *testing.T) {
+	for _, failDM := range []bool{false, true} {
+		t.Run(fmt.Sprint("dm_failure=", failDM), func(t *testing.T) {
+			_, h, store, git, client, _ := buttonFixture(t)
+			client.failDM = failDM
+			store.e.Task.Status = "editing"
+			store.e.Digest = ""
+			tools, reply := h.ToolsForReply(service.NewAgentTools(nil, nil, nil, 1, time.Now(), time.UTC), store.e.Task.Identity)
+			raw, _ := json.Marshal(map[string]string{"task_id": store.e.Task.ID, "summary": "Add screen"})
+			result, err := tools.Call(context.Background(), "repository_edit_finish", raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var output struct {
+				Edit              coding.EditInfo `json:"edit"`
+				NotificationError string          `json:"notification_error"`
+			}
+			if err := json.Unmarshal([]byte(result), &output); err != nil {
+				t.Fatal(err)
+			}
+			if output.Edit.Task.Status != "pushed" || output.Edit.Commit == "" || output.Edit.Branch != store.e.Review.Branch || git.calls.Load() != 1 {
+				t.Fatal("finish did not publish", result)
+			}
+			if failDM != (output.NotificationError != "") {
+				t.Fatal("notification outcome hidden", result)
+			}
+			blocks, err := reply.blocks("Değişiklikler dalda hazır")
+			if err != nil {
+				t.Fatal(err)
+			}
+			last := blocks[len(blocks)-1]["elements"].([]map[string]any)[0]
+			if last["url"] != "https://github.com/developer/private/tree/"+store.e.Review.Branch || last["value"] != nil || last["action_id"] != nil {
+				t.Fatal("expected branch link, not push action", last)
+			}
+			if !failDM {
+				dm := <-client.sent
+				if !strings.Contains(dm, store.e.Review.Branch) || strings.Contains(dm, "henüz pushlamadım") || strings.Contains(dm, "Pushla butonuna") {
+					t.Fatal("misleading DM", dm)
+				}
+			}
+			if _, err := tools.Call(context.Background(), "repository_edit_finish", raw); err != nil || git.calls.Load() != 1 {
+				t.Fatal("retry republished", err)
+			}
+			status, _ := json.Marshal(map[string]string{"task_id": store.e.Task.ID})
+			client.failDM = false
+			if _, err := tools.Call(context.Background(), "repository_task_status", status); err != nil || git.calls.Load() != 1 {
+				t.Fatal("status republished", err)
+			}
+		})
 	}
 }

@@ -48,6 +48,9 @@ func (h *CodingHandler) sendEditReview(ctx context.Context, identity coding.Iden
 		return err
 	}
 	message := "Kod değişiklikleri hazır: " + info.Task.Repository.FullName + "\nOtomatik test çalıştırmadım ve GitHub’a henüz pushlamadım. Özel sayfadan değişiklikleri inceleyip çalışma kopyasını indirerek test edebilirsin:\n" + link + "\nTestin tamamlanınca görevi istediğin konuşmadaki mesajın altında bulunan Pushla butonuna bas. Buton yalnızca senin bu sürümü onaylamanı sağlar. Link 24 saat geçerli; paylaşma."
+	if info.Task.Status == "pushed" {
+		message = "Değişiklikler GitHub’da test için hazır: " + info.Task.Repository.FullName + "\nDal: " + info.Branch + "\nhttps://github.com/" + info.Task.Repository.FullName + "/tree/" + info.Branch + "\nBu dalı clone/fetch ederek kendi bilgisayarında test edebilirsin. Otomatik test çalıştırılmadı. Ana dala birleştirilmedi.\nİstersen değişiklikleri özel sayfadan inceleyebilir veya ZIP indirebilirsin:\n" + link + "\nİnceleme bağlantısı 24 saat geçerli; paylaşma."
+	}
 	if err := h.client.PostMessage(ctx, installation.BotToken, channel, message); err != nil {
 		return errors.New("kod kaydedildi; özel inceleme mesajı gönderilemedi, bitirme işlemini tekrar dene")
 	}
