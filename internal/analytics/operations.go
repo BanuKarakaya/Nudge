@@ -89,6 +89,7 @@ func RecordTool(ctx context.Context, tool, model string, started time.Time, succ
 		"web_search":                              "Web araması yapıldı",
 		"handoff_to_luna":                         "Model devri istendi",
 		"github_connect":                          "Özel GitHub bağlantı linki gönderildi",
+		"gitlab_connect":                          "Özel GitLab bağlantı linki gönderildi",
 		"repositories_list":                       "Yetkili repolar listelendi",
 		"repository_task_prepare":                 "Repo görev taslağı kaydedildi (çalıştırılmadı)",
 		"repository_task_status":                  "Repo görev durumu sorgulandı",

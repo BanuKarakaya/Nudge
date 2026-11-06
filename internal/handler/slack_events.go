@@ -262,11 +262,16 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 	var result service.AgentResult
 	var codingReply *codingReply
 	localReply := localSocialReply(analyticsRecord.RequestText)
+	connectProvider := connectionProvider(analyticsRecord.RequestText)
+	connectionOK := true
 	if historyLoaded {
 		log.Printf("slack_request=%s stage=history_loaded turns=%d prior_articles=%d elapsed_ms=%d", requestID, len(state.Turns), len(state.Articles), time.Since(started).Milliseconds())
+		if connectProvider != "" {
+			localReply, connectionOK = h.connectionReply(ctx, connectProvider, coding.Identity{UserID: userID, Team: event.TeamID, Channel: event.Event.Channel, Thread: threadTS, Event: slackEventKey(event), Request: analyticsRecord.RequestText}, job)
+		}
 		if localReply != "" {
 			result.Text = localReply
-			log.Printf("slack_request=%s stage=local_social_reply model_calls=0", requestID)
+			log.Printf("slack_request=%s stage=local_reply model_calls=0", requestID)
 		} else if h.runtime == nil {
 			err = fmt.Errorf("agent runtime unavailable")
 		} else {
@@ -338,15 +343,18 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 	} else {
 		log.Printf("slack_request=%s stage=history_load_failed elapsed_ms=%d error=%q", requestID, time.Since(started).Milliseconds(), err)
 	}
-	success := err == nil
+	success := err == nil && connectionOK
 	message := agentFailureMessage
-	if success {
+	if err == nil {
 		message = result.Text
 	}
 	analyticsRecord.ResponseText = message
 	analyticsRecord.Action = "AGENT"
 	if localReply != "" {
 		analyticsRecord.Action = "SOCIAL_REPLY"
+	}
+	if connectProvider != "" {
+		analyticsRecord.Action = "CONNECTION_LINK"
 	}
 	if err != nil {
 		log.Printf("slack_request=%s stage=agent_failed elapsed_ms=%d error=%q", requestID, time.Since(started).Milliseconds(), err)
