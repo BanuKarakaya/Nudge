@@ -62,7 +62,7 @@ func TestMergeRequiresExactCurrentRequestAndPinsRevision(t *testing.T) {
 	s.provider = p
 	s.store = &pinStore{memoryStore: store}
 	ctx := context.Background()
-	for _, request := range []string{"PR aç", "kodu düzelt", "merge et", "do not merge https://github.com/owner/repo/pull/12", "merge https://github.com/owner/repo/pull/13", "merge https://gitlab.com/owner/repo/-/merge_requests/12", "`merge https://github.com/owner/repo/pull/12`", "> merge https://github.com/owner/repo/pull/12", "merge https://github.com/owner/repo/pull/12?x=1", "merge https://github.com/owner/repo/pull/12\nmerge https://github.com/owner/another/pull/1"} {
+	for _, request := range []string{"PR aç", "kodu düzelt", "merge et", "do not merge https://github.com/owner/repo/pull/12", "merge https://github.com/owner/repo/pull/13", "merge https://gitlab.com/owner/repo/-/merge_requests/12", "örnek: `merge https://github.com/owner/repo/pull/12`", "> merge https://github.com/owner/repo/pull/12", "merge https://github.com/owner/repo/pull/12?x=1", "merge https://github.com/owner/repo/pull/12\nmerge https://github.com/owner/another/pull/1"} {
 		i.Request = request
 		if _, err := s.MergeChangeRequest(ctx, i, "owner/repo", 12); !errors.Is(err, ErrMergeRequest) {
 			t.Fatalf("accepted %q: %v", request, err)

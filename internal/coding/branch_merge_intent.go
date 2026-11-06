@@ -17,6 +17,7 @@ const targetSuffix = `(?:\s+(?i:dalına|branchine|branch'ine|branch’ine|branch
 var namedBranchMerge = regexp.MustCompile(`^` + mergeCourtesy + `(?i:(github|gitlab))\s+(\S+)\s+(\S+)\s+(?:->|(?i:into))\s+(\S+)\s+` + mergeVerb + `$`)
 var namedNaturalMerge = regexp.MustCompile(`^` + mergeCourtesy + `(?i:(github|gitlab))\s+(\S+)\s+(\S+)\s+(?i:dalını|branchini|branchi)\s+(\S+?)` + targetSuffix + `\s+` + mergeVerb + `$`)
 var currentBranchMerge = regexp.MustCompile(`^` + mergeCourtesy + `(?i:bu dalı|bu branchi|bu branchı|bu branchini|bu branch'i|bu branch’i)\s+(\S+?)` + targetSuffix + `\s+` + mergeVerb + `$`)
+var contextualNamedBranchMerge = regexp.MustCompile(`^` + mergeCourtesy + `(\S+)\s+(?i:bu dalı|bu branchi|bu branchı|bu branchini|dalını|branchini)\s+(\S+?)` + targetSuffix + `\s+` + mergeVerb + `$`)
 
 func branchToken(value string) string {
 	if strings.HasPrefix(value, "`") && strings.HasSuffix(value, "`") && len(value) > 2 {
@@ -28,14 +29,18 @@ func branchToken(value string) string {
 // An anchored grammar preserves branch case and rejects extra commands, quoted
 // instructions, conditions and negations. Only the signed current message enters.
 func parseBranchMerge(request string) (branchMergeIntent, bool) {
-	text := strings.TrimSpace(request)
-	if strings.ContainsAny(text, "\r\n") {
-		return branchMergeIntent{}, false
-	}
-	text = strings.Join(strings.Fields(text), " ")
+	text := normalizeMergeText(request)
 	if m := currentBranchMerge.FindStringSubmatch(text); m != nil {
 		i := branchMergeIntent{Current: true, Target: branchToken(m[1])}
 		return i, ValidBranch(i.Target)
+	}
+	if m := contextualNamedBranchMerge.FindStringSubmatch(text); m != nil {
+		i := branchMergeIntent{Current: true, Source: m[1], Target: m[2]}
+		switch strings.ToLower(i.Source) {
+		case "sakın", "asla", "örnek", "örneğin", "example", "quote", "not", "don't":
+			return branchMergeIntent{}, false
+		}
+		return i, ValidBranch(i.Source) && ValidBranch(i.Target) && i.Source != i.Target
 	}
 	for _, pattern := range []*regexp.Regexp{namedBranchMerge, namedNaturalMerge} {
 		if m := pattern.FindStringSubmatch(text); m != nil {

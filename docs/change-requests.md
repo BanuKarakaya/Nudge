@@ -49,6 +49,20 @@ With multiple tasks, specify the full source/target command. Branch case is
 preserved. Negations, quoted instructions, conditions and compound commands
 do not authorize merging.
 
+Slack inline-code formatting is accepted around a whole command, URL or branch
+name. For example, a copied `<PR URL> merge et` command remains valid when Slack
+wraps it in backticks. Fenced blocks, blockquotes and example prose remain invalid.
+`source-branch bu branchi development branchine mergeleyebilir misin` also works
+when that source identifies exactly one published task in the current user's
+thread. A different source supplied by the model is rejected. If discovery is
+truncated or the other provider has competing tasks, use the fully specified
+provider/repository/source/target command.
+
+The runtime reports whitelisted merge failure reasons (intent mismatch, changed
+revision, blocked checks, missing GitLab scope) to the assistant and logs only a
+safe error code. Unknown errors still hide raw provider/network/database details;
+they must not be presented as confirmed branch protection or permission failures.
+
 The operation returns the actual PR/MR if checks block merging. Pending provider
 mergeability calculations get a short bounded synchronous recheck; Nudgy never
 enables deferred auto-merge. A failed or unknown result is not reported as merged.

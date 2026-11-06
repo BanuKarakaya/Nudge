@@ -122,6 +122,9 @@ func (s *Service) MergeBranches(ctx context.Context, i Identity, name, source, t
 	if !ok || i.Event == "" || i.Channel == "" || i.Thread == "" || intent.Target != target {
 		return ChangeRequest{}, ErrBranchMerge
 	}
+	if intent.Source != "" && intent.Source != source {
+		return ChangeRequest{}, ErrBranchMerge
+	}
 	if !intent.Current && (intent.Provider != s.Kind() || intent.Repository != name || intent.Source != source) {
 		return ChangeRequest{}, ErrBranchMerge
 	}
@@ -158,9 +161,9 @@ func (s *Service) MergeBranches(ctx context.Context, i Identity, name, source, t
 			if err != nil {
 				return ChangeRequest{}, err
 			}
-			// A bounded task list must never hide older candidate tasks. Requiring
-			// one row also fails closed when its 20-row discovery limit is reached.
-			if len(tasks) != 1 {
+			// A bounded list must not hide older candidates. With an explicit
+			// source, filter below; without one require a single task in the thread.
+			if len(tasks) == 0 || len(tasks) >= 20 || (intent.Source == "" && len(tasks) != 1) {
 				return ChangeRequest{}, ErrBranchMerge
 			}
 			if s.mergePeer != nil {
@@ -180,6 +183,9 @@ func (s *Service) MergeBranches(ctx context.Context, i Identity, name, source, t
 				e, err := s.edits.GetEdit(ctx, i.UserID, task.ID)
 				if err != nil {
 					return ChangeRequest{}, err
+				}
+				if intent.Source != "" && e.Review.Branch != intent.Source {
+					continue
 				}
 				if !sameScope(i, e.Task.Identity) || e.AccountID != account.ID || !boundReview(e) {
 					return ChangeRequest{}, ErrDenied

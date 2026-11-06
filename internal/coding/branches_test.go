@@ -76,7 +76,7 @@ func TestBranchMergeIntentPreservesDirectionAndRejectsUntrustedInstructions(t *t
 		"bu dalı development dalına merge etme", "bu dalı development dalına mergeleyebilir miyim",
 		"bu dalı development dalına merge etmeli miyiz", "bu dalı development dalına merge etmeden önce incele",
 		"testler geçerse bu dalı development dalına merge et", "bu dalı development dalına merge et ve sil",
-		"> bu dalı development dalına merge et", "`bu dalı development dalına merge et`",
+		"> bu dalı development dalına merge et", "örnek: `bu dalı development dalına merge et`",
 		"github owner/repo main -> main merge et", "gitlab owner/repo a -> b PR aç",
 		"github owner/repo a -> b merge et\ngithub owner/other a -> b merge et", "merge et",
 	} {
@@ -183,7 +183,7 @@ func TestBranchMergeRejectsWrongIntentPermissionsAndBlockedChecks(t *testing.T) 
 }
 
 func TestCurrentTaskCanMergeIntoNonDefaultBranchAndRejectAmbiguity(t *testing.T) {
-	for _, mode := range []string{"ok", "other thread", "wrong source", "ambiguous", "peer ambiguous"} {
+	for _, mode := range []string{"ok", "explicit source", "explicit wrong source", "explicit disambiguates", "other thread", "wrong source", "ambiguous", "peer ambiguous"} {
 		t.Run(mode, func(t *testing.T) {
 			s, edits, _, base, store, i, info := editFixture(t)
 			if _, err := s.WriteEditFile(context.Background(), i, info.Task.ID, "src/app.go", "after", false); err != nil {
@@ -200,6 +200,17 @@ func TestCurrentTaskCanMergeIntoNonDefaultBranchAndRejectAmbiguity(t *testing.T)
 			i.Request = "tamam bence olmuş bu branchi development branch ine mergeleyebilir misin"
 			source := published.Branch
 			switch mode {
+			case "explicit source", "explicit wrong source", "explicit disambiguates":
+				i.Request = "`" + published.Branch + "` bu branchi development branchine mergeleyebilir misin"
+				if mode == "explicit wrong source" {
+					source = "unrelated"
+				}
+				if mode == "explicit disambiguates" {
+					e := edits.items[info.Task.ID]
+					e.Task.ID = strings.Repeat("f", 32)
+					e.Review.Branch = "other-branch"
+					edits.items[e.Task.ID] = e
+				}
 			case "other thread":
 				i.Thread = "other"
 			case "wrong source":
@@ -213,7 +224,7 @@ func TestCurrentTaskCanMergeIntoNonDefaultBranchAndRejectAmbiguity(t *testing.T)
 				s.WithMergePeer(&peer)
 			}
 			got, err := s.MergeBranches(context.Background(), i, "owner/repo", source, "development")
-			if mode == "ok" {
+			if mode == "ok" || mode == "explicit source" || mode == "explicit disambiguates" {
 				if err != nil || got.State != "merged" || got.TargetBranch != "development" {
 					t.Fatal(got, err)
 				}

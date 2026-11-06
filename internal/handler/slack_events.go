@@ -280,10 +280,10 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 			// delivered history once when coding tools are enabled or disabled.
 			toolVersion := ""
 			if h.coding != nil {
-				toolVersion = "coding-branch-merge-v5"
+				toolVersion = "coding-merge-input-v6"
 			}
 			if h.gitlab != nil {
-				toolVersion += "+gitlab-branch-merge-v3"
+				toolVersion += "+gitlab-merge-input-v4"
 			}
 			if state.AgentToolVersion != toolVersion {
 				state.AgentThreadID = ""

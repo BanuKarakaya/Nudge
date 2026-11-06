@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"nudge/internal/analytics"
+	"nudge/internal/coding"
 	"nudge/internal/service"
 )
 
@@ -374,6 +375,23 @@ func TestConsumeToolFailureContinuesAndSanitizes(t *testing.T) {
 	}
 	if string(tools.args[0]) != `{"scope":"all_unread"}` {
 		t.Fatalf("tool arguments changed: %s", tools.args[0])
+	}
+}
+
+func TestConsumePreservesSafeMergeRejectionReason(t *testing.T) {
+	tools := &recordingAgentTools{call: func(context.Context, string, json.RawMessage) (string, error) {
+		return "private partial output", fmt.Errorf("private diagnostic: %w", coding.ErrMergeRequest)
+	}}
+	_, err, replies := consumePackets(t, tools,
+		toolPacket(t, "1", "call-1", "rss_inventory", "thread-1", "turn-1", ""),
+		completedPacket(t, "thread-1", "turn-1", "completed", agentItem{Type: "agentMessage", Text: "Komut doğrulanamadı."}),
+	)
+	if err != nil || len(replies) != 1 {
+		t.Fatal(err, replies)
+	}
+	success, text := toolReply(t, replies[0])
+	if success || !strings.Contains(text, "komut doğrulama hatasıdır") || strings.Contains(text, "private") {
+		t.Fatal(success, text)
 	}
 }
 

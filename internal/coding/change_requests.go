@@ -185,7 +185,7 @@ func ExplicitMerge(request string, r Repository, number int) bool {
 	if r.Kind() == "gitlab" {
 		target = r.Origin() + "/" + r.FullName + "/-/merge_requests/" + strconv.Itoa(number)
 	}
-	normalized := strings.TrimSpace(slackChangeLink.ReplaceAllString(request, "$1"))
+	normalized := slackChangeLink.ReplaceAllString(normalizeMergeText(request), "$1")
 	for _, command := range []string{"merge " + target, target + " merge et", target + " birleştir", "birleştir " + target} {
 		if normalized == command {
 			return true

@@ -240,7 +240,7 @@ func TestEnablingCodingToolsRebootsNativeThreadButPreservesDeliveredHistory(t *t
 	})}).WithCoding(codingHandler)
 	h.replyWithSummary(conversationEvent("GitHub repolarımı göster"))
 	got, err := store.Load(context.Background(), key)
-	if err != nil || got.AgentThreadID != "new-native" || got.AgentToolVersion != "coding-branch-merge-v5" {
+	if err != nil || got.AgentThreadID != "new-native" || got.AgentToolVersion != "coding-merge-input-v6" {
 		t.Fatalf("new tool version not persisted: %+v", got)
 	}
 }
