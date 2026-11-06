@@ -104,7 +104,7 @@ func (v githubChange) change(r Repository) (ChangeRequest, error) {
 	if state != "open" && state != "closed" && state != "merged" {
 		return ChangeRequest{}, ErrUnavailable
 	}
-	return ChangeRequest{Number: v.Number, URL: r.Origin() + "/" + r.FullName + "/pull/" + strconv.Itoa(v.Number), State: state, Draft: v.Draft, HeadSHA: v.Head.SHA, SourceBranch: v.Head.Ref, TargetBranch: v.Base.Ref, MergeSHA: v.MergeSHA, Ready: v.Mergeable != nil && *v.Mergeable && v.MergeableState == "clean"}, nil
+	return ChangeRequest{Number: v.Number, URL: r.Origin() + "/" + r.FullName + "/pull/" + strconv.Itoa(v.Number), State: state, Draft: v.Draft, HeadSHA: v.Head.SHA, SourceBranch: v.Head.Ref, TargetBranch: v.Base.Ref, MergeSHA: v.MergeSHA, ReadinessPending: v.Mergeable == nil || v.MergeableState == "unknown", Ready: v.Mergeable != nil && *v.Mergeable && v.MergeableState == "clean"}, nil
 }
 func githubChanges(r Repository) string {
 	return "https://api.github.com/repos/" + r.FullName + "/pulls"
@@ -216,7 +216,7 @@ func (v gitlabChange) change(r Repository) (ChangeRequest, error) {
 	if state != "open" && state != "closed" && state != "merged" {
 		return ChangeRequest{}, ErrUnavailable
 	}
-	return ChangeRequest{Number: v.Number, URL: r.Origin() + "/" + r.FullName + "/-/merge_requests/" + strconv.Itoa(v.Number), State: state, Draft: v.Draft || v.WIP, HeadSHA: v.SHA, SourceBranch: v.Source, TargetBranch: v.Target, MergeSHA: v.MergeSHA, Ready: v.Status == "mergeable"}, nil
+	return ChangeRequest{Number: v.Number, URL: r.Origin() + "/" + r.FullName + "/-/merge_requests/" + strconv.Itoa(v.Number), State: state, Draft: v.Draft || v.WIP, HeadSHA: v.SHA, SourceBranch: v.Source, TargetBranch: v.Target, MergeSHA: v.MergeSHA, ReadinessPending: v.Status == "checking" || v.Status == "unchecked" || v.Status == "preparing", Ready: v.Status == "mergeable"}, nil
 }
 func gitlabChanges(r Repository) string {
 	return "https://gitlab.com/api/v4/projects/" + strconv.FormatInt(r.ID, 10) + "/merge_requests"

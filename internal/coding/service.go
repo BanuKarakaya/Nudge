@@ -13,6 +13,7 @@ import (
 )
 
 type Service struct {
+	mergePeer   *Service
 	branchRules BranchRules
 	kind        string
 	store       Store
@@ -20,6 +21,10 @@ type Service struct {
 	edits       EditStore
 	git         GitWorkspace
 }
+
+// Configured before workers start. Demonstrative merge requests must not choose
+// silently between a GitHub task and a GitLab task in the same Slack thread.
+func (s *Service) WithMergePeer(peer *Service) { s.mergePeer = peer }
 
 // GitHub is authoritative for repository permissions. Slack identity is resolved
 // from persisted installation/user records instead of operator-maintained lists.

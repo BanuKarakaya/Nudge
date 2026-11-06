@@ -3,9 +3,33 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"github.com/jackc/pgx/v5"
 
 	"nudge/internal/coding"
 )
+
+func (s *CodingStore) GetMergePin(ctx context.Context, i coding.Identity) (coding.MergePin, bool, error) {
+	provider := "github"
+	if s.provider == "gitlab" {
+		provider = "gitlab"
+	}
+	var raw []byte
+	var channel, thread string
+	err := s.db.QueryRow(ctx, `SELECT pin,channel_id,thread_ts FROM nudge_merge_intents WHERE provider=$1 AND user_id=$2 AND team_id=$3 AND event_id=$4`, provider, i.UserID, i.Team, i.Event).Scan(&raw, &channel, &thread)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return coding.MergePin{}, false, nil
+	}
+	if err != nil {
+		return coding.MergePin{}, false, err
+	}
+	if channel != i.Channel || thread != i.Thread {
+		return coding.MergePin{}, false, coding.ErrDenied
+	}
+	var pin coding.MergePin
+	err = json.Unmarshal(raw, &pin)
+	return pin, err == nil, err
+}
 
 func (s *CodingStore) PinMerge(ctx context.Context, i coding.Identity, pin coding.MergePin) (coding.MergePin, error) {
 	if i.Event == "" || i.Channel == "" || i.Thread == "" {

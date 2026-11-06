@@ -43,6 +43,7 @@ type SlackEventHandler struct {
 
 func (h *SlackEventHandler) WithCoding(handler *CodingHandler) *SlackEventHandler {
 	h.coding = handler
+	h.linkMergePeers()
 	return h
 }
 
@@ -279,10 +280,10 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 			// delivered history once when coding tools are enabled or disabled.
 			toolVersion := ""
 			if h.coding != nil {
-				toolVersion = "coding-pr-merge-v4"
+				toolVersion = "coding-branch-merge-v5"
 			}
 			if h.gitlab != nil {
-				toolVersion += "+gitlab-pr-merge-v2"
+				toolVersion += "+gitlab-branch-merge-v3"
 			}
 			if state.AgentToolVersion != toolVersion {
 				state.AgentThreadID = ""
@@ -468,5 +469,13 @@ var slackUserMention = regexp.MustCompile(`<@[A-Z0-9]+>`)
 
 func (h *SlackEventHandler) WithGitLab(handler *CodingHandler) *SlackEventHandler {
 	h.gitlab = handler
+	h.linkMergePeers()
 	return h
+}
+
+func (h *SlackEventHandler) linkMergePeers() {
+	if h.coding != nil && h.gitlab != nil {
+		h.coding.service.WithMergePeer(h.gitlab.service)
+		h.gitlab.service.WithMergePeer(h.coding.service)
+	}
 }

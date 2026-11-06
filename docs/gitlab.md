@@ -42,8 +42,8 @@ ve [PKCE/token yenileme belgesi](https://docs.gitlab.com/api/oauth2/).
    `team/mobile/ios-app`.
 5. Nudgy kaynak kodu düzenler ve aynı projenin yeni `codex/nudgy-<görev>` dalına
    otomatik pushlar. Mesajdaki dal bağlantısından clone/fetch yaparak test et.
-   Otomatik test çalıştırılmaz. MR açma ayrıca istenebilir; merge için açık
-   bağlantılı komut gerekir. Ayrıntılar: [PR/MR işlemleri](change-requests.md).
+   Otomatik test çalıştırılmaz. MR açma ayrıca istenebilir; merge için kaynak/hedef dalı veya MR adresini belirten açık
+   bir komut gerekir. Ayrıntılar: [PR/MR işlemleri](change-requests.md).
 
 Yeni proje eklemek veya seçimi değiştirmek için yeni bir bağlantı iste.
 Başarısız/iptal edilen bağlantı mevcut çalışan bağlantıyı değiştirmez.
@@ -73,7 +73,9 @@ Araçlar `gitlab_connect`, `gitlab_connection_status`, `gitlab_repositories_list
 `gitlab_repository_task_cancel`, `gitlab_repository_tasks_list`,
 `gitlab_repository_file_read`, `gitlab_repository_file_write`,
 `gitlab_repository_edit_finish`, `gitlab_repository_change_request_create`,
-`gitlab_repository_change_request_status`, `gitlab_repository_change_request_merge`
+`gitlab_repository_change_request_status`, `gitlab_repository_change_request_merge`,
+`gitlab_repository_branches_list`, `gitlab_repository_branch_change_request_create`,
+`gitlab_repository_branches_merge`
 adlarıyla mevcut GitHub araçları yanında sunulur.
 
 ## Doğrulama

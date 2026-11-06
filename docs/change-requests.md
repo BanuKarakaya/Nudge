@@ -1,7 +1,8 @@
 # GitHub PR and GitLab MR operations
 
-Nudgy can create a pull/merge request from a published coding task and query or
-explicitly merge an existing request in a currently authorized repository.
+Nudgy can create a pull/merge request between any two existing branches in one
+currently authorized repository, or from a published coding task. An explicit
+branch merge request can create/find the PR/MR and merge it in the same operation.
 GitHub uses the existing App user token (`Contents: write`, `Pull requests: write`).
 GitLab additionally needs OAuth `api`; see [the upgrade steps](gitlab.md).
 No new environment variable or external service is required.
@@ -13,14 +14,48 @@ Ask naturally to create a request, for example:
 > @nudgy owner/repo içindeki bu değişiklik için PR aç.
 
 Nudgy finishes/publishes the task if needed, then calls
-`repository_change_request_create` with its task ID, title and body. GitLab uses
-`gitlab_repository_change_request_create`. Creation is limited to the task owner's
-current Slack conversation, the published task branch and its original default
-branch. It never runs tests or merges. The description explicitly says automated
+`repository_change_request_create` with its task ID, title, body and optional
+`target_branch`. GitLab uses `gitlab_repository_change_request_create`. The task
+must belong to the current user and Slack conversation. The target may be any
+existing branch; omitting it uses the task's original default branch.
+It never runs tests or merges. The description explicitly says automated
 tests were not run. Existing requests (including closed/merged ones) are returned
 instead of creating another for the same task. The actual URL/state is returned.
 
-For merge, send one of these explicit commands after mentioning Nudgy:
+For branches not created by Nudgy, use `repository_branch_change_request_create`
+with `repository`, `source_branch`, `target_branch`, `title`, `body`. GitLab uses
+the `gitlab_` prefix. Discover exact names with `repository_branches_list`
+(`page=1`, 100 per page; follow `next_page` until null). The source and target
+must exist in the same repository and must differ. A previously merged branch
+with new source commits can produce a new request. Creation never merges.
+
+### Merge by branch
+
+```text
+@nudgy bu dalı development dalına merge et
+@nudgy tamam bence olmuş bu branchi development branch ine mergeleyebilir misin
+@nudgy github owner/repo feature/login -> development merge et
+@nudgy gitlab group/subgroup/project release/v2 -> main merge et
+```
+
+`repository_branches_merge` (or its `gitlab_` variant) finds/creates the request
+for the selected pair and then attempts the merge. No PR/MR URL is required.
+For arbitrary branches the signed message must explicitly name provider,
+repository, source and target as above. The host checks these against tool
+arguments; the model cannot replace the target or invent consent.
+“Bu dal” is accepted only when the current user's thread has exactly one coding
+task, already published, and no competing task on the other configured provider.
+With multiple tasks, specify the full source/target command. Branch case is
+preserved. Negations, quoted instructions, conditions and compound commands
+do not authorize merging.
+
+The operation returns the actual PR/MR if checks block merging. Pending provider
+mergeability calculations get a short bounded synchronous recheck; Nudgy never
+enables deferred auto-merge. A failed or unknown result is not reported as merged.
+
+### Merge by PR/MR URL
+
+For an existing PR/MR, send one of these explicit commands after mentioning Nudgy:
 
 ```text
 merge https://github.com/owner/repo/pull/12
@@ -32,7 +67,7 @@ https://gitlab.com/group/subgroup/project/-/merge_requests/34 birleştir
 `birleştir <URL>` is also accepted. Slack-formatted links (`<URL|label>`) work.
 The host matches the complete signed message after the bot mention is removed.
 The provider, repository and request number must match the URL exactly. Bare
-“merge et”, quoted examples, questions, negations, conditional instructions,
+“merge et”, quoted examples, negations, conditional instructions,
 multiple commands or requests that only ask to code/publish/create/review do not
 authorize a merge. The assistant explains the accepted command when ambiguous.
 No second approval is required for a valid explicit command.
@@ -46,11 +81,12 @@ can be merged even if they were not created by Nudgy, subject to current access.
 ## Permissions and concurrency
 
 Every operation rechecks Slack workspace ownership, token subject, current
-repository access and, for GitLab, the selected project list. PR/MR creation uses
+repository access and, for GitLab, the selected project list. Task PR/MR creation uses
 the existing encrypted edit row lock and saves returned request metadata there.
 If the provider accepted creation but the response/database write was lost, the
 next attempt searches by exact source/target branch before issuing another POST.
-Source changes are detected against the published commit. No credentials or
+Task source changes are detected against the published commit; arbitrary branch
+creation checks the live source revision. No credentials or
 provider error bodies are included in tool output.
 
 The additive `009_merge_intents.sql` migration runs when coding stores initialize.
@@ -59,6 +95,10 @@ number, head SHA and target branch before merging. Replays of that event cannot
 authorize a different revision or target. After the PR/MR changes, a new explicit
 Slack request is required. Already merged requests are reported as such without
 another merge call, including after a lost response or job restart.
+Branch merges additionally save the source branch and operation mode in the same
+JSON pin. Retries retrieve that exact PR/MR instead of opening another, even if
+the source branch was deleted after merging. This is an additive JSON extension;
+no new migration or environment setting is required.
 
 Both providers receive the pinned head SHA as an optimistic concurrency guard.
 Immediately before the write, Nudgy rereads the request and checks its target and
@@ -78,7 +118,8 @@ to PR/MR metadata.
 
 This feature does not run CI or tests itself. Provider readiness reflects configured
 repository rules; the model must not claim Nudgy ran tests or that every possible
-test exists. Creation, status and merging remain separate actions.
+test exists. Creation-only requests never authorize a merge; the combined branch
+merge tool requires an explicit merge request.
 
 ## Validation
 

@@ -15,15 +15,16 @@ var ErrChangeMoved = errors.New("PR/MR kaynağı veya hedefi değişti; durumu k
 var ErrMergeBlocked = errors.New("PR/MR birleştirilemiyor: izinleri, çakışmaları, zorunlu incelemeleri ve CI durumunu kontrol et")
 
 type ChangeRequest struct {
-	Number       int    `json:"number"`
-	URL          string `json:"url"`
-	State        string `json:"state"`
-	SourceBranch string `json:"source_branch"`
-	TargetBranch string `json:"target_branch"`
-	HeadSHA      string `json:"head_sha"`
-	MergeSHA     string `json:"merge_sha,omitempty"`
-	Draft        bool   `json:"draft"`
-	Ready        bool   `json:"ready"`
+	Number           int    `json:"number"`
+	URL              string `json:"url"`
+	State            string `json:"state"`
+	SourceBranch     string `json:"source_branch"`
+	TargetBranch     string `json:"target_branch"`
+	HeadSHA          string `json:"head_sha"`
+	MergeSHA         string `json:"merge_sha,omitempty"`
+	Draft            bool   `json:"draft"`
+	Ready            bool   `json:"ready"`
+	ReadinessPending bool   `json:"readiness_pending,omitempty"`
 }
 
 type ChangeRequestProvider interface {
@@ -36,6 +37,8 @@ type ChangeRequestProvider interface {
 // A merge request pins the provider-observed revision before any remote write.
 // Retrying the same signed Slack event cannot authorize newer commits.
 type MergePin struct {
+	SourceBranch string `json:"source_branch,omitempty"`
+	Mode         string `json:"mode,omitempty"`
 	AccountID    int64  `json:"account_id"`
 	RepositoryID int64  `json:"repository_id"`
 	Number       int    `json:"number"`
@@ -94,7 +97,7 @@ func (s *Service) changeAccess(ctx context.Context, i Identity, name string) (Ch
 	return nil, Repository{}, Account{}, "", ErrDenied
 }
 
-func (s *Service) CreateChangeRequest(ctx context.Context, i Identity, id, title, body string) (ChangeRequest, error) {
+func (s *Service) CreateChangeRequest(ctx context.Context, i Identity, id, title, body string, targets ...string) (ChangeRequest, error) {
 	if !s.EditingAvailable() || !taskID.MatchString(id) || strings.TrimSpace(title) == "" || len(title) > 240 || len(body) > 30000 {
 		return ChangeRequest{}, ErrArguments
 	}
@@ -120,21 +123,37 @@ func (s *Service) CreateChangeRequest(ctx context.Context, i Identity, id, title
 		if !ok {
 			return ErrUnavailable
 		}
-		if e.ChangeRequest != nil {
+		target := e.Task.Repository.DefaultBranch
+		if len(targets) > 0 && targets[0] != "" {
+			target = targets[0]
+		}
+		if !ValidBranch(target) || target == e.Review.Branch {
+			return ErrArguments
+		}
+		if target != e.Task.Repository.DefaultBranch {
+			bp, ok := s.provider.(BranchProvider)
+			if !ok {
+				return ErrUnavailable
+			}
+			if _, err := bp.GetBranch(ctx, token, e.Task.Repository, target); err != nil {
+				return err
+			}
+		}
+		if e.ChangeRequest != nil && e.ChangeRequest.TargetBranch == target {
 			result, err = p.GetChange(ctx, token, e.Task.Repository, e.ChangeRequest.Number)
 		} else {
 			var found *ChangeRequest
-			found, err = p.FindChange(ctx, token, e.Task.Repository, e.Review.Branch, e.Task.Repository.DefaultBranch)
+			found, err = p.FindChange(ctx, token, e.Task.Repository, e.Review.Branch, target)
 			if err == nil && found != nil {
 				result = *found
 			} else if err == nil {
-				result, err = p.CreateChange(ctx, token, e.Task.Repository, e.Review.Branch, e.Task.Repository.DefaultBranch, title, body+"\n\nNudgy: otomatik test çalıştırılmadı.")
+				result, err = p.CreateChange(ctx, token, e.Task.Repository, e.Review.Branch, target, title, body+"\n\nNudgy: otomatik test çalıştırılmadı.")
 			}
 		}
 		if err != nil {
 			return err
 		}
-		if result.HeadSHA != e.Commit || result.SourceBranch != e.Review.Branch || result.TargetBranch != e.Task.Repository.DefaultBranch {
+		if result.HeadSHA != e.Commit || result.SourceBranch != e.Review.Branch || result.TargetBranch != target {
 			return ErrChangeMoved
 		}
 		e.ChangeRequest = &result

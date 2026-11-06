@@ -54,4 +54,24 @@ func testMergeIntents(t *testing.T, db *pgxpool.Pool, s *CodingStore) {
 	if got, err := gitlab.PinMerge(ctx, i, changed); err != nil || got != changed {
 		t.Fatal("provider pin collision", err)
 	}
+	branchIdentity := i
+	branchIdentity.Event = "branch-merge-E"
+	branchPin := pin
+	branchPin.Mode, branchPin.SourceBranch, branchPin.TargetBranch = "branches", "feature/existing", "development"
+	if _, exists, err := restarted.GetMergePin(ctx, branchIdentity); err != nil || exists {
+		t.Fatal("unexpected existing branch pin", err)
+	}
+	if _, err := s.PinMerge(ctx, branchIdentity, branchPin); err != nil {
+		t.Fatal(err)
+	}
+	if got, exists, err := restarted.GetMergePin(ctx, branchIdentity); err != nil || !exists || got != branchPin {
+		t.Fatal("restart lost branch pin", got, err)
+	}
+	if _, exists, err := gitlab.GetMergePin(ctx, branchIdentity); err != nil || exists {
+		t.Fatal("reader crossed providers", err)
+	}
+	branchIdentity.Thread = "other"
+	if _, _, err := restarted.GetMergePin(ctx, branchIdentity); err == nil {
+		t.Fatal("reader crossed conversation")
+	}
 }
