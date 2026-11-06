@@ -16,6 +16,7 @@
 <p>Sabit metinleri ve aşağıdaki alanları istediğin gibi birleştir. Örnekler otomatik kaydedilmez.</p>
 <div class="rules-preview"><span>Örnek branch adı</span><code id="rules-preview">—</code><small>Örnek görev: “Giriş ekranını güncelle” · hesap: banu · repo: mobile-app · tarih: 20261106</small></div>
 <p>Görev kimliği kullanmak isim çakışmalarını önler. Seçtiğin ad zaten varsa Nudgy mevcut dalın üzerine yazmaz.</p>
+<p id="rules-save-state" class="rules-save-state" role="status" aria-live="polite"></p>
 <div class="rules-inline"><button id="rules-save" class="refresh-button" type="submit">Kuralı kaydet</button><button id="rules-remove" class="ghost-button" type="button">Bu kuralı kaldır</button></div>
 </form>
 <aside class="panel rules-guide"><h2>Kullanılabilen alanlar</h2><dl><dt>{slug}</dt><dd>Görev mesajından oluşturulan kısa, güvenli ad.</dd><dt>{task_id}</dt><dd>Göreve özel benzersiz kimlik.</dd><dt>{user}</dt><dd>Bağlı GitHub veya GitLab kullanıcı adı.</dd><dt>{repo}</dt><dd>Repo veya proje adı.</dd><dt>{date}</dt><dd>Görevin başladığı UTC tarih: YYYYMMDD.</dd></dl><h3>Hangi kural uygulanır?</h3><p>Önce workspace kuralı, yoksa kişi kuralı kullanılır. İkisi de yoksa mevcut <code>codex/nudgy-{task_id}</code> formatı geçerlidir.</p><p>Workspace kuralı tüm üyelerde önceliklidir. Kişi kuralı workspace kuralı kaldırıldığında yeniden devreye girer.</p><h3>Güvenli dal oluşturma</h3><p>Ana dal hedeflenemez. Geçersiz Git karakterleri kabul edilmez. Başlamış görevlerin dalı ve mevcut repoların ayarları değiştirilmez.</p></aside>
