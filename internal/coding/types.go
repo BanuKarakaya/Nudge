@@ -21,6 +21,7 @@ var (
 )
 
 type Credentials struct {
+	Scopes           string    `json:"scopes,omitempty"`
 	SelectedProjects string    `json:"selected_projects,omitempty"`
 	Access           string    `json:"access"`
 	Refresh          string    `json:"refresh"`

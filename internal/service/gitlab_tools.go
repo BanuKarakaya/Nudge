@@ -35,6 +35,8 @@ func (t *gitLabTools) Definitions() []ToolDefinition {
 		d.Description = strings.ReplaceAll(d.Description, "GitLab App installation and account connection", "GitLab authorization and project selection")
 		d.Description = strings.ReplaceAll(d.Description, "GitLab is not implemented yet.", "")
 		d.Description = strings.ReplaceAll(d.Description, "github_connect", "gitlab_connect")
+		d.Description = strings.ReplaceAll(d.Description, "pull request", "merge request")
+		d.Description = strings.ReplaceAll(d.Description, " PR", " MR")
 		d.Description = strings.ReplaceAll(d.Description, "repositories_list", "gitlab_repositories_list")
 		d.Description = strings.ReplaceAll(d.Description, "repository_edit_finish", "gitlab_repository_edit_finish")
 		switch d.Name {

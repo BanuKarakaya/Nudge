@@ -17,8 +17,28 @@ import (
 
 type glTransport func(*http.Request) (*http.Response, error)
 
+func TestGitLabMissingAPIScopeExplainsUpgradeAndPreservesConnection(t *testing.T) {
+	h, store := glHandlerFixture(t, "read_user read_api write_repository")
+	store.saved = coding.Connection{UserID: 1, Login: "existing-account"}
+	link, _ := h.links.URL(h.publicURL, 1, "gitlab", time.Now())
+	start := httptest.NewRecorder()
+	h.gitLabInstall(start, httptest.NewRequest("GET", link, nil))
+	u, _ := url.Parse(start.Header().Get("Location"))
+	req := httptest.NewRequest("GET", h.publicURL+"/gitlab/oauth/callback?state="+u.Query().Get("state")+"&code=code", nil)
+	req.AddCookie(start.Result().Cookies()[0])
+	w := httptest.NewRecorder()
+	h.gitLabCallback(w, req)
+	if w.Code != 400 || !strings.Contains(w.Body.String(), "api iznini") || store.saved.Login != "existing-account" {
+		t.Fatal("scope upgrade failed to explain recovery or replaced prior connection")
+	}
+}
+
 func (f glTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
-func glHandlerFixture(t *testing.T) (*CodingHandler, *codingHandlerStore) {
+func glHandlerFixture(t *testing.T, scopes ...string) (*CodingHandler, *codingHandlerStore) {
+	scope := "read_user read_api write_repository api"
+	if len(scopes) > 0 {
+		scope = scopes[0]
+	}
 	t.Helper()
 	base, _, links, _ := codingHandlerFixture(t)
 	store := &codingHandlerStore{}
@@ -26,7 +46,7 @@ func glHandlerFixture(t *testing.T) (*CodingHandler, *codingHandlerStore) {
 		body := ""
 		switch r.URL.Path {
 		case "/oauth/token":
-			body = `{"access_token":"gitlab-private-test-token","refresh_token":"gitlab-private-refresh","expires_in":7200,"token_type":"Bearer"}`
+			body = `{"access_token":"gitlab-private-test-token","refresh_token":"gitlab-private-refresh","expires_in":7200,"token_type":"Bearer","scope":"` + scope + `"}`
 		case "/api/v4/user":
 			body = `{"id":42,"username":"developer","state":"active"}`
 		case "/api/v4/projects", "/api/v4/projects/10":

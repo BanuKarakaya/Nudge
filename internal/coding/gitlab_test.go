@@ -31,7 +31,7 @@ func gitLabFixture(t *testing.T) (*Service, *memoryStore, *memoryEdits, *recordi
 			if r.Form.Get("grant_type") == "authorization_code" && len(r.Form.Get("code_verifier")) < 43 {
 				t.Fatal("PKCE missing")
 			}
-			return response(`{"access_token":"` + glToken + `","refresh_token":"refresh-token-very-private","expires_in":7200,"token_type":"Bearer","scope":"read_user read_api write_repository"}`), nil
+			return response(`{"access_token":"` + glToken + `","refresh_token":"refresh-token-very-private","expires_in":7200,"token_type":"Bearer","scope":"read_user read_api write_repository api"}`), nil
 		case "/api/v4/user":
 			return response(fmt.Sprintf(`{"id":%d,"username":"developer","state":"active"}`, subject)), nil
 		case "/api/v4/projects":
@@ -64,7 +64,7 @@ func connectGitLabFixture(t *testing.T, s *Service, store *memoryStore) {
 		t.Fatal(err)
 	}
 	u, _ := url.Parse(redirect)
-	if u.Host != "gitlab.com" || u.Query().Get("state") != state || u.Query().Get("code_challenge_method") != "S256" || u.Query().Get("scope") != "read_user read_api write_repository" {
+	if u.Host != "gitlab.com" || u.Query().Get("state") != state || u.Query().Get("code_challenge_method") != "S256" || u.Query().Get("scope") != "read_user read_api write_repository api" {
 		t.Fatal("invalid OAuth URL")
 	}
 	next, account, repos, err := s.GitLabSelection(ctx, state, "code")

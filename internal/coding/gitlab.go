@@ -31,7 +31,7 @@ func (g GitLab) InstallationURL(string) string                                  
 func (g GitLab) VerifyInstallation(context.Context, string, int64, Account) error { return ErrDenied }
 func (g GitLab) AuthorizeURL(state, verifier string) string {
 	hash := sha256.Sum256([]byte(verifier))
-	return "https://gitlab.com/oauth/authorize?" + url.Values{"client_id": {g.ClientID}, "redirect_uri": {g.RedirectURL}, "response_type": {"code"}, "scope": {"read_user read_api write_repository"}, "state": {state}, "code_challenge": {base64.RawURLEncoding.EncodeToString(hash[:])}, "code_challenge_method": {"S256"}}.Encode()
+	return "https://gitlab.com/oauth/authorize?" + url.Values{"client_id": {g.ClientID}, "redirect_uri": {g.RedirectURL}, "response_type": {"code"}, "scope": {"read_user read_api write_repository api"}, "state": {state}, "code_challenge": {base64.RawURLEncoding.EncodeToString(hash[:])}, "code_challenge_method": {"S256"}}.Encode()
 }
 func (g GitLab) request(ctx context.Context, endpoint, token string, form url.Values, out any) error {
 	u, err := url.Parse(endpoint)
@@ -107,7 +107,10 @@ func (g GitLab) token(ctx context.Context, form url.Values) (Credentials, error)
 			}
 		}
 	}
-	return Credentials{Access: r.Access, Refresh: r.Refresh, Expires: time.Now().Add(time.Duration(r.Expires) * time.Second)}, nil
+	if form.Get("grant_type") == "authorization_code" && !strings.Contains(" "+r.Scope+" ", " api ") {
+		return Credentials{}, ErrAPIScope
+	}
+	return Credentials{Scopes: r.Scope, Access: r.Access, Refresh: r.Refresh, Expires: time.Now().Add(time.Duration(r.Expires) * time.Second)}, nil
 }
 func validGitLabToken(token string) bool {
 	if len(token) < 16 || len(token) > 2048 {

@@ -13,13 +13,14 @@ import (
 // Edit is encrypted at rest. It contains no access tokens or server paths.
 // Only EditInfo is passed to the model; file content is read explicitly.
 type Edit struct {
-	Task          Task     `json:"task"`
-	AccountID     int64    `json:"account_id"`
-	Snapshot      Snapshot `json:"snapshot"`
-	Review        Review   `json:"review"`
-	Digest        string   `json:"digest"`
-	FinishedEvent string   `json:"finished_event"`
-	Commit        string   `json:"commit"`
+	ChangeRequest *ChangeRequest `json:"change_request,omitempty"`
+	Task          Task           `json:"task"`
+	AccountID     int64          `json:"account_id"`
+	Snapshot      Snapshot       `json:"snapshot"`
+	Review        Review         `json:"review"`
+	Digest        string         `json:"digest"`
+	FinishedEvent string         `json:"finished_event"`
+	Commit        string         `json:"commit"`
 }
 
 type EditInfo struct {

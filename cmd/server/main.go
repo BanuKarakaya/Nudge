@@ -7,8 +7,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"nudge/internal/ai"
@@ -25,6 +27,8 @@ import (
 )
 
 func main() {
+	appCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -223,6 +227,13 @@ func main() {
 	if err := configureCoding(db, mux, privateMux, slackEventHandler, slackInteractionHandler, installationRepository, slackAPIClient, links, onboardingService, branchRules); err != nil {
 		log.Fatalf("repository task configuration: %v", err)
 	}
+	jobCtx, jobCancel := context.WithTimeout(appCtx, 15*time.Second)
+	jobRepository, err := postgres.NewSlackJobRepository(jobCtx, db)
+	jobCancel()
+	if err != nil {
+		log.Fatalf("initialize Slack jobs: %v", err)
+	}
+	slackEventHandler.WithJobQueue(jobRepository)
 	slackEventHandler.RegisterRoutes(mux)
 
 	notificationCtx, notificationCancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -233,8 +244,11 @@ func main() {
 	}
 	onboardingService.WithQueue(notificationRepository)
 	worker := scheduler.DeliveryWorker{Notifications: notificationRepository, Installations: installationRepository, Client: slackAPIClient, Onboarding: onboardingService}
-	go worker.Run(context.Background())
-	go scheduler.RunOnboarding(context.Background(), installationRepository, onboardingService)
+	jobWorker := scheduler.SlackJobWorker{Jobs: jobRepository, Process: slackEventHandler.ProcessJob}
+	jobsDone := make(chan struct{})
+	go func() { defer close(jobsDone); jobWorker.Run(appCtx) }()
+	go worker.Run(appCtx)
+	go scheduler.RunOnboarding(appCtx, installationRepository, onboardingService)
 	log.Print("connection invitations enabled after Slack installation and on startup; per-user delivery deduplication active")
 	if reminderUserID, reminderTimezone := reminderConfig(); reminderUserID > 0 {
 		dailyReminder := scheduler.NewDailyReminder(
@@ -251,7 +265,7 @@ func main() {
 			slackAPIClient,
 		)
 		dailyReminder.WithOnboarding(onboardingService)
-		go dailyReminder.Run(context.Background())
+		go dailyReminder.Run(appCtx)
 		feedbinReminder := scheduler.NewFeedbinReminder(
 			reminderUserID,
 			reminderTimezone,
@@ -261,7 +275,7 @@ func main() {
 			notificationRepository,
 			slackAPIClient,
 		)
-		go feedbinReminder.Run(context.Background())
+		go feedbinReminder.Run(appCtx)
 		log.Printf("onboarding reconciliation at 13:45, Raindrop reminder at 22:00 (%s)", reminderTimezone)
 		log.Printf("Feedbin title/link reminder enabled at 23:00 (%s), no AI generation", reminderTimezone)
 	} else {
@@ -270,8 +284,26 @@ func main() {
 
 	addr := ":" + port
 	log.Printf("Nudgy server listening on %s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
-		log.Fatal(err)
+	server := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	serverDone := make(chan error, 1)
+	go func() { serverDone <- server.ListenAndServe() }()
+	select {
+	case <-appCtx.Done():
+	case err := <-serverDone:
+		if !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("HTTP server stopped: %v", err)
+		}
+		stop()
+	}
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer shutdownCancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Printf("HTTP shutdown: %v", err)
+	}
+	select {
+	case <-jobsDone:
+	case <-shutdownCtx.Done():
+		log.Print("Slack workers still stopping; unfinished jobs will recover after lease expiry")
 	}
 }
 

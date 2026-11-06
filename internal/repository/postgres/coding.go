@@ -22,7 +22,7 @@ type CodingStore struct {
 var _ coding.Store = (*CodingStore)(nil)
 
 func NewCodingStore(ctx context.Context, db *pgxpool.Pool, cipher secure.Cipher) (*CodingStore, error) {
-	if _, err := db.Exec(ctx, migrations.CodingSchema); err != nil {
+	if _, err := db.Exec(ctx, migrations.CodingSchema+"\n"+migrations.MergeIntentSchema); err != nil {
 		return nil, err
 	}
 	return &CodingStore{db: db, cipher: cipher}, nil
@@ -224,7 +224,7 @@ func (s *CodingStore) CancelDraft(ctx context.Context, i coding.Identity, id str
 }
 
 func NewGitLabStore(ctx context.Context, db *pgxpool.Pool, cipher secure.Cipher) (*CodingStore, error) {
-	if _, err := db.Exec(ctx, migrations.GitLabSchema); err != nil {
+	if _, err := db.Exec(ctx, migrations.GitLabSchema+"\n"+migrations.MergeIntentSchema); err != nil {
 		return nil, err
 	}
 	return &CodingStore{db: db, cipher: cipher, provider: "gitlab"}, nil

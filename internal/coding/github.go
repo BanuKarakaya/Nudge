@@ -16,7 +16,7 @@ import (
 )
 
 // GitHub uses user-to-server tokens, never installation-wide credentials. No
-// caller-controlled API origin, redirects, clone URLs or write endpoints exist.
+// caller-controlled API origin, redirects or clone URLs are accepted.
 type GitHub struct {
 	AppID                               int64
 	ClientID, ClientSecret, RedirectURL string

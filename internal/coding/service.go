@@ -176,6 +176,9 @@ func (s *Service) verifiedConnection(ctx context.Context, identity Identity) (Ac
 				return ErrConnect
 			}
 			next.SelectedProjects = c.Credentials.SelectedProjects
+			if next.Scopes == "" {
+				next.Scopes = c.Credentials.Scopes
+			}
 			c.Credentials = next
 		}
 		if !s.validToken(c.Credentials.Access) {

@@ -12,7 +12,7 @@ GitLab.com’da **Edit profile → Access → Applications → Add new applicati
 
 - Redirect URI: `https://<NUDGE_PUBLIC_URL-host>/gitlab/oauth/callback`.
 - **Confidential** açık olmalı; uygulama sırrı yalnızca sunucuda kullanılır.
-- Scopes: `read_user`, `read_api`, `write_repository`.
+- Scopes: `read_user`, `read_api`, `write_repository`, **`api`**.
 - Application ID ve Secret değerlerini Railway servis değişkenlerine kaydet;
   Slack mesajına veya repoya ekleme.
 
@@ -42,7 +42,8 @@ ve [PKCE/token yenileme belgesi](https://docs.gitlab.com/api/oauth2/).
    `team/mobile/ios-app`.
 5. Nudgy kaynak kodu düzenler ve aynı projenin yeni `codex/nudgy-<görev>` dalına
    otomatik pushlar. Mesajdaki dal bağlantısından clone/fetch yaparak test et.
-   Otomatik test, MR açma ve ana dala birleştirme yapılmaz.
+   Otomatik test çalıştırılmaz. MR açma ayrıca istenebilir; merge için açık
+   bağlantılı komut gerekir. Ayrıntılar: [PR/MR işlemleri](change-requests.md).
 
 Yeni proje eklemek veya seçimi değiştirmek için yeni bir bağlantı iste.
 Başarısız/iptal edilen bağlantı mevcut çalışan bağlantıyı değiştirmez.
@@ -71,7 +72,9 @@ Araçlar `gitlab_connect`, `gitlab_connection_status`, `gitlab_repositories_list
 `gitlab_repository_task_prepare`, `gitlab_repository_task_status`,
 `gitlab_repository_task_cancel`, `gitlab_repository_tasks_list`,
 `gitlab_repository_file_read`, `gitlab_repository_file_write`,
-`gitlab_repository_edit_finish` adlarıyla mevcut GitHub araçları yanında sunulur.
+`gitlab_repository_edit_finish`, `gitlab_repository_change_request_create`,
+`gitlab_repository_change_request_status`, `gitlab_repository_change_request_merge`
+adlarıyla mevcut GitHub araçları yanında sunulur.
 
 ## Doğrulama
 
@@ -81,3 +84,21 @@ push ve PostgreSQL şifreleme/yeniden başlatma/bağlantı kaldırmayı kapsar.
 Canlı doğrulama için OAuth ayarları ve deploy sonrası iki ayrı Slack/GitLab
 hesabıyla farklı proje seçimleri yapılmalı; diğer kullanıcının projeleri
 listelenmemeli ve test değişikliği yalnızca görev dalında görünmelidir.
+
+## PR/MR yetkisi yükseltmesi
+
+MR oluşturma, durum sorgulama ve merge araçları `api` kapsamını gerektirir.
+Nudgy OAuth isteği artık bu kapsamı da talep eder. GitLab uygulamasında `api`
+seçeneğini açtıktan ve yeni sürümü yayınladıktan sonra kullanıcı Slack’te
+“GitLab hesabımı bağla” diyerek yeniden yetkilendirip projelerini seçmelidir.
+Uygulama ayarını değiştirmek eski token’ın yetkisini kendiliğinden yükseltmez.
+Client ID, secret veya şifreleme anahtarını değiştirmek gerekmez.
+
+Eski bağlantılar listeleme, düzenleme ve push için çalışmaya devam eder.
+`api` izni olmayan veya kapsamı eski kayıtta bilinmeyen bağlantıların MR araçları,
+yeniden bağlantı kurulmasını açıklayan hata döndürür. Yenileme token’ı eski
+kapsamla çalışmaya devam eder; yenileme tek başına yetki yükseltmez.
+`api` kullanıcı hesabının geniş API yetkisidir; Nudgy seçilmiş proje ve güncel
+kullanıcı erişim kontrollerini her PR/MR işleminde ayrıca uygular.
+
+Kullanım ve merge komutları: [PR/MR işlemleri](change-requests.md).

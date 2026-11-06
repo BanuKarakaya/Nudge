@@ -83,16 +83,22 @@ func RecordTool(ctx context.Context, tool, model string, started time.Time, succ
 		return
 	}
 	title := map[string]string{
-		"rss_inventory":           "RSS envanteri sorgulandı",
-		"rss_articles":            "RSS başlıkları / içerikleri getirildi",
-		"bookmarks_list":          "Kaydedilen bağlantılar listelendi",
-		"web_search":              "Web araması yapıldı",
-		"handoff_to_luna":         "Model devri istendi",
-		"github_connect":          "Özel GitHub bağlantı linki gönderildi",
-		"repositories_list":       "Yetkili repolar listelendi",
-		"repository_task_prepare": "Repo görev taslağı kaydedildi (çalıştırılmadı)",
-		"repository_task_status":  "Repo görev durumu sorgulandı",
-		"repository_task_cancel":  "Repo görev taslağı iptal edildi",
+		"rss_inventory":                           "RSS envanteri sorgulandı",
+		"rss_articles":                            "RSS başlıkları / içerikleri getirildi",
+		"bookmarks_list":                          "Kaydedilen bağlantılar listelendi",
+		"web_search":                              "Web araması yapıldı",
+		"handoff_to_luna":                         "Model devri istendi",
+		"github_connect":                          "Özel GitHub bağlantı linki gönderildi",
+		"repositories_list":                       "Yetkili repolar listelendi",
+		"repository_task_prepare":                 "Repo görev taslağı kaydedildi (çalıştırılmadı)",
+		"repository_task_status":                  "Repo görev durumu sorgulandı",
+		"repository_task_cancel":                  "Repo görev taslağı iptal edildi",
+		"repository_change_request_create":        "GitHub PR kaydı oluşturuldu / bulundu",
+		"repository_change_request_status":        "GitHub PR durumu sorgulandı",
+		"repository_change_request_merge":         "GitHub merge sonucu doğrulandı",
+		"gitlab_repository_change_request_create": "GitLab MR kaydı oluşturuldu / bulundu",
+		"gitlab_repository_change_request_status": "GitLab MR durumu sorgulandı",
+		"gitlab_repository_change_request_merge":  "GitLab merge sonucu doğrulandı",
 	}[tool]
 	if title == "" {
 		title = "Araç çağrısı"

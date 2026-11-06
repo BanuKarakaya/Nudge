@@ -36,9 +36,11 @@ review/regenerate schemas and run protocol tests before changing the pin. The
 Node launcher and native subprocess are both terminated as a process group on
 timeout. No app-server TCP/WebSocket port is exposed.
 
-For the initial Railway rollout use **one application replica**. The existing
-Slack event deduplication and conversation locks are process-local. A shared
-volume does not provide distributed locking. Stop old instances before rollout.
+For the initial Railway rollout use **one application replica**. Slack mentions now
+use a [durable PostgreSQL queue](slack-jobs.md) for event deduplication, claims and
+conversation ordering. The queue does not make separate native-state volumes
+interchangeable; a shared volume alone is not a runtime scaling strategy.
+Stop old instances before rollout.
 Keep existing database, Feedbin encryption, Slack, account-link and admin secrets.
 Keep `OPENROUTER_API_KEY`. Legacy `OPENROUTER_MODEL`/routing variables,
 `CODEX_MODEL`, `CODEX_API_KEY`, `OPENAI_*`, `OPENCODE_*` and `DEEPSEEK_*` no longer
@@ -117,8 +119,9 @@ a new branch in the same repository when repository_edit_finish succeeds. Users
 clone/fetch that branch for manual testing; no extra push approval is requested.
 The host fixes the target branch and rechecks owner identity and write permission.
 GitLab.com exposes the same workflow through namespaced `gitlab_*` tools and a separate connection/project selection ([setup](gitlab.md)). Provider choice is explicit; GitHub and GitLab credentials/tasks cannot be substituted.
-Repository scripts/tests and native shell tools remain disabled; there is no PR
-or merge operation. Pending edits survive restarts and can be resumed.
+Repository scripts/tests and native shell tools remain disabled. Separate PR/MR
+creation, status and explicitly authorized merge tools are available as described
+below. Pending edits survive restarts and can be resumed.
 Bounds: four concurrent children, 120 seconds per run (including slot wait),
 45 seconds per tool, 256 tool calls, 2 MiB tool result and 35,000 final characters.
 These are resource limits, not restrictions on which RSS entries can be read.
@@ -143,17 +146,19 @@ Otherwise generation fails instead of treating a retrieval error as an empty inv
 Stable partial-answer items are joined in order, deduplicated by native item ID.
 
 The thinking reaction is managed by the Slack transport, before waiting/generation
-and removed after delivery or on handled failure. On generation/delivery failure,
+and removed after delivery or on handled failure. On generation failure,
 the native thread pointer is invalidated so a later run bootstraps only delivered
-history. Old native files remain for recovery; there is no automated retention
+history. Delivery retries use the saved response checkpoint. Old native files remain for recovery; there is no automated retention
 policy. Missing volume/session files produce an explicit failed turn, not a
 silent switch to a different model. A subsequent attempt creates a new thread
 after invalidation.
 
-This does not make acknowledged Slack requests durable across a hard process
-crash. An in-flight request/reaction may still require retry/manual cleanup after
-a restart. Pending scheduled-message deliveries retain the existing durable
-outbox, but pre-enqueue generation is not durable. No exactly-once guarantee.
+Acknowledged Slack mentions are persisted in the [PostgreSQL job queue](slack-jobs.md).
+Interrupted generation restarts from delivered history after claim recovery;
+persisted responses retry delivery without regenerating. A delivery failure keeps
+the next native thread pointer in that response checkpoint until delivery and
+history finalization succeed. Scheduled notifications retain their separate outbox.
+Slack and database commits are not atomic, so there is no exactly-once guarantee.
 
 Railway logs contain request stages and native thread/turn IDs, tool names,
 durations and outcomes, not provider stderr, arguments, content or API keys.
@@ -225,3 +230,13 @@ through a loopback proxy enforcing eight requests maximum, 32 KiB request bodies
 1024 output tokens per request and a model allowlist. The test reports model
 identity, usage/cost and the separate `catalog_compatible` deployment gate;
 it never prints the key. Regular test suites do not enable paid calls.
+
+## PR/MR tools
+
+[PR/MR creation, status and explicit merge](change-requests.md) are separate
+user-bound tools. The host verifies the original Slack merge command and pins the
+provider-observed head SHA in PostgreSQL before mutation. Tool schemas never
+accept an authorization boolean, alternate user, or replacement request text.
+Native tool versions change to rebuild existing threads with the new schemas
+while preserving delivered history. GitLab OAuth now requests `api`; existing
+connections without that scope can still edit but must reconnect for MR tools.

@@ -4,8 +4,9 @@ Nudgy can connect a Slack user's GitHub account, list permitted repositories,
 clone repositories into separate temporary Git workspaces on the existing Railway
 service, and edit source files through bounded tools. Disabled unless
 `NUDGY_CODING_ENABLED=true`. Prepared source is encrypted in PostgreSQL so it
-survives Railway restarts. Automatic tests, repository scripts, PRs and merges
-are not run. Completing a coding task automatically publishes the prepared code
+survives Railway restarts. Automatic tests and repository scripts are not run.
+PR/MR creation and explicit merging use [separate tools](change-requests.md).
+Completing a coding task automatically publishes the prepared code
 to a new `codex/nudgy-<task-id>` branch for the user to clone and test. GitLab.com uses the same editing/publishing workflow through a separate OAuth connection and project selection; see [GitLab setup](gitlab.md).
 
 ## GitHub App setup
@@ -94,7 +95,7 @@ change, and removed permissions stop authorizing new tasks.
    publishing. Git reconstructs the frozen changes, creates a deterministic
    commit and pushes only its new branch with an explicit empty ref lease.
    Existing unrelated refs cannot be replaced; the default branch is never
-   updated. No PR or merge is performed. If the default branch moved, prepare a
+   updated. Publishing alone creates no PR or merge. Use the separate PR/MR tools when requested. If the default branch moved, prepare a
    new task against current code. A failed push leaves the frozen source saved;
    repeat `repository_edit_finish` on the same task. Successful-push retries
    recover the same commit even if the response/database write was lost.

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	_ "embed"
+	"errors"
 	"html/template"
 	"net/http"
 	"strconv"
@@ -111,6 +112,10 @@ func (h *CodingHandler) gitLabCallback(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	next, account, repos, err := h.service.GitLabSelection(ctx, state, r.URL.Query().Get("code"))
 	if err != nil {
+		if errors.Is(err, coding.ErrAPIScope) {
+			renderGitLabPage(w, http.StatusBadRequest, gitLabPageData{Title: "GitLab izni güncellenmeli.", Description: "Nudgy GitLab uygulamasında api iznini etkinleştirip Slack üzerinden yeni bağlantı iste. Mevcut bağlantın korunur."})
+			return
+		}
 		h.gitLabError(w, 400)
 		return
 	}

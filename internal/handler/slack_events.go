@@ -37,6 +37,7 @@ type SlackEventHandler struct {
 	timezone          *time.Location
 	analytics         repository.AnalyticsRepository
 	coding            *CodingHandler
+	jobs              repository.SlackJobRepository
 	gitlab            *CodingHandler
 }
 
@@ -84,7 +85,7 @@ type slackEventEnvelope struct {
 }
 
 func (h *SlackEventHandler) handle(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(r.Body)
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "could not read Slack event")
 		return
@@ -106,11 +107,32 @@ func (h *SlackEventHandler) handle(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	// Acknowledge immediately; Slack requires event responses within three seconds.
-	log.Printf("slack_request=%s stage=received", slackRequestID(envelope))
+	if envelope.TeamID == "" || envelope.Event.Channel == "" || envelope.Event.User == "" || envelope.Event.TS == "" {
+		writeError(w, http.StatusBadRequest, "invalid Slack event identity")
+		return
+	}
+	if h.jobs == nil {
+		writeError(w, http.StatusServiceUnavailable, "Slack job queue unavailable")
+		return
+	}
+	payload, err := json.Marshal(envelope)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid Slack event")
+		return
+	}
+	// Persist before acknowledging; a failure must let Slack retry delivery.
+	enqueueCtx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+	err = h.jobs.Enqueue(enqueueCtx, repository.SlackJob{
+		Key: eventConversationKey(envelope), EventKey: slackEventKey(envelope), Payload: payload,
+	})
+	if err != nil {
+		log.Printf("slack_request=%s stage=enqueue_failed", slackRequestID(envelope))
+		writeError(w, http.StatusServiceUnavailable, "could not persist Slack event")
+		return
+	}
 	w.WriteHeader(http.StatusOK)
-	log.Printf("slack_request=%s stage=acknowledged", slackRequestID(envelope))
-	go h.replyWithSummary(envelope)
+	log.Printf("slack_request=%s stage=queued", slackRequestID(envelope))
 }
 
 func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
@@ -121,6 +143,14 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 		return
 	}
 	defer finish()
+	_ = h.processSlackEvent(context.Background(), event, nil)
+}
+
+func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slackEventEnvelope, job *repository.SlackJob) error {
+	requestID := slackRequestID(event)
+	if job != nil {
+		requestID = fmt.Sprintf("slack-job-%d", job.ID)
+	}
 	started := time.Now()
 	log.Printf("slack_request=%s stage=processing_started", requestID)
 	threadTS := event.Event.ThreadTS
@@ -136,7 +166,7 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 		Status:      "processing", StartedAt: started,
 	}
 	defer func() {
-		if h.analytics == nil {
+		if h.analytics == nil || job != nil {
 			return
 		}
 		analyticsRecord.LatencyMS = time.Since(started).Milliseconds()
@@ -152,7 +182,7 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 		}
 	}()
 	key := service.ConversationKey{Team: event.TeamID, Channel: event.Event.Channel, Thread: threadTS, User: event.Event.User}
-	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 150*time.Second)
 	defer cancel()
 	ctx = analytics.WithUsageTracker(ctx, tracker)
 	ctx = analytics.WithOperationTracker(ctx, operations)
@@ -162,11 +192,11 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 			userID, err = h.installations.UpsertUser(ctx, event.TeamID, event.Event.User)
 			if err != nil {
 				log.Printf("slack_request=%s stage=user_create_failed elapsed_ms=%d error=%q", requestID, time.Since(started).Milliseconds(), err)
-				return
+				return err
 			}
 		} else {
 			log.Printf("slack_request=%s stage=user_lookup_failed elapsed_ms=%d error=%q", requestID, time.Since(started).Milliseconds(), err)
-			return
+			return err
 		}
 	}
 	analyticsRecord.UserID = userID
@@ -174,7 +204,7 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 	installation, err := h.installations.GetByUserID(ctx, userID)
 	if err != nil {
 		log.Printf("slack_request=%s stage=installation_lookup_failed elapsed_ms=%d error=%q", requestID, time.Since(started).Milliseconds(), err)
-		return
+		return err
 	}
 	log.Printf("slack_request=%s stage=installation_loaded elapsed_ms=%d", requestID, time.Since(started).Milliseconds())
 	var removeProcessingReaction func()
@@ -219,6 +249,15 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 			state, err = h.history.Load(ctx, key)
 		}
 	}
+	if job != nil && err != nil {
+		return err
+	}
+	// A crashed attempt may have advanced its native thread without delivering
+	// anything. Rebuild from delivered history and rediscover persisted edits.
+	if job != nil && job.Attempts > 1 {
+		state.AgentThreadID = ""
+		state.AgentTokenUsage = nil
+	}
 	historyLoaded := err == nil
 	var result service.AgentResult
 	var codingReply *codingReply
@@ -235,10 +274,10 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 			// delivered history once when coding tools are enabled or disabled.
 			toolVersion := ""
 			if h.coding != nil {
-				toolVersion = "coding-auto-publish-v3"
+				toolVersion = "coding-pr-merge-v4"
 			}
 			if h.gitlab != nil {
-				toolVersion += "+gitlab-v1"
+				toolVersion += "+gitlab-pr-merge-v2"
 			}
 			if state.AgentToolVersion != toolVersion {
 				state.AgentThreadID = ""
@@ -280,10 +319,17 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 				}
 				tools, codingReply = h.gitlab.ToolsForReply(tools, coding.Identity{UserID: userID, Team: event.TeamID, Channel: event.Event.Channel, Thread: threadTS, Event: eventID, Request: analyticsRecord.RequestText}, codingReply)
 			}
+			var runTools service.AgentTools = tools
+			if job != nil {
+				runTools = leasedAgentTools{AgentTools: runTools, jobs: h.jobs, job: *job}
+				if job.Attempts > 1 {
+					input += "\n\nHost recovery: this same Slack request was interrupted. Discover existing repository tasks and inspect their status and saved edits before continuing. Reuse the existing task for this request; completed branch publishing must not be repeated."
+				}
+			}
 			log.Printf("slack_request=%s stage=agent_started", requestID)
 			result, err = h.runtime.Run(ctx, service.AgentRequest{
 				Key: key, ThreadID: state.AgentThreadID, Input: input, History: history,
-				Tools: tools,
+				Tools: runTools,
 			})
 			if err == nil && (strings.TrimSpace(result.Text) == "" || utf8.RuneCountInString(result.Text) > 35000) {
 				err = fmt.Errorf("agent returned empty or oversized output")
@@ -307,10 +353,52 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 		if historyLoaded {
 			state.AgentThreadID = ""
 			state.AgentTokenUsage = nil
-			h.saveConversation(key, state, requestID)
+			if job == nil {
+				h.saveConversation(key, state, requestID)
+			}
 		}
 	} else {
 		log.Printf("slack_request=%s stage=response_ready chars=%d elapsed_ms=%d", requestID, utf8.RuneCountInString(message), time.Since(started).Milliseconds())
+	}
+	if job != nil {
+		if parent.Err() != nil {
+			return parent.Err()
+		}
+		prepared := queuedReply{Version: 1, Message: message, Success: success, Record: analyticsRecord}
+		prepared.Record.LatencyMS = time.Since(started).Milliseconds()
+		prepared.Record.Usage = tracker.Snapshot()
+		prepared.Record.Operations = operations.Snapshot()
+		prepared.Record.Status = "degraded"
+		if success {
+			prepared.Record.Status = "success"
+		}
+		if codingReply != nil {
+			codingReply.mu.Lock()
+			for _, review := range codingReply.reviews {
+				prepared.Reviews = append(prepared.Reviews, review)
+			}
+			codingReply.mu.Unlock()
+		}
+		if success && localReply == "" {
+			state.AgentThreadID = result.ThreadID
+			state.AgentTokenUsage = result.TokenUsage
+			state.Remember(event.Event.Text, message, "AGENT")
+			prepared.State = &state
+		} else if !success && historyLoaded {
+			prepared.State = &state
+		}
+		raw, marshalErr := json.Marshal(prepared)
+		if marshalErr != nil {
+			return marshalErr
+		}
+		persistCtx, persistCancel := context.WithTimeout(parent, 5*time.Second)
+		persistErr := h.jobs.SaveResult(persistCtx, *job, raw)
+		persistCancel()
+		if persistErr != nil {
+			return persistErr
+		}
+		job.Result = raw
+		return h.deliverQueuedReply(parent, event, *job, prepared)
 	}
 	// Generation timeout must not prevent a clear error response being delivered.
 	sendCtx, sendCancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -324,7 +412,7 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 			state.AgentTokenUsage = nil
 			h.saveConversation(key, state, requestID)
 		}
-		return
+		return err
 	}
 	if success {
 		analyticsRecord.Status = "success"
@@ -345,6 +433,7 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 		h.saveConversation(key, state, requestID)
 	}
 	log.Printf("slack_request=%s stage=done success=%t total_ms=%d", requestID, success, time.Since(started).Milliseconds())
+	return nil
 }
 
 const agentFailureMessage = "Yanıtını şu anda tamamlayamadım. Biraz sonra tekrar deneyebilir misin?"

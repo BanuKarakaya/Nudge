@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"nudge/internal/analytics"
@@ -28,6 +29,13 @@ func NewAnalyticsRepository(ctx context.Context, db *pgxpool.Pool) (*AnalyticsRe
 }
 
 func (r *AnalyticsRepository) RecordInteraction(ctx context.Context, record repository.InteractionRecord) error {
+	return recordInteraction(ctx, r.db, record)
+}
+
+// Shared by the standalone analytics writer and the job completion transaction.
+func recordInteraction(ctx context.Context, db interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}, record repository.InteractionRecord) error {
 	models, providers, prompt, completion, total := aggregateUsage(record.Usage)
 	if record.Status == "" {
 		record.Status = "processing"
@@ -43,7 +51,7 @@ func (r *AnalyticsRepository) RecordInteraction(ctx context.Context, record repo
 	if err != nil {
 		return err
 	}
-	_, err = r.db.Exec(ctx, `
+	_, err = db.Exec(ctx, `
 		INSERT INTO nudge_ai_interactions
 			(request_id, team_id, channel_id, thread_ts, slack_user_id, user_id,
 			 request_text, response_text, action, status, provider, model, latency_ms,

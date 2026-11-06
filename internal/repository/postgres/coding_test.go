@@ -69,6 +69,7 @@ func TestCodingStorePostgres(t *testing.T) {
 	if _, err := NewCodingStore(ctx, db, cipher); err != nil {
 		t.Fatal(err)
 	}
+	testMergeIntents(t, db, s)
 	c := coding.Connection{UserID: 1, Team: "T", GitHubUserID: 42, Login: "test", Credentials: coding.Credentials{Access: "ghu_testsecret", Refresh: "ghr_testsecret"}}
 	if err := s.SaveConnection(ctx, c); err != nil {
 		t.Fatal(err)

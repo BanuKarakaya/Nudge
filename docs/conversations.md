@@ -13,8 +13,10 @@ See [Codex setup, architecture and deployment gate](codex-harness.md).
 Optional [GitHub connection and repository editing](repository-tasks.md)
 are disabled by default. When configured, authenticated Slack users can connect
 GitHub privately, list allowed repositories, edit code on Railway and review a
-private working copy. The user tests it and explicitly approves the frozen
-revision before a new branch is pushed. Automatic tests and PRs are not run.
+private working copy. Finishing publishes a separate task branch for manual testing.
+[PR/MR creation and explicit merge](change-requests.md) are separate tools;
+code changes and PR/MR creation never imply merge authorization. Automatic tests
+are not run.
 
 Go no longer selects intent/action enums, routes free/complex models, repairs
 model JSON, or retries summaries through other models. Apart from the local
@@ -170,3 +172,9 @@ point `NUDGE_TEST_DATABASE_URL` at a disposable database and run
 `go test -race ./internal/repository/postgres -run TestNotificationDeliveryPostgres`.
 The integration test creates and removes its own isolated schema. Slack and AI
 calls in the other tests are mocked; no real messages or billable calls are sent.
+
+## Durable incoming mentions
+
+Slack mentions now enter a [PostgreSQL job queue](slack-jobs.md) before acknowledgment.
+Workers recover interrupted requests and retry saved replies without regenerating
+them. This queue is separate from the scheduled notification outbox described above.

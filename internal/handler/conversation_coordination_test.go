@@ -334,39 +334,26 @@ func (a completionAnalytics) RecordInteraction(context.Context, repository.Inter
 }
 
 func TestSignedSlackEventAcknowledgesBeforeAgentCompletes(t *testing.T) {
-	entered, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
-	defer close(release)
+	q := &testJobQueue{}
+	calls := 0
 	h := NewSlackEventHandler("signing", conversationInstallations{}, nil, nil,
 		agentFunc(func(context.Context, service.AgentRequest) (service.AgentResult, error) {
-			close(entered)
-			<-release
+			calls++
 			return service.AgentResult{ThreadID: "thread", Text: "reply"}, nil
-		}), nil, make(conversationTestStore), &conversationSender{}, nil, completionAnalytics{done: done})
+		}), nil, make(conversationTestStore), &conversationSender{}, nil).WithJobQueue(q)
 	body := `{"type":"event_callback","team_id":"T","event_id":"E","event":{"type":"app_mention","user":"U","channel":"C","ts":"1.0","text":"RSS özetimi ver"}}`
 	request := httptest.NewRequest("POST", "/slack/events", strings.NewReader(body))
 	signSlackRequest(request, body)
 	response := httptest.NewRecorder()
-	returned := make(chan struct{})
-	go func() { h.handle(response, request); close(returned) }()
-	select {
-	case <-returned:
-		if response.Code != http.StatusOK {
-			t.Fatalf("ack status=%d", response.Code)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("Slack acknowledgment blocked on generation")
+	h.handle(response, request)
+	if response.Code != http.StatusOK || q.enqueued != 1 || calls != 0 {
+		t.Fatalf("ack=%d queued=%d calls=%d", response.Code, q.enqueued, calls)
 	}
-	select {
-	case <-entered:
-	case <-time.After(time.Second):
-		t.Fatal("signed event did not reach runtime")
+	// Generation is started exclusively by a worker, after durable admission.
+	if err := h.ProcessJob(context.Background(), q.job); err != nil {
+		t.Fatal(err)
 	}
-	// Closing through the deferred cleanup also releases generation on failures.
-	t.Cleanup(func() {
-		select {
-		case <-done:
-		case <-time.After(time.Second):
-			t.Error("background request did not finish")
-		}
-	})
+	if calls != 1 || !q.completed {
+		t.Fatal("queued event did not complete")
+	}
 }
