@@ -87,6 +87,7 @@ func connectGitLabFixture(t *testing.T, s *Service, store *memoryStore) {
 func TestGitLabSelectionEditingAndPublishingIsolation(t *testing.T) {
 	s, store, _, git, subject, role := gitLabFixture(t)
 	connectGitLabFixture(t, s, store)
+	s.WithBranchRules(&testBranchRules{template: "team/{repo}/{task_id}"})
 	ctx := context.Background()
 	i := Identity{UserID: 1, Team: "T", Channel: "C", Thread: "thread", Event: "E", Request: "change screen"}
 	repos, err := s.Repositories(ctx, i)
@@ -122,7 +123,7 @@ func TestGitLabSelectionEditingAndPublishingIsolation(t *testing.T) {
 	if err != nil || result.Task.Status != "pushed" || git.pushes != 1 || result.Task.Provider != "gitlab" {
 		t.Fatal("GitLab publish failed", err)
 	}
-	if git.review.Repository.Origin() != "https://gitlab.com" || !strings.Contains(git.review.Repository.BranchURL(result.Branch), "/-/tree/codex/nudgy-") {
+	if git.review.Repository.Origin() != "https://gitlab.com" || !strings.Contains(git.review.Repository.BranchURL(result.Branch), "/-/tree/team/app/") {
 		t.Fatal("wrong publishing destination")
 	}
 	// A GitHub service must not read even a numerically identical GitLab task.

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="tr">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Nudgy · Branch kuralları</title><link rel="stylesheet" href="/dashboard/styles.css"><link rel="stylesheet" href="/dashboard/branch-rules.css"></head>
+<body><main class="rules-page">
+<header class="rules-top"><a class="brand" href="/dashboard"><span class="brand-mark"><img src="/dashboard/nudgy-mascot.webp" alt=""></span>Nudgy</a><a href="/dashboard">← Dashboard’a dön</a></header>
+<section class="page-heading"><div><div class="eyebrow">GITHUB & GITLAB</div><h1>Branch kuralları</h1><p>Dalın adını sen belirle. Nudgy her yeni görevde seçtiğin formatı kullansın.</p></div></section>
+<section class="panel rules-auth"><form id="rules-login"><label for="rules-token">Yönetici erişim anahtarı</label><div class="rules-inline"><input id="rules-token" type="password" autocomplete="off" required placeholder="Dashboard anahtarı"><button class="refresh-button" type="submit">Bağlan</button><button class="ghost-button" id="rules-logout" type="button">Çıkış yap</button></div></form><p>Mevcut dashboard yönetici erişimiyle çalışır. Workspace ve kişi ayarlarını yalnızca yönetici düzenler.</p></section>
+<p id="rules-status" role="status" aria-live="polite">Kuralları görmek için bağlan.</p>
+<section class="rules-grid hidden" id="rules-content">
+<form class="panel rules-editor" id="rules-form">
+<h2>Adlandırma kuralı</h2><p>Her iki sağlayıcıda da geçerlidir. Değişiklikler yalnızca yeni görevleri etkiler.</p>
+<label for="rules-team">Workspace</label><select id="rules-team" required></select>
+<label for="rules-user">Kapsam</label><select id="rules-user"></select>
+<p id="rules-priority"></p>
+<label for="rules-template">Branch şablonu</label><input id="rules-template" maxlength="160" placeholder="Örnek: feature/{slug}-{task_id}" autocomplete="off" spellcheck="false">
+<p>Sabit metinleri ve aşağıdaki alanları istediğin gibi birleştir. Örnekler otomatik kaydedilmez.</p>
+<div class="rules-preview"><span>Örnek branch adı</span><code id="rules-preview">—</code><small>Örnek görev: “Giriş ekranını güncelle” · hesap: banu · repo: mobile-app · tarih: 20261106</small></div>
+<p>Görev kimliği kullanmak isim çakışmalarını önler. Seçtiğin ad zaten varsa Nudgy mevcut dalın üzerine yazmaz.</p>
+<div class="rules-inline"><button id="rules-save" class="refresh-button" type="submit">Kuralı kaydet</button><button id="rules-remove" class="ghost-button" type="button">Bu kuralı kaldır</button></div>
+</form>
+<aside class="panel rules-guide"><h2>Kullanılabilen alanlar</h2><dl><dt>{slug}</dt><dd>Görev mesajından oluşturulan kısa, güvenli ad.</dd><dt>{task_id}</dt><dd>Göreve özel benzersiz kimlik.</dd><dt>{user}</dt><dd>Bağlı GitHub veya GitLab kullanıcı adı.</dd><dt>{repo}</dt><dd>Repo veya proje adı.</dd><dt>{date}</dt><dd>Görevin başladığı UTC tarih: YYYYMMDD.</dd></dl><h3>Hangi kural uygulanır?</h3><p>Önce workspace kuralı, yoksa kişi kuralı kullanılır. İkisi de yoksa mevcut <code>codex/nudgy-{task_id}</code> formatı geçerlidir.</p><p>Workspace kuralı tüm üyelerde önceliklidir. Kişi kuralı workspace kuralı kaldırıldığında yeniden devreye girer.</p><h3>Güvenli dal oluşturma</h3><p>Ana dal hedeflenemez. Geçersiz Git karakterleri kabul edilmez. Başlamış görevlerin dalı ve mevcut repoların ayarları değiştirilmez.</p></aside>
+</section></main><script src="/dashboard/branch-rules.js"></script></body></html>

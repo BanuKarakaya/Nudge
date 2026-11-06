@@ -20,9 +20,9 @@ import (
 	"nudge/internal/slack"
 )
 
-func configureCoding(db *pgxpool.Pool, public, admin *http.ServeMux, events *handler.SlackEventHandler, interactions *handler.SlackInteractionHandler, installations repository.InstallationRepository, client slack.APIClient, links secure.LinkSigner, onboarding *service.OnboardingService) error {
+func configureCoding(db *pgxpool.Pool, public, admin *http.ServeMux, events *handler.SlackEventHandler, interactions *handler.SlackInteractionHandler, installations repository.InstallationRepository, client slack.APIClient, links secure.LinkSigner, onboarding *service.OnboardingService, branchRules coding.BranchRules) error {
 	if os.Getenv("NUDGY_CODING_ENABLED") != "true" {
-		return configureGitLab(db, public, admin, events, installations, client, links, onboarding)
+		return configureGitLab(db, public, admin, events, installations, client, links, onboarding, branchRules)
 	}
 	appID, err := strconv.ParseInt(os.Getenv("NUDGY_GITHUB_APP_ID"), 10, 64)
 	if err != nil {
@@ -55,6 +55,7 @@ func configureCoding(db *pgxpool.Pool, public, admin *http.ServeMux, events *han
 	if err != nil {
 		return errors.New("invalid coding service configuration")
 	}
+	s.WithBranchRules(branchRules)
 	git, err := coding.NewLocalGit()
 	if err != nil {
 		return err
@@ -67,10 +68,10 @@ func configureCoding(db *pgxpool.Pool, public, admin *http.ServeMux, events *han
 	events.WithCoding(h)
 	interactions.WithCoding(h)
 	onboarding.Register(service.ConnectionInvitation{Purpose: "github", Name: "GitHub", Description: "Nudgy’ye GitHub hesabını bağla; açılan GitHub ekranında hesabını ve bağlamak istediğin repoları seç.", Connected: s.Connected})
-	return configureGitLab(db, public, admin, events, installations, client, links, onboarding)
+	return configureGitLab(db, public, admin, events, installations, client, links, onboarding, branchRules)
 }
 
-func configureGitLab(db *pgxpool.Pool, public, admin *http.ServeMux, events *handler.SlackEventHandler, installations repository.InstallationRepository, client slack.APIClient, links secure.LinkSigner, onboarding *service.OnboardingService) error {
+func configureGitLab(db *pgxpool.Pool, public, admin *http.ServeMux, events *handler.SlackEventHandler, installations repository.InstallationRepository, client slack.APIClient, links secure.LinkSigner, onboarding *service.OnboardingService, branchRules coding.BranchRules) error {
 	if os.Getenv("NUDGY_GITLAB_ENABLED") != "true" {
 		return nil
 	}
@@ -97,6 +98,7 @@ func configureGitLab(db *pgxpool.Pool, public, admin *http.ServeMux, events *han
 	if err != nil {
 		return err
 	}
+	s.WithBranchRules(branchRules)
 	git, err := coding.NewLocalGit()
 	if err != nil {
 		return err

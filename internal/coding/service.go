@@ -13,11 +13,12 @@ import (
 )
 
 type Service struct {
-	kind     string
-	store    Store
-	provider Provider
-	edits    EditStore
-	git      GitWorkspace
+	branchRules BranchRules
+	kind        string
+	store       Store
+	provider    Provider
+	edits       EditStore
+	git         GitWorkspace
 }
 
 // GitHub is authoritative for repository permissions. Slack identity is resolved

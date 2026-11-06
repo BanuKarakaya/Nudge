@@ -77,7 +77,7 @@ func (r Review) Validate() error {
 	if !taskID.MatchString(r.TaskID) || !r.Repository.Valid() || !gitObjectID.MatchString(r.BaseCommit) || !gitObjectID.MatchString(r.BaseTree) {
 		return ErrArguments
 	}
-	if r.Branch != "codex/nudgy-"+r.TaskID || len(r.Changes) == 0 || len(r.Changes) > MaxChangedFiles || len(r.Summary) > 16000 || r.CreatedAt.IsZero() {
+	if !ValidTaskBranch(r.Branch, r.Repository.DefaultBranch) || len(r.Changes) == 0 || len(r.Changes) > MaxChangedFiles || len(r.Summary) > 16000 || r.CreatedAt.IsZero() {
 		return ErrArguments
 	}
 	seen := make(map[string]bool)

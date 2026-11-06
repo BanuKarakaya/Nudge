@@ -166,7 +166,19 @@ func (s *Service) BeginEdit(ctx context.Context, i Identity, name string) (EditI
 	if err != nil {
 		return EditInfo{}, err
 	}
-	e, err := s.edits.CreateEdit(ctx, Edit{Task: Task{ID: id, Identity: i, Provider: s.Kind(), Repository: repo, Instruction: i.Request, Status: "cloning", CreatedAt: time.Now().UTC()}, AccountID: account.ID})
+	template := DefaultBranchTemplate
+	if s.branchRules != nil {
+		template, err = s.branchRules.BranchTemplate(ctx, i)
+		if err != nil {
+			return EditInfo{}, errors.New("branch kuralı okunamadı; görev başlatılmadı")
+		}
+	}
+	created := time.Now().UTC()
+	branch, err := RenderBranch(template, id, i.Request, account.Login, repo, created)
+	if err != nil {
+		return EditInfo{}, err
+	}
+	e, err := s.edits.CreateEdit(ctx, Edit{Review: Review{Branch: branch}, Task: Task{ID: id, Identity: i, Provider: s.Kind(), Repository: repo, Instruction: i.Request, Status: "cloning", CreatedAt: created}, AccountID: account.ID})
 	if err != nil {
 		return EditInfo{}, err
 	}
@@ -183,7 +195,15 @@ func (s *Service) BeginEdit(ctx context.Context, i Identity, name string) (EditI
 				return ErrUnavailable
 			}
 			saved.Snapshot = snapshot
-			saved.Review = Review{TaskID: saved.Task.ID, Repository: repo, BaseCommit: snapshot.Commit, BaseTree: snapshot.Tree, Branch: "codex/nudgy-" + saved.Task.ID, Tests: "not_run"}
+			// The target is pinned before cloning; retries and policy edits cannot rename it.
+			branch := saved.Review.Branch
+			if branch == "" {
+				branch = "codex/nudgy-" + saved.Task.ID
+			} // Pre-policy cloning tasks.
+			if !ValidTaskBranch(branch, repo.DefaultBranch) {
+				return ErrArguments
+			}
+			saved.Review = Review{TaskID: saved.Task.ID, Repository: repo, BaseCommit: snapshot.Commit, BaseTree: snapshot.Tree, Branch: branch, Tests: "not_run"}
 			saved.Task.Status = "editing"
 		}
 		e = *saved

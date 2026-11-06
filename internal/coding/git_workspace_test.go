@@ -69,6 +69,7 @@ func TestLocalGitClonesAndPublishesOnlyFrozenBranch(t *testing.T) {
 		}
 	}
 	r := reviewFixture()
+	r.Branch = "company/feature-custom-rule"
 	r.Repository = repo
 	r.BaseCommit = snapshot.Commit
 	r.BaseTree = snapshot.Tree

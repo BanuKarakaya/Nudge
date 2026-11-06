@@ -57,6 +57,7 @@ func TestCodingStorePostgres(t *testing.T) {
 	if _, err := db.Exec(ctx, `INSERT INTO slack_installations(team_id,team_name,bot_token) VALUES('T','test','test'); INSERT INTO users(id,team_id,slack_user_id) VALUES(1,'T','U1'),(2,'T','U2')`); err != nil {
 		t.Fatal(err)
 	}
+	testBranchRulesDB(t, db)
 	cipher, err := secure.NewCipherFromBase64(base64.StdEncoding.EncodeToString(make([]byte, 32)))
 	if err != nil {
 		t.Fatal(err)

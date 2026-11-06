@@ -83,3 +83,37 @@ Tests: `go test -race ./internal/analytics ./internal/codex ./internal/handler`,
 and `NUDGE_TEST_DATABASE_URL=<disposable-db> go test ./internal/repository/postgres
 -run TestAnalyticsOperationsPostgres` verifies upgrade, repeatable migration,
 trace upsert, filters and pagination in an isolated test schema.
+
+## Branch naming rules
+
+The **Branch kuralları** navigation opens `/dashboard/branch-rules.html`.
+This uses the same operator-only dashboard token (entered again on the new
+page, never persisted). It is not a member login: the administrator chooses an
+installed Slack workspace and, optionally, one of its persisted Slack users.
+No personal or workspace rule is seeded during migration.
+
+A freeform template supports `{slug}` (first 48 ASCII slug characters of the
+request, with Turkish transliteration), `{task_id}` (32 hex characters),
+`{user}` (provider login slug), `{repo}` (repository basename slug), and `{date}`
+(UTC task date YYYYMMDD). Static text is allowed. The preview uses clearly
+labelled sample values; it does not create a task or branch. Template length
+is at most 160 bytes; expanded names at most 240 bytes. Unsafe Git names,
+unknown placeholders and a target matching the repository's default branch
+are rejected. There is no freeform model-generated branch name.
+
+Workspace policy takes precedence over personal policy, then the original
+`codex/nudgy-{task_id}` default. Scope is Slack workspace/user, shared across
+GitHub and GitLab. Rule removal restores this fallback. A task freezes its
+rendered name in its encrypted payload before cloning; policy edits apply to
+new tasks only. Missing/unreadable settings fail closed; existing branch
+collisions are never overwritten (the existing empty-ref push lease remains).
+A task ID is recommended for uniqueness but is not required by custom rules.
+
+`GET /api/dashboard/branch-rules` returns registered scopes and saved rules.
+`PUT /api/dashboard/branch-rules` accepts `team_id`, `slack_user_id` (empty means
+workspace) and `template` (empty deletes that scope's rule). `POST
+/api/dashboard/branch-rules/preview` validates a template and returns an
+example. Every endpoint requires the existing dashboard token; mutations also
+require JSON and reject cross-site browser requests. The additive
+`coding_branch_rules` migration runs on startup. No new environment variable
+is required.

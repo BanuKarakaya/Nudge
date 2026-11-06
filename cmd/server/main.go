@@ -201,7 +201,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("initialize analytics: %v", err)
 	}
+	branchRules, err := postgres.NewBranchRuleStore(context.Background(), db)
+	if err != nil {
+		log.Fatalf("initialize branch rules: %v", err)
+	}
 	dashboardHandler := handler.NewDashboardHandler(analyticsRepository, os.Getenv("NUDGE_DASHBOARD_TOKEN"))
+	dashboardHandler.WithBranchRules(branchRules)
 	dashboardHandler.RegisterRoutes(mux)
 	slackEventHandler := handler.NewSlackEventHandler(
 		os.Getenv("SLACK_SIGNING_SECRET"),
@@ -215,7 +220,7 @@ func main() {
 		appTimezone,
 		analyticsRepository,
 	)
-	if err := configureCoding(db, mux, privateMux, slackEventHandler, slackInteractionHandler, installationRepository, slackAPIClient, links, onboardingService); err != nil {
+	if err := configureCoding(db, mux, privateMux, slackEventHandler, slackInteractionHandler, installationRepository, slackAPIClient, links, onboardingService, branchRules); err != nil {
 		log.Fatalf("repository task configuration: %v", err)
 	}
 	slackEventHandler.RegisterRoutes(mux)

@@ -7,14 +7,16 @@ import (
 	"strings"
 	"time"
 
+	"nudge/internal/coding"
 	"nudge/internal/dashboard"
 	"nudge/internal/repository"
 )
 
 type DashboardHandler struct {
-	repository repository.AnalyticsRepository
-	token      string
-	files      http.Handler
+	branchRules coding.BranchSettingsStore
+	repository  repository.AnalyticsRepository
+	token       string
+	files       http.Handler
 }
 
 func NewDashboardHandler(analytics repository.AnalyticsRepository, token string) *DashboardHandler {
@@ -29,6 +31,9 @@ func (h *DashboardHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dashboard", h.index)
 	mux.Handle("GET /dashboard/", http.StripPrefix("/dashboard/", h.files))
 	mux.HandleFunc("GET /api/dashboard", h.api)
+	mux.HandleFunc("GET /api/dashboard/branch-rules", h.branchRulesAPI)
+	mux.HandleFunc("PUT /api/dashboard/branch-rules", h.branchRulesAPI)
+	mux.HandleFunc("POST /api/dashboard/branch-rules/preview", h.branchRulesAPI)
 }
 
 func (h *DashboardHandler) index(w http.ResponseWriter, r *http.Request) {
