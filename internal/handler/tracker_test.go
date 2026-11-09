@@ -96,6 +96,9 @@ func TestTrackerOAuthCookieSelectionAndReplay(t *testing.T) {
 			if w.Code != 200 || strings.Contains(w.Body.String(), "<script>") || strings.Contains(w.Body.String(), "private-access") {
 				t.Fatal("unsafe selection page", w.Code)
 			}
+			if got := w.Header().Get("Referrer-Policy"); got != "strict-origin" {
+				t.Fatalf("selection form must preserve Origin without leaking callback codes; policy = %q", got)
+			}
 			if store.saved.UserID != 0 {
 				t.Fatal("OAuth activated connection before selection")
 			}
@@ -109,25 +112,34 @@ func TestTrackerOAuthCookieSelectionAndReplay(t *testing.T) {
 				t.Fatal("missing selection cookie")
 			}
 			form := url.Values{"state": {cookie.Value}, "resource": {"selected"}}
-			post := func(origin string) *httptest.ResponseRecorder {
+			post := func(origin, site string, withCookie bool) *httptest.ResponseRecorder {
 				r := httptest.NewRequest("POST", "https://nudgy.test/"+kind+"/select", strings.NewReader(form.Encode()))
 				r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 				r.Header.Set("Origin", origin)
-				r.AddCookie(cookie)
+				r.Header.Set("Sec-Fetch-Site", site)
+				if withCookie {
+					r.AddCookie(cookie)
+				}
 				w := httptest.NewRecorder()
 				public.ServeHTTP(w, r)
 				return w
 			}
-			if post("https://evil.test").Code != 403 {
+			if post("https://evil.test", "cross-site", true).Code != 403 {
 				t.Fatal("cross-site selection accepted")
 			}
-			if post("null").Code != 403 {
+			if got := post("null", "same-origin", true); got.Code != 403 || !strings.Contains(got.Body.String(), "Form gönderimi güvenlik kontrolünden geçemedi") {
 				t.Fatal("opaque origin accepted")
 			}
-			if got := post(h.publicURL); got.Code != 200 || store.saved.Provider != kind || store.saved.UserID != 1 {
+			if post("", "cross-site", true).Code != 403 {
+				t.Fatal("cross-site metadata accepted without Origin")
+			}
+			if post(h.publicURL, "same-origin", false).Code != 400 {
+				t.Fatal("same-origin form accepted without selection cookie")
+			}
+			if got := post(h.publicURL, "same-origin", true); got.Code != 200 || store.saved.Provider != kind || store.saved.UserID != 1 {
 				t.Fatal("selection not saved", got.Code)
 			}
-			if post(h.publicURL).Code != 400 {
+			if post(h.publicURL, "same-origin", true).Code != 400 {
 				t.Fatal("selection replay accepted")
 			}
 			r = httptest.NewRequest("GET", callback, nil)

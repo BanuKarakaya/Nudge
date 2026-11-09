@@ -38,6 +38,11 @@ func NewTrackerHandler(s *tracker.Service, installations repository.Installation
 }
 func (h *TrackerHandler) page(w http.ResponseWriter, status int, data trackerPageData) {
 	privatePageHeaders(w)
+	if data.Selecting {
+		// no-referrer makes browsers send Origin: null on HTML form POSTs.
+		// Preserve the origin for CSRF checks without exposing callback paths or codes.
+		w.Header().Set("Referrer-Policy", "strict-origin")
+	}
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
 	data.Name = h.service.Name()
 	data.Kind = h.service.Kind()
@@ -127,7 +132,7 @@ func (h *TrackerHandler) callback(w http.ResponseWriter, r *http.Request) {
 }
 func (h *TrackerHandler) selectResources(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Sec-Fetch-Site") == "cross-site" || (r.Header.Get("Origin") != "" && r.Header.Get("Origin") != h.publicURL) {
-		h.failure(w, 403)
+		h.page(w, http.StatusForbidden, trackerPageData{Title: "Bağlantı formu doğrulanamadı.", Description: "Form gönderimi güvenlik kontrolünden geçemedi. Slack’te Nudgy’den yeni bir bağlantı iste ve izin verme ile seçim adımlarını aynı tarayıcıda tamamla."})
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 65536)
