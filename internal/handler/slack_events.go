@@ -21,6 +21,7 @@ import (
 	"nudge/internal/repository"
 	"nudge/internal/service"
 	"nudge/internal/slack"
+	worktracker "nudge/internal/tracker"
 )
 
 type SlackEventHandler struct {
@@ -39,6 +40,7 @@ type SlackEventHandler struct {
 	coding            *CodingHandler
 	jobs              repository.SlackJobRepository
 	gitlab            *CodingHandler
+	trackers          []*TrackerHandler
 }
 
 func (h *SlackEventHandler) WithCoding(handler *CodingHandler) *SlackEventHandler {
@@ -285,6 +287,9 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 			if h.gitlab != nil {
 				toolVersion += "+gitlab-semantic-merge-v5"
 			}
+			for _, integration := range h.trackers {
+				toolVersion += "+" + integration.service.Kind() + "-v1"
+			}
 			if state.AgentToolVersion != toolVersion {
 				state.AgentThreadID = ""
 				state.AgentTokenUsage = nil
@@ -323,6 +328,9 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 				tools, codingReply = h.gitlab.ToolsForReply(tools, identity, codingReply)
 			}
 			var runTools service.AgentTools = tools
+			for _, integration := range h.trackers {
+				runTools = integration.Tools(runTools, worktracker.Identity{UserID: userID, Team: event.TeamID})
+			}
 			if resolver, ok := h.runtime.(service.MergeIntentResolver); ok {
 				runTools = service.WithMergeIntentTools(runTools, resolver, key, identity, history)
 			}

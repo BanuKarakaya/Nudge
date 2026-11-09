@@ -227,6 +227,9 @@ func main() {
 	if err := configureCoding(db, mux, privateMux, slackEventHandler, slackInteractionHandler, installationRepository, slackAPIClient, links, onboardingService, branchRules); err != nil {
 		log.Fatalf("repository task configuration: %v", err)
 	}
+	if err := configureTrackers(db, mux, privateMux, slackEventHandler, installationRepository, slackAPIClient, links, onboardingService); err != nil {
+		log.Fatalf("Jira/Trello configuration: %v", err)
+	}
 	jobCtx, jobCancel := context.WithTimeout(appCtx, 15*time.Second)
 	jobRepository, err := postgres.NewSlackJobRepository(jobCtx, db)
 	jobCancel()

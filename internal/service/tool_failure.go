@@ -4,12 +4,19 @@ import (
 	"errors"
 
 	"nudge/internal/coding"
+	"nudge/internal/tracker"
 )
 
 // Only host-defined categories cross into the model/logs. Never return the
 // original error: provider/network/database diagnostics can contain secrets.
 func AgentToolFailure(err error) (code, message string) {
 	switch {
+	case errors.Is(err, tracker.ErrConnect):
+		return "tracker_connection_required", "İstenen Jira/Trello bağlantısı kurulmalı veya yenilenmeli. Aynı sağlayıcının jira_connect ya da trello_connect aracını kullan; token isteme."
+	case errors.Is(err, tracker.ErrDenied):
+		return "tracker_access_denied", "Jira projesi/Trello panosu seçilmemiş veya bu kullanıcının güncel erişimi doğrulanamadı. Başka hesaba geçme; seçimi ve erişimi kontrol et."
+	case errors.Is(err, tracker.ErrArguments):
+		return "invalid_arguments", "Jira/Trello araç parametreleri geçersiz. İlgili listeleme aracının döndürdüğü kimlikleri ve sayfalama imlecini kullan."
 	case errors.Is(err, coding.ErrMergeIntentUnavailable):
 		return "merge_intent_unavailable", "Merge yapılmadı: isteğin anlamı şu anda doğrulanamadı. Geçici doğrulama hatasını açıkla; sabit komut veya URL tekrarı isteme. GitHub/GitLab izin hatası olarak yorumlama."
 	case errors.Is(err, coding.ErrMergeRequest):
