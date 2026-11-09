@@ -390,7 +390,7 @@ func TestConsumePreservesSafeMergeRejectionReason(t *testing.T) {
 		t.Fatal(err, replies)
 	}
 	success, text := toolReply(t, replies[0])
-	if success || !strings.Contains(text, "komut doğrulama hatasıdır") || strings.Contains(text, "private") {
+	if success || !strings.Contains(text, "sabit komut formatı isteme") || strings.Contains(text, "private") {
 		t.Fatal(success, text)
 	}
 }
@@ -1116,6 +1116,20 @@ func TestCodexHelper(t *testing.T) {
 	text, err := json.Marshal(observation)
 	if err != nil {
 		os.Exit(3)
+	}
+	if mode == "merge-intent" {
+		var definitions []any
+		var policy string
+		if start.Method != "thread/start" || json.Unmarshal(observation.Start["dynamicTools"], &definitions) != nil || len(definitions) != 0 || json.Unmarshal(observation.Start["baseInstructions"], &policy) != nil || policy != mergeIntentInstructions || !strings.Contains(observation.Env["CODEX_HOME"], "merge-intents") {
+			os.Exit(4)
+		}
+		var input []struct {
+			Text string `json:"text"`
+		}
+		if json.Unmarshal(observation.Turn["input"], &input) != nil || len(input) != 1 || !strings.Contains(input[0].Text, "current_user_message") || !strings.Contains(input[0].Text, "bunu mergele") || strings.Contains(input[0].Text, "not-for-resolver") {
+			os.Exit(5)
+		}
+		text = []byte(`{"action":"merge","provider":"github","repository":"owner/repo","number":12,"source_branch":"","target_branch":""}`)
 	}
 	write(map[string]any{"method": "item/completed", "params": map[string]any{
 		"threadId": threadID, "turnId": turnID,

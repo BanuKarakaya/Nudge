@@ -280,10 +280,10 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 			// delivered history once when coding tools are enabled or disabled.
 			toolVersion := ""
 			if h.coding != nil {
-				toolVersion = "coding-merge-input-v6"
+				toolVersion = "coding-semantic-merge-v7"
 			}
 			if h.gitlab != nil {
-				toolVersion += "+gitlab-merge-input-v4"
+				toolVersion += "+gitlab-semantic-merge-v5"
 			}
 			if state.AgentToolVersion != toolVersion {
 				state.AgentThreadID = ""
@@ -311,21 +311,21 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 			threadContext := h.threadContext(ctx, installation.BotToken, event)
 			input := fmt.Sprintf("Current time: %s\nTimezone: %s%s\n\nSlack message:\n%s", now.Format(time.RFC3339), location.String(), threadContext, analyticsRecord.RequestText)
 			tools := service.NewAgentTools(h.feedbinDigest, h.bookmarks, h.web, userID, now, location)
+			eventID := event.EventID
+			if eventID == "" {
+				eventID = event.Event.TS
+			}
+			identity := coding.Identity{UserID: userID, Team: event.TeamID, Channel: event.Event.Channel, Thread: threadTS, Event: eventID, Request: analyticsRecord.RequestText}
 			if h.coding != nil {
-				eventID := event.EventID
-				if eventID == "" {
-					eventID = event.Event.TS
-				}
-				tools, codingReply = h.coding.ToolsForReply(tools, coding.Identity{UserID: userID, Team: event.TeamID, Channel: event.Event.Channel, Thread: threadTS, Event: eventID, Request: analyticsRecord.RequestText})
+				tools, codingReply = h.coding.ToolsForReply(tools, identity)
 			}
 			if h.gitlab != nil {
-				eventID := event.EventID
-				if eventID == "" {
-					eventID = event.Event.TS
-				}
-				tools, codingReply = h.gitlab.ToolsForReply(tools, coding.Identity{UserID: userID, Team: event.TeamID, Channel: event.Event.Channel, Thread: threadTS, Event: eventID, Request: analyticsRecord.RequestText}, codingReply)
+				tools, codingReply = h.gitlab.ToolsForReply(tools, identity, codingReply)
 			}
 			var runTools service.AgentTools = tools
+			if resolver, ok := h.runtime.(service.MergeIntentResolver); ok {
+				runTools = service.WithMergeIntentTools(runTools, resolver, key, identity, history)
+			}
 			if job != nil {
 				runTools = leasedAgentTools{AgentTools: runTools, jobs: h.jobs, job: *job}
 				if job.Attempts > 1 {

@@ -113,12 +113,20 @@ type mergePinReader interface {
 	GetMergePin(context.Context, Identity) (MergePin, bool, error)
 }
 
-var ErrBranchMerge = errors.New("kaynak/hedef belirsiz veya açık merge isteği yok; örnek: github owner/repo feature/login -> development merge et; bu dal için aynı thread’de: bu dalı development dalına merge et")
+var ErrBranchMerge = errors.New("kaynak/hedef belirsiz veya mevcut kullanıcı isteği bu dallar için merge yetkisi vermiyor")
 
-// The parser and saved task, not model arguments, determine the merge pair.
+// The host resolver (or legacy parser and saved task) determines the merge pair.
 // The persisted pin binds retries to one request/revision even if branches move.
 func (s *Service) MergeBranches(ctx context.Context, i Identity, name, source, target string) (ChangeRequest, error) {
 	intent, ok := parseBranchMerge(i.Request)
+	resolved, semantic, err := semanticMergeIntent(ctx, i)
+	if err != nil {
+		return ChangeRequest{}, err
+	}
+	if semantic {
+		ok = resolved.Action == "merge" && resolved.Number == 0
+		intent = branchMergeIntent{Provider: resolved.Provider, Repository: resolved.Repository, Source: resolved.SourceBranch, Target: resolved.TargetBranch}
+	}
 	if !ok || i.Event == "" || i.Channel == "" || i.Thread == "" || intent.Target != target {
 		return ChangeRequest{}, ErrBranchMerge
 	}

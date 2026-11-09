@@ -15,6 +15,7 @@ func TestToolFailuresExposeOnlySafeCategories(t *testing.T) {
 		code string
 	}{
 		{coding.ErrMergeRequest, "merge_intent_required"},
+		{coding.ErrMergeIntentUnavailable, "merge_intent_unavailable"},
 		{coding.ErrBranchMerge, "branch_merge_intent_required"},
 		{coding.ErrChangeMoved, "merge_revision_changed"},
 		{coding.ErrMergeBlocked, "merge_blocked"},

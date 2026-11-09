@@ -29,68 +29,68 @@ the `gitlab_` prefix. Discover exact names with `repository_branches_list`
 must exist in the same repository and must differ. A previously merged branch
 with new source commits can produce a new request. Creation never merges.
 
-### Merge by branch
+### Natural-language merging
+
+The current user can request merging in their own words. There is no required
+command template or need to repeat a PR/MR URL already clear in the conversation:
 
 ```text
-@nudgy bu dalı development dalına merge et
-@nudgy tamam bence olmuş bu branchi development branch ine mergeleyebilir misin
-@nudgy github owner/repo feature/login -> development merge et
-@nudgy gitlab group/subgroup/project release/v2 -> main merge et
+@nudgy bunu mergele
+@nudgy bu PR ı merge et
+@nudgy mergeleme işlemini tekrar dener misin
+@nudgy bu branchi development branchine alabilir misin
+@nudgy could you merge this PR please?
 ```
 
-`repository_branches_merge` (or its `gitlab_` variant) finds/creates the request
-for the selected pair and then attempts the merge. No PR/MR URL is required.
-For arbitrary branches the signed message must explicitly name provider,
-repository, source and target as above. The host checks these against tool
-arguments; the model cannot replace the target or invent consent.
-“Bu dal” is accepted only when the current user's thread has exactly one coding
-task, already published, and no competing task on the other configured provider.
-With multiple tasks, specify the full source/target command. Branch case is
-preserved. Negations, quoted instructions, conditions and compound commands
-do not authorize merging.
-
-Slack inline-code formatting is accepted around a whole command, URL or branch
-name. For example, a copied `<PR URL> merge et` command remains valid when Slack
-wraps it in backticks. Fenced blocks, blockquotes and example prose remain invalid.
-`source-branch bu branchi development branchine mergeleyebilir misin` also works
-when that source identifies exactly one published task in the current user's
-thread. A different source supplied by the model is rejected. If discovery is
-truncated or the other provider has competing tasks, use the fully specified
-provider/repository/source/target command.
-
-The runtime reports whitelisted merge failure reasons (intent mismatch, changed
-revision, blocked checks, missing GitLab scope) to the assistant and logs only a
-safe error code. Unknown errors still hide raw provider/network/database details;
-they must not be presented as confirmed branch protection or permission failures.
-
-The operation returns the actual PR/MR if checks block merging. Pending provider
-mergeability calculations get a short bounded synchronous recheck; Nudgy never
-enables deferred auto-merge. A failed or unknown result is not reported as merged.
-
-### Merge by PR/MR URL
-
-For an existing PR/MR, send one of these explicit commands after mentioning Nudgy:
-
-```text
-merge https://github.com/owner/repo/pull/12
-https://github.com/owner/repo/pull/12 merge et
-merge https://gitlab.com/group/subgroup/project/-/merge_requests/34
-https://gitlab.com/group/subgroup/project/-/merge_requests/34 birleştir
-```
-
-`birleştir <URL>` is also accepted. Slack-formatted links (`<URL|label>`) work.
-The host matches the complete signed message after the bot mention is removed.
-The provider, repository and request number must match the URL exactly. Bare
-“merge et”, quoted examples, negations, conditional instructions,
-multiple commands or requests that only ask to code/publish/create/review do not
-authorize a merge. The assistant explains the accepted command when ambiguous.
-No second approval is required for a valid explicit command.
+An explicit URL also works. Reference resolution uses only this user's delivered
+conversation in this Slack thread, not other users' Slack messages or repository
+instructions. A retry can authorize another merge attempt when the preceding
+operation was a merge. A retry of creation/review, a status question, negation,
+quoted example, conditional/deferred request or a mere acknowledgement does not
+provide merge authority. When the intended PR/MR or branch direction is ambiguous,
+Nudgy asks a short clarifying question instead of prescribing a fixed command.
 
 `repository_change_request_status` / `gitlab_repository_change_request_status`
-return the provider's current state, source SHA, target branch, draft flag and
-readiness. `repository_change_request_merge` / `gitlab_repository_change_request_merge`
-use the original Slack message, never model-provided consent. Existing PRs/MRs
-can be merged even if they were not created by Nudgy, subject to current access.
+verify the real PR/MR, then `repository_change_request_merge` (or its GitLab
+variant) attempts the requested merge. Requests may predate Nudgy. For a source
+and target branch, `repository_branches_merge` / `gitlab_repository_branches_merge`
+finds or creates the PR/MR and attempts the merge. Arbitrary existing branches
+are supported, not just Nudgy task branches; no PR URL is needed. The direction
+must be clear, branch case is preserved, and a default target is never inferred.
+A request to change the destination uses branch mode, not an older PR's target.
+
+### Host intent boundary
+
+On the first merge tool invocation in an event, the host starts a fresh, tool-free
+intent-resolution turn using the configured simple model. It receives the exact
+current user message and delivered owner-bound history, independently of the
+executing assistant's proposed arguments, native thread and tool results. It
+returns `merge`, `none`, or `clarify`, plus one concrete provider/repository and
+PR/MR number or source/target pair. The host validates the shape, checks that the
+identifiers occur in the supplied context, and requires an exact match with the
+merge tool arguments. A main-agent `authorized` flag cannot grant permission.
+Language interpretation is model-based; identifier, access and revision checks
+remain deterministic.
+
+The decision is cached for the current processing attempt and shared by both
+providers. Resolution has a separate bounded concurrency pool and a 30-second
+limit, avoiding deadlock when the main agent is waiting for authorization. It
+adds one model call only when merging is attempted. A timeout or malformed answer
+stops the write without falling back to a permissive command check. Resolved
+intent is not a durable approval; the existing database merge pins continue to
+protect retries against changed revisions/targets. Non-Slack callers without a
+host resolver retain the conservative legacy explicit-command parser.
+
+Existing native conversations are restarted once with delivered history when the
+new tool version is loaded, so old fixed-command instructions do not persist.
+No new environment variable, migration or provider permission is required.
+
+The runtime reports only safe error categories (intent mismatch/unavailable,
+changed revision, blocked checks, missing GitLab scope), never raw diagnostics.
+Intent failures must not be presented as confirmed provider permission failures.
+If provider checks block a branch merge, the actual PR/MR is returned. Pending
+mergeability gets a short synchronous recheck; no deferred auto-merge is enabled.
+Success is reported only when the provider confirms `state=merged`.
 
 ## Permissions and concurrency
 
@@ -138,7 +138,9 @@ merge tool requires an explicit merge request.
 ## Validation
 
 Run `go test -race ./...` and `go vet ./...`. Provider tests mock HTTP; they create
-no real requests or merges. Cases cover explicit intent, wrong targets/providers,
+no real requests or merges. The model interpreter is stubbed in offline tests; they verify isolation, target
+grounding, host authorization and transport, not live-model language accuracy.
+Cases cover contextual intent, wrong targets/providers,
 identity injection, source changes, drafts/blocked status, lost-response recovery,
 API errors, redirects and OAuth scope migration. With a disposable database in
 `NUDGE_TEST_DATABASE_URL`, `TestCodingStorePostgres` additionally verifies durable

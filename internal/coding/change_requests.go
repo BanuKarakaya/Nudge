@@ -10,7 +10,8 @@ import (
 )
 
 var ErrAPIScope = errors.New("GitLab bağlantısını api izniyle yeniden yetkilendir; gitlab_connect aracını kullan")
-var ErrMergeRequest = errors.New("merge için açık komut gerekli: merge <PR/MR bağlantısı> veya <PR/MR bağlantısı> merge et")
+var ErrMergeRequest = errors.New("mevcut kullanıcı isteği bu PR/MR için merge yetkisi vermiyor veya hedef belirsiz")
+var ErrMergeIntentUnavailable = errors.New("merge isteği şu anda doğrulanamadı; işlem yapılmadı")
 var ErrChangeMoved = errors.New("PR/MR kaynağı veya hedefi değişti; durumu kontrol edip yeni bir merge isteği gönder")
 var ErrMergeBlocked = errors.New("PR/MR birleştirilemiyor: izinleri, çakışmaları, zorunlu incelemeleri ve CI durumunu kontrol et")
 
@@ -197,7 +198,18 @@ func ExplicitMerge(request string, r Repository, number int) bool {
 func (s *Service) MergeChangeRequest(ctx context.Context, i Identity, name string, number int) (ChangeRequest, error) {
 	// Validate intent before making even a provider read or credential refresh.
 	candidate := Repository{Provider: s.Kind(), FullName: name}
-	if i.Event == "" || i.Channel == "" || i.Thread == "" || !ExplicitMerge(i.Request, candidate, number) {
+	if i.Event == "" || i.Channel == "" || i.Thread == "" {
+		return ChangeRequest{}, ErrMergeRequest
+	}
+	intent, semantic, err := semanticMergeIntent(ctx, i)
+	if err != nil {
+		return ChangeRequest{}, err
+	}
+	allowed := ExplicitMerge(i.Request, candidate, number)
+	if semantic {
+		allowed = intent.Action == "merge" && intent.Provider == s.Kind() && intent.Repository == name && intent.Number == number && number > 0
+	}
+	if !allowed {
 		return ChangeRequest{}, ErrMergeRequest
 	}
 	p, r, account, token, err := s.changeAccess(ctx, i, name)

@@ -10,10 +10,12 @@ import (
 // original error: provider/network/database diagnostics can contain secrets.
 func AgentToolFailure(err error) (code, message string) {
 	switch {
+	case errors.Is(err, coding.ErrMergeIntentUnavailable):
+		return "merge_intent_unavailable", "Merge yapılmadı: isteğin anlamı şu anda doğrulanamadı. Geçici doğrulama hatasını açıkla; sabit komut veya URL tekrarı isteme. GitHub/GitLab izin hatası olarak yorumlama."
 	case errors.Is(err, coding.ErrMergeRequest):
-		return "merge_intent_required", "Merge yapılmadı: mevcut Slack mesajı bu PR/MR için açık merge komutu olarak doğrulanamadı. Kabul edilen biçim: <PR/MR URL> merge et. Bu bir komut doğrulama hatasıdır; GitHub/GitLab izin veya branch protection hatası olduğunu söyleme. Aynı parametreleri tekrar deneme; kullanıcıya doğru komutu göster."
+		return "merge_intent_required", "Merge yapılmadı: mevcut kullanıcı isteği önerilen PR/MR ile eşleşmiyor, açık merge isteği yok veya hedef belirsiz. Olumsuz/yalnızca inceleme isteyen mesajı merge onayı sayma. Hedef belirsizse hangi PR/MR olduğunu kısa bir soruyla netleştir; sabit komut formatı isteme. Aynı parametreleri tekrar deneme. Bu bir provider izin veya branch protection hatası değildir."
 	case errors.Is(err, coding.ErrBranchMerge):
-		return "branch_merge_intent_required", "Merge yapılmadı: kaynak/hedef dal isteği veya thread’deki görev belirsiz. Açık biçim: github owner/repo source -> target merge et (GitLab için gitlab group/project source -> target merge et). Kullanıcıya gerçek repo ve dallarla bu komutu göster. Bu bir komut/görev doğrulama hatasıdır; provider izin hatası değildir. Aynı parametrelerle tekrar deneme."
+		return "branch_merge_intent_required", "Merge yapılmadı: mevcut kullanıcı isteği önerilen kaynak/hedef ile eşleşmiyor veya belirsiz. Eksik repo, kaynak ya da hedefi kısa bir soruyla netleştir; kullanıcıdan sabit komut formatı isteme. Bu bir provider izin hatası değildir. Aynı parametrelerle tekrar deneme."
 	case errors.Is(err, coding.ErrChangeMoved):
 		return "merge_revision_changed", "Merge yapılmadı: PR/MR kaynağı, hedefi veya kayıtlı hesap/görev eşleşmesi değişmiş. Güncel durumu göster; değişen hedef veya revizyon için yeni bir açık kullanıcı isteği gerekir."
 	case errors.Is(err, coding.ErrMergeBlocked):
