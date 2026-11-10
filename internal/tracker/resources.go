@@ -85,11 +85,20 @@ func (c Client) Resources(ctx context.Context, token string) ([]Resource, error)
 type jiraIssue struct {
 	ID, Key string
 	Fields  struct {
-		Summary     string
-		Description any
-		Status      struct{ ID, Name string }
-		Project     struct{ ID string }
-		Assignee    *struct{ DisplayName string }
+		Summary      string
+		Description  any
+		Status       struct{ ID, Name string }
+		Project      struct{ ID string }
+		Assignee     *struct{ DisplayName, AccountID string }
+		Labels       []string
+		DueDate      string
+		Priority     any
+		Components   any
+		FixVersions  any
+		Versions     any
+		Timetracking any
+		Subtasks     any
+		Parent       any
 	}
 }
 
@@ -104,7 +113,10 @@ func (issue jiraIssue) item(r Resource) Item {
 		browserURL = u.String()
 	}
 	item := Item{ID: issue.ID, Key: issue.Key, Title: issue.Fields.Summary, Status: issue.Fields.Status.Name, StatusID: issue.Fields.Status.ID, Description: issue.Fields.Description, URL: browserURL}
+	item.Due = issue.Fields.DueDate
+	item.Fields = map[string]any{"labels": issue.Fields.Labels, "priority": issue.Fields.Priority, "components": issue.Fields.Components, "fixVersions": issue.Fields.FixVersions, "versions": issue.Fields.Versions, "timetracking": issue.Fields.Timetracking, "subtasks": issue.Fields.Subtasks, "parent": issue.Fields.Parent}
 	if issue.Fields.Assignee != nil {
+		item.MemberIDs = []string{issue.Fields.Assignee.AccountID}
 		item.Assignee = issue.Fields.Assignee.DisplayName
 	}
 	return item
@@ -116,6 +128,10 @@ type trelloCard struct {
 	List                string `json:"idList"`
 	Due                 string
 	Closed              bool
+	Start               string
+	DueComplete         bool
+	Members             []string `json:"idMembers"`
+	Labels              []string `json:"idLabels"`
 }
 
 func (card trelloCard) item() Item {
@@ -123,7 +139,7 @@ func (card trelloCard) item() Item {
 	if card.Closed {
 		status = "archived"
 	}
-	return Item{ID: card.ID, Title: card.Name, URL: safeURL(card.URL), Description: card.Desc, Status: status, StatusID: card.List, Due: card.Due}
+	return Item{ID: card.ID, Title: card.Name, URL: safeURL(card.URL), Description: card.Desc, Status: status, StatusID: card.List, Due: card.Due, Start: card.Start, DueComplete: card.DueComplete, MemberIDs: card.Members, LabelIDs: card.Labels}
 }
 func validResource(kind string, r Resource) bool {
 	if kind == "trello" {
@@ -140,7 +156,7 @@ func (c Client) Items(ctx context.Context, token string, r Resource, cursor stri
 		if cursor != "" && !trelloID.MatchString(cursor) {
 			return result, ErrArguments
 		}
-		q := url.Values{"limit": {"50"}, "sort": {"-id"}, "fields": {"name,url,idBoard,idList,due,closed"}}
+		q := url.Values{"limit": {"50"}, "sort": {"-id"}, "fields": {"name,url,idBoard,idList,due,closed,start,dueComplete,idMembers,idLabels"}}
 		if cursor != "" {
 			q.Set("before", cursor)
 		}
@@ -203,7 +219,7 @@ func (c Client) Item(ctx context.Context, token string, r Resource, id string) (
 			return Item{}, ErrArguments
 		}
 		var card trelloCard
-		if err := c.request(ctx, "https://api.trello.com/1/cards/"+id+"?fields=name,url,desc,idBoard,idList,due,closed", token, nil, &card); err != nil {
+		if err := c.request(ctx, "https://api.trello.com/1/cards/"+id+"?fields=name,url,desc,idBoard,idList,due,closed,start,dueComplete,idMembers,idLabels", token, nil, &card); err != nil {
 			return Item{}, err
 		}
 		if card.Board != r.ID || card.ID != id {
@@ -215,7 +231,7 @@ func (c Client) Item(ctx context.Context, token string, r Resource, id string) (
 		return Item{}, ErrArguments
 	}
 	var issue jiraIssue
-	if err := c.request(ctx, "https://api.atlassian.com/ex/jira/"+r.SiteID+"/rest/api/3/issue/"+id+"?fields=summary,status,assignee,description,project", token, nil, &issue); err != nil {
+	if err := c.request(ctx, "https://api.atlassian.com/ex/jira/"+r.SiteID+"/rest/api/3/issue/"+id+"?fields=summary,status,assignee,description,project,labels,duedate,priority,components,fixVersions,versions,timetracking,subtasks,parent", token, nil, &issue); err != nil {
 		return Item{}, err
 	}
 	if issue.Fields.Project.ID != r.ProjectID || (issue.ID != id && issue.Key != id) {

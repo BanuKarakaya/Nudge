@@ -29,7 +29,7 @@ func (c Client) Validate() error {
 }
 func (c Client) scopes() string {
 	if c.Kind() == "jira" {
-		return "read:me read:jira-work write:jira-work offline_access"
+		return "read:me read:jira-work read:jira-user write:jira-work offline_access"
 	}
 	return "read:member:trello read:board:trello write:board:trello offline_access"
 }
@@ -137,7 +137,7 @@ func (c Client) token(ctx context.Context, body map[string]string) (Credentials,
 	}
 	if token.Scope != "" {
 		for _, scope := range strings.Fields(c.scopes()) {
-			if scope != "offline_access" && !strings.HasPrefix(scope, "write:") && !strings.Contains(" "+token.Scope+" ", " "+scope+" ") {
+			if scope != "offline_access" && scope != "read:jira-user" && !strings.HasPrefix(scope, "write:") && !strings.Contains(" "+token.Scope+" ", " "+scope+" ") {
 				return Credentials{}, ErrDenied
 			}
 		}

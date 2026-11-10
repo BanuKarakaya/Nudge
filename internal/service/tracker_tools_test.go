@@ -107,3 +107,44 @@ func TestTrackerFailureMessagesDoNotSuggestUnsafeRetry(t *testing.T) {
 		t.Fatal(code)
 	}
 }
+
+type managementToolProvider struct {
+	*trackerToolProvider
+	changes int
+	changed tracker.ChangeInput
+}
+
+func (p *managementToolProvider) Lookup(context.Context, string, tracker.Resource, tracker.LookupInput) (any, error) {
+	return []tracker.Member{{ID: "banu"}, {ID: "latif"}}, nil
+}
+func (p *managementToolProvider) Change(_ context.Context, _ string, _ tracker.Resource, in tracker.ChangeInput) (tracker.MutationResult, error) {
+	p.changes++
+	p.changed = in
+	return tracker.MutationResult{Status: "updated", Item: tracker.Item{ID: "card"}}, nil
+}
+func TestManagementToolsAcceptTwoMembersAndExcludeDelete(t *testing.T) {
+	store := &trackerToolStore{connection: tracker.Connection{Identity: tracker.Identity{UserID: 1, Team: "T"}, Provider: "trello", Account: tracker.Account{ID: "account"}, Credentials: tracker.Credentials{Access: "secret", Expires: time.Now().Add(time.Hour), Scopes: "write:board:trello"}, Selected: []string{"selected"}}}
+	p := &managementToolProvider{trackerToolProvider: &trackerToolProvider{Client: tracker.Client{Provider: "trello"}}}
+	tools := NewTrackerTools(trackerBaseTools{}, tracker.New(store, p), tracker.Identity{UserID: 1, Team: "T"}, nil, "event")
+	for range 2 {
+		if _, err := tools.Call(context.Background(), "trello_card_assign", json.RawMessage(`{"resource_id":"selected","item_id":"card","mode":"add","member_ids":["banu","latif"]}`)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if p.changes != 1 || p.changed.Mode != "add" || len(p.changed.IDs) != 2 {
+		t.Fatal(p.changed, p.changes)
+	}
+	for _, kind := range []string{"jira", "trello"} {
+		for _, d := range trackerManagementDefinitions(kind) {
+			if strings.Contains(d.Name, "delete") || strings.Contains(d.Name, "project_update") || strings.Contains(d.Name, "board_update") {
+				t.Fatal("unrequested destructive/admin tool", d.Name)
+			}
+		}
+	}
+	if _, err := tools.Call(context.Background(), "trello_card_delete", json.RawMessage(`{}`)); !errors.Is(err, tracker.ErrArguments) {
+		t.Fatal(err)
+	}
+	if _, err := tools.Call(context.Background(), "trello_card_assign", json.RawMessage(`{"resource_id":"selected","item_id":"card","mode":"add","member_ids":["banu"],"user_id":2}`)); err == nil {
+		t.Fatal("identity injection")
+	}
+}

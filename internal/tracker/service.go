@@ -38,15 +38,20 @@ type Resource struct {
 	ProjectID string `json:"project_id,omitempty"`
 }
 type Item struct {
-	ID          string `json:"id"`
-	Key         string `json:"key,omitempty"`
-	Title       string `json:"title"`
-	URL         string `json:"url"`
-	Status      string `json:"status,omitempty"`
-	StatusID    string `json:"status_id,omitempty"`
-	Description any    `json:"description,omitempty"`
-	Assignee    string `json:"assignee,omitempty"`
-	Due         string `json:"due,omitempty"`
+	ID          string         `json:"id"`
+	Key         string         `json:"key,omitempty"`
+	Title       string         `json:"title"`
+	URL         string         `json:"url"`
+	Status      string         `json:"status,omitempty"`
+	StatusID    string         `json:"status_id,omitempty"`
+	Description any            `json:"description,omitempty"`
+	Assignee    string         `json:"assignee,omitempty"`
+	Due         string         `json:"due,omitempty"`
+	Start       string         `json:"start,omitempty"`
+	DueComplete bool           `json:"due_complete"`
+	MemberIDs   []string       `json:"member_ids,omitempty"`
+	LabelIDs    []string       `json:"label_ids,omitempty"`
+	Fields      map[string]any `json:"fields,omitempty"`
 }
 type Page struct {
 	Items      []Item `json:"items"`

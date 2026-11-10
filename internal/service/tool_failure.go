@@ -11,6 +11,8 @@ import (
 // original error: provider/network/database diagnostics can contain secrets.
 func AgentToolFailure(err error) (code, message string) {
 	switch {
+	case errors.Is(err, tracker.ErrUserScope):
+		return "jira_user_scope_required", "Jira’da atanabilir kişileri aramak için read:jira-user izni gerekiyor. Uygulama ayarlarına bu izin eklendikten sonra jira_connect ile kullanıcıyı yeniden bağla. Mevcut okuma ve diğer yazma araçları çalışmaya devam eder; kişi kimliği uydurma."
 	case errors.Is(err, tracker.ErrOutcomeUnknown):
 		return "tracker_outcome_unknown", "İşlem sonucu doğrulanamadı veya aynı istek hâlâ işleniyor. Başarılı olduğunu söyleme, yazma işlemini tekrarlama ve parametre değiştirerek tekrar deneme. Kartları/görevi okuyarak sonucu kontrol et; yeni bir yazma denemesi için kullanıcıdan açık yeni istek bekle."
 	case errors.Is(err, tracker.ErrWriteScope):

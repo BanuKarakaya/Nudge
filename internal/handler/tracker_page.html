@@ -65,7 +65,7 @@
         {{if .Success}}
           <p class="account-help">Bu hesap sana ait değilse Slack’te Nudgy’den yeni bir bağlantı iste ve {{.Name}}’da doğru hesabı seç.</p>
           <div class="capabilities"><h2>Şimdi neler yapabilirsin?</h2>
-            <p>{{if eq .Kind "trello"}}Seçtiğin panolardaki kartları oku, yeni kart oluştur veya kartlarını Doing’den Testing’e taşı.{{else}}Seçtiğin projelerdeki görevleri oku, yeni görev oluştur veya iş akışındaki durumlarını değiştir.{{end}}</p>
+            <p>{{if eq .Kind "trello"}}Kart oluştur, üyeleri ata, açıklama ve tarihleri düzenle; yorum, etiket ve checklist ekle. Kartlarını listeler arasında taşı veya arşivle.{{else}}Görev ve alt görev oluştur, kişi ata; açıklama, öncelik ve tarihleri düzenle. Yorum ekle ve iş akışındaki durumları değiştir.{{end}}</p>
             <p class="limit">Oluşturma ve taşıma için yazma izni gerekir. Eski bir okuma bağlantın varsa yeniden bağlan. Nudgy değişiklikleri yalnızca isteğin üzerine yapar.</p>
           </div>
           <div class="prompt"><p><span class="mention">@Nudgy</span> {{if eq .Kind "trello"}}Trello panolarımı listele.{{else}}Jira projelerimi listele.{{end}}</p></div>

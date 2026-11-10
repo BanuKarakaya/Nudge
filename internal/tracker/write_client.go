@@ -68,10 +68,7 @@ func (c Client) CreateOptions(ctx context.Context, token string, r Resource, iss
 				if !decimalID.MatchString(typ.ID) {
 					return result, ErrUnavailable
 				}
-				// Subtasks require parent/hierarchy support; only top-level creation here.
-				if !typ.Subtask {
-					result.Options = append(result.Options, Option{ID: typ.ID, Name: typ.Name})
-				}
+				result.Options = append(result.Options, Option{ID: typ.ID, Name: typ.Name, Subtask: typ.Subtask})
 			}
 		} else {
 			count = len(page.Fields)
@@ -195,10 +192,14 @@ func (c Client) Create(ctx context.Context, token string, r Resource, input Crea
 	if err != nil {
 		return MutationResult{}, err
 	}
-	if _, err = optionByID(options.Options, input.Destination); err != nil {
+	selected, err := optionByID(options.Options, input.Destination)
+	if err != nil {
 		return MutationResult{}, err
 	}
 	if c.Kind() == "trello" {
+		if input.Parent != "" {
+			return MutationResult{}, ErrArguments
+		}
 		if len(input.Fields) != 0 {
 			return MutationResult{}, ErrArguments
 		}
@@ -212,6 +213,14 @@ func (c Client) Create(ctx context.Context, token string, r Resource, input Crea
 		}
 		return MutationResult{Status: "created", Item: card.item()}, nil
 	}
+	if selected.Subtask != (input.Parent != "") {
+		return MutationResult{}, ErrArguments
+	}
+	if input.Parent != "" {
+		if _, err = c.Item(ctx, token, r, input.Parent); err != nil {
+			return MutationResult{}, err
+		}
+	}
 	metadata, err := c.CreateOptions(ctx, token, r, input.Destination)
 	if err != nil {
 		return MutationResult{}, err
@@ -223,6 +232,13 @@ func (c Client) Create(ctx context.Context, token string, r Resource, input Crea
 	fields["project"] = map[string]string{"id": r.ProjectID}
 	fields["issuetype"] = map[string]string{"id": input.Destination}
 	fields["summary"] = input.Title
+	if input.Parent != "" {
+		parentField := "key"
+		if decimalID.MatchString(input.Parent) {
+			parentField = "id"
+		}
+		fields["parent"] = map[string]string{parentField: input.Parent}
+	}
 	if input.Description != "" {
 		fields["description"] = adf(input.Description)
 	}

@@ -38,12 +38,14 @@ type Option struct {
 	StatusID string           `json:"status_id,omitempty"`
 	Status   string           `json:"status,omitempty"`
 	Fields   map[string]Field `json:"fields,omitempty"`
+	Subtask  bool             `json:"subtask,omitempty"`
 }
 type CreateOptions struct {
 	Options []Option `json:"options"`
 	Fields  []Field  `json:"fields,omitempty"`
 }
 type CreateInput struct {
+	Parent      string         `json:"parent_id,omitempty"`
 	Title       string         `json:"title"`
 	Description string         `json:"description"`
 	Destination string         `json:"destination_id"` // Trello list or Jira issue type.
@@ -58,6 +60,7 @@ type MoveInput struct {
 type MutationResult struct {
 	Status string `json:"status"`
 	Item   Item   `json:"item"`
+	Entity any    `json:"entity,omitempty"`
 }
 
 // Optional interface keeps read-only providers usable. Implementations validate
