@@ -137,8 +137,21 @@ type packet struct {
 	Params json.RawMessage `json:"params,omitempty"`
 	Result json.RawMessage `json:"result,omitempty"`
 	Error  *struct {
-		Code int `json:"code"`
+		Code    int    `json:"code"`
+		Message string `json:"message"`
 	} `json:"error,omitempty"`
+}
+
+// Keep provider diagnostics out of returned/logged errors. Only this known
+// pre-turn failure permits rebuilding from delivered application history.
+type rpcError struct {
+	method         string
+	code           int
+	missingRollout bool
+}
+
+func (e *rpcError) Error() string {
+	return fmt.Sprintf("Codex %s rejected (RPC code %d)", e.method, e.code)
 }
 
 type connection struct {
@@ -175,7 +188,7 @@ func (c *connection) rpc(ctx context.Context, method string, params any, out any
 		}
 		if string(msg.ID) == fmt.Sprint(id) && msg.Method == "" {
 			if msg.Error != nil {
-				return fmt.Errorf("Codex %s rejected (RPC code %d)", method, msg.Error.Code)
+				return &rpcError{method: method, code: msg.Error.Code, missingRollout: method == "thread/resume" && msg.Error.Code == -32600 && strings.HasPrefix(msg.Error.Message, "no rollout found for thread id ")}
 			}
 			if out == nil {
 				return nil
@@ -304,24 +317,31 @@ func (r *Runtime) run(parent context.Context, req service.AgentRequest, intentOn
 		baseInstructions += routingInstructions
 	}
 	params := map[string]any{"model": r.config.Model, "modelProvider": "nudgy", "cwd": work, "approvalPolicy": "never", "sandbox": "read-only", "baseInstructions": baseInstructions}
+	// Native threads persist their original tool definitions. New threads must
+	// always receive the current host-authorized tools, including recovery.
+	definitions := []map[string]any{}
+	if r.config.ComplexModel != "" && !intentOnly {
+		definitions = append(definitions, map[string]any{"type": "function", "name": handoffTool, "description": "Transfer coding or complex reasoning to the configured stronger model in this conversation. Call before attempting such a task, once only.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{}, "additionalProperties": false}})
+	}
+	if req.Tools != nil {
+		for _, tool := range req.Tools.Definitions() {
+			definitions = append(definitions, map[string]any{"type": "function", "name": tool.Name, "description": tool.Description, "inputSchema": tool.InputSchema})
+		}
+	}
+	prepareStart := func() {
+		delete(params, "threadId")
+		delete(params, "excludeTurns")
+		params["environments"] = []any{}
+		params["allowProviderModelFallback"] = false
+		params["dynamicTools"] = definitions
+	}
 	method := "thread/start"
 	if req.ThreadID != "" {
 		method = "thread/resume"
 		params["threadId"] = req.ThreadID
 		params["excludeTurns"] = true
 	} else {
-		params["environments"] = []any{} // no shell/filesystem environment, even on container platforms without a sandbox.
-		params["allowProviderModelFallback"] = false
-		definitions := []map[string]any{}
-		if r.config.ComplexModel != "" && !intentOnly {
-			definitions = append(definitions, map[string]any{"type": "function", "name": handoffTool, "description": "Transfer coding or complex reasoning to the configured stronger model in this conversation. Call before attempting such a task, once only.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{}, "additionalProperties": false}})
-		}
-		if req.Tools != nil {
-			for _, tool := range req.Tools.Definitions() {
-				definitions = append(definitions, map[string]any{"type": "function", "name": tool.Name, "description": tool.Description, "inputSchema": tool.InputSchema})
-			}
-		}
-		params["dynamicTools"] = definitions
+		prepareStart()
 	}
 	var started struct {
 		Thread struct {
@@ -329,7 +349,21 @@ func (r *Runtime) run(parent context.Context, req service.AgentRequest, intentOn
 		} `json:"thread"`
 	}
 	if err = c.rpc(ctx, method, params, &started); err != nil {
-		return service.AgentResult{}, err
+		var rejected *rpcError
+		if !errors.As(err, &rejected) || !rejected.missingRollout {
+			return service.AgentResult{}, err
+		}
+		// Redeploys without retained native state can leave a saved thread ID
+		// pointing at a missing rollout. No turn/tool has run yet: bootstrap
+		// once from delivered history, never retry a started turn or tool call.
+		log.Printf("harness=codex stage=thread_recovery reason=missing_rollout")
+		req.ThreadID = ""
+		req.History.AgentTokenUsage = nil
+		method = "thread/start"
+		prepareStart()
+		if err = c.rpc(ctx, method, params, &started); err != nil {
+			return service.AgentResult{}, err
+		}
 	}
 	threadID := started.Thread.ID
 	if threadID == "" || (req.ThreadID != "" && req.ThreadID != threadID) {

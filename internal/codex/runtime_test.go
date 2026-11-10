@@ -1093,6 +1093,32 @@ func TestCodexHelper(t *testing.T) {
 		os.Exit(3)
 	}
 	start := read()
+	if strings.HasPrefix(mode, "resume-") {
+		if start.Method != "thread/resume" {
+			os.Exit(4)
+		}
+		code, message := -32600, "no rollout found for thread id old-thread"
+		switch mode {
+		case "resume-invalid":
+			message = "invalid parameters: secret provider diagnostics"
+		case "resume-provider":
+			message = "model provider mismatch: secret provider diagnostics"
+		case "resume-server":
+			code = -32603
+		case "resume-eof":
+			os.Exit(0)
+		}
+		write(map[string]any{"id": start.ID, "error": map[string]any{"code": code, "message": message}})
+		start = read()
+		if start.Method != "thread/start" {
+			os.Exit(5)
+		}
+		if mode == "resume-start-fails" {
+			write(map[string]any{"id": start.ID, "error": map[string]any{"code": -32600, "message": "no rollout found for thread id secret"}})
+			_, _ = io.Copy(io.Discard, os.Stdin)
+			os.Exit(0)
+		}
+	}
 	threadID := "thread-1"
 	if mode == "missing-thread" {
 		threadID = ""
@@ -1143,4 +1169,54 @@ func TestCodexHelper(t *testing.T) {
 	// stdin; otherwise EOF could race the final packet in connection.receive.
 	_, _ = io.Copy(io.Discard, os.Stdin)
 	os.Exit(0)
+}
+
+func TestMissingNativeThreadBootstrapsDeliveredHistory(t *testing.T) {
+	r := helperRuntime(t, "resume-missing")
+	req := runtimeTestRequest()
+	req.ThreadID = "old-thread"
+	req.Tools = &recordingAgentTools{}
+	req.History = service.ConversationState{AgentThreadID: "old-thread", AgentTokenUsage: &service.AgentTokenUsage{Total: 900}, Turns: []service.ConversationExchange{{Request: "Create a card", Reply: "Created https://trello.com/c/known-card"}}}
+	result, err := r.Run(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got helperObservation
+	if err := json.Unmarshal([]byte(result.Text), &got); err != nil {
+		t.Fatal(err)
+	}
+	if result.ThreadID != "thread-1" || got.Method != "thread/start" || got.Start["threadId"] != nil || got.Start["excludeTurns"] != nil || string(got.Start["environments"]) != "[]" || string(got.Start["allowProviderModelFallback"]) != "false" {
+		t.Fatalf("unsafe recovery: %+v", got)
+	}
+	var defs []service.ToolDefinition
+	if json.Unmarshal(got.Start["dynamicTools"], &defs) != nil || len(defs) != len(req.Tools.Definitions()) {
+		t.Fatal("recovery lost current tools")
+	}
+	var input []struct{ Text string }
+	if json.Unmarshal(got.Turn["input"], &input) != nil || len(input) != 1 || !strings.Contains(input[0].Text, "known-card") || !strings.HasSuffix(input[0].Text, req.Input) || strings.Contains(input[0].Text, "agent_token_usage") || strings.Contains(input[0].Text, "agent_thread_id") {
+		t.Fatalf("invalid recovery context: %s", got.Turn["input"])
+	}
+	if req.History.AgentTokenUsage.Total != 900 || req.History.AgentThreadID != "old-thread" {
+		t.Fatal("caller history mutated")
+	}
+	if len(req.Tools.(*recordingAgentTools).calls) != 0 {
+		t.Fatal("old tool call replayed")
+	}
+}
+
+func TestResumeRecoveryFailsClosedForOtherFailures(t *testing.T) {
+	for _, mode := range []string{"resume-invalid", "resume-provider", "resume-server", "resume-eof", "resume-start-fails"} {
+		t.Run(mode, func(t *testing.T) {
+			r := helperRuntime(t, mode)
+			req := runtimeTestRequest()
+			req.ThreadID = "old-thread"
+			result, err := r.Run(context.Background(), req)
+			if err == nil || strings.Contains(err.Error(), "secret") || result != (service.AgentResult{}) {
+				t.Fatalf("unsafe recovery: %+v, %v", result, err)
+			}
+			if mode == "resume-start-fails" && !strings.Contains(err.Error(), "thread/start rejected") {
+				t.Fatal(err)
+			}
+		})
+	}
 }

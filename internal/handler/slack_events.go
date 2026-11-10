@@ -279,7 +279,7 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 			err = fmt.Errorf("agent runtime unavailable")
 		} else {
 			// Dynamic tools belong to a native thread at creation. Re-bootstrap
-			// delivered history once when coding tools are enabled or disabled.
+			// delivered history once when tool capabilities change.
 			toolVersion := ""
 			if h.coding != nil {
 				toolVersion = "coding-semantic-merge-v7"
@@ -288,7 +288,7 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 				toolVersion += "+gitlab-semantic-merge-v5"
 			}
 			for _, integration := range h.trackers {
-				toolVersion += "+" + integration.service.Kind() + "-v1"
+				toolVersion += "+" + integration.service.Kind() + "-management-v2"
 			}
 			if state.AgentToolVersion != toolVersion {
 				state.AgentThreadID = ""

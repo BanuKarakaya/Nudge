@@ -193,3 +193,55 @@ func TestTrackerConnectionIntentPrivateDeliveryAndToolIsolation(t *testing.T) {
 		})
 	}
 }
+
+func TestTrackerManagementUpgradeRefreshesNativeTools(t *testing.T) {
+	for _, kind := range []string{"jira", "trello"} {
+		t.Run(kind, func(t *testing.T) {
+			integration, _ := trackerHandlerFixture(t, kind)
+			store := make(conversationTestStore)
+			key := service.ConversationKey{Team: "T", Channel: "C", Thread: "1.0", User: "U"}
+			state := deliveredState()
+			state.AgentThreadID = "old-native"
+			state.AgentToolVersion = "+" + kind + "-v1"
+			state.AgentTokenUsage = &service.AgentTokenUsage{Total: 120}
+			if err := store.Save(context.Background(), key, state); err != nil {
+				t.Fatal(err)
+			}
+			calls := 0
+			h := (&SlackEventHandler{installations: conversationInstallations{}, history: store, client: &conversationSender{}, runtime: agentFunc(func(_ context.Context, r service.AgentRequest) (service.AgentResult, error) {
+				calls++
+				if calls == 1 && (r.ThreadID != "" || r.History.AgentTokenUsage != nil || len(r.History.Turns) != len(state.Turns)) {
+					t.Fatal("management upgrade reused stale native tools or lost history")
+				}
+				if calls == 2 && r.ThreadID != "new-native" {
+					t.Fatal("unchanged tools reset conversation again")
+				}
+				assign := kind + "_issue_assign"
+				if kind == "trello" {
+					assign = "trello_card_assign"
+				}
+				found := false
+				for _, d := range r.Tools.Definitions() {
+					found = found || d.Name == assign
+				}
+				if !found {
+					t.Fatal("assignment tool missing")
+				}
+				return service.AgentResult{ThreadID: "new-native", Text: "assignment tools ready"}, nil
+			})}).WithTracker(integration)
+			h.replyWithSummary(conversationEvent("Bu görevi bana ata"))
+			got, err := store.Load(context.Background(), key)
+			if err != nil || got.AgentThreadID != "new-native" || got.AgentToolVersion != "+"+kind+"-management-v2" {
+				t.Fatalf("upgraded tool version not persisted: %+v, %v", got, err)
+			}
+			next := conversationEvent("Diğer görevi göster")
+			next.EventID = "management-followup"
+			next.Event.TS = "2.0"
+			next.Event.ThreadTS = "1.0"
+			h.replyWithSummary(next)
+			if calls != 2 {
+				t.Fatalf("runtime calls=%d", calls)
+			}
+		})
+	}
+}

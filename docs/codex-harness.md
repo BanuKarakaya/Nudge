@@ -149,9 +149,21 @@ The thinking reaction is managed by the Slack transport, before waiting/generati
 and removed after delivery or on handled failure. On generation failure,
 the native thread pointer is invalidated so a later run bootstraps only delivered
 history. Delivery retries use the saved response checkpoint. Old native files remain for recovery; there is no automated retention
-policy. Missing volume/session files produce an explicit failed turn, not a
-silent switch to a different model. A subsequent attempt creates a new thread
-after invalidation.
+policy. If `thread/resume` rejects a missing rollout (`-32600`, known
+`no rollout found for thread id` response), the adapter starts one replacement
+thread in the same request, with the configured model and current tools. It
+bootstraps only the delivered transcript from Postgres and resets native token
+counters. Previous tool calls are not replayed. Recovery is limited to this
+pre-turn failure: invalid parameters, provider mismatches, transport errors and
+failed/uncertain running turns do not trigger an automatic restart. Logs contain
+only a recovery reason, never raw provider diagnostics. A volume is still needed
+to retain full native context; recovery retains only the bounded delivered history.
+
+Jira/Trello management tools use the `management-v2` native tool version, so
+threads created with the old read/create/move toolset bootstrap once with member
+assignment, comments and the other new tools. The Slack thread stays the same;
+its delivered history is retained. Bump the integration tool version when its
+persisted tool surface changes.
 
 Acknowledged Slack mentions are persisted in the [PostgreSQL job queue](slack-jobs.md).
 Interrupted generation restarts from delivered history after claim recovery;

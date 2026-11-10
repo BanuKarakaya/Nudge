@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"nudge/internal/analytics"
+	"nudge/internal/service"
 )
 
 func TestNativeAppServerModelHandoff(t *testing.T) {
@@ -232,5 +233,59 @@ func TestNativeAppServerToolRoundTrip(t *testing.T) {
 	continued, err := r.Run(context.Background(), req)
 	if err != nil || continued.ThreadID != result.ThreadID || continued.Text == "" || len(tools.calls) != 1 || requests.Load() != 3 {
 		t.Fatalf("native resume failed: result=%+v err=%v calls=%v requests=%d", continued, err, tools.calls, requests.Load())
+	}
+}
+
+// Reproduce a redeploy with a database-saved ID but no local rollout. The
+// provider is a local fake endpoint and receives only a fake API credential.
+func TestNativeAppServerMissingRolloutRecovery(t *testing.T) {
+	binary := os.Getenv("NUDGY_TEST_CODEX_BINARY")
+	if binary == "" {
+		t.Skip("set NUDGY_TEST_CODEX_BINARY for offline integration")
+	}
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		calls.Add(1)
+		var body struct {
+			Input json.RawMessage
+			Tools []struct{ Name string }
+		}
+		if req.URL.Path != "/responses" || json.NewDecoder(req.Body).Decode(&body) != nil {
+			t.Error("unexpected provider request")
+			http.Error(w, "invalid", 400)
+			return
+		}
+		if !strings.Contains(string(body.Input), "known-card") || !strings.Contains(string(body.Input), "Current user message") {
+			t.Error("delivered context missing")
+		}
+		found := false
+		for _, tool := range body.Tools {
+			found = found || tool.Name == "rss_inventory"
+		}
+		if !found {
+			t.Error("fresh tools missing")
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		send := func(v any) { b, _ := json.Marshal(v); fmt.Fprintf(w, "data: %s\n\n", b) }
+		item := map[string]any{"type": "message", "id": "msg_recovered", "role": "assistant", "phase": "final_answer", "status": "completed", "content": []any{map[string]any{"type": "output_text", "text": "Recovered", "annotations": []any{}}}}
+		send(map[string]any{"type": "response.created", "response": map[string]any{"id": "resp_recovered", "status": "in_progress", "output": []any{}}})
+		send(map[string]any{"type": "response.output_item.done", "output_index": 0, "item": item})
+		send(map[string]any{"type": "response.completed", "response": map[string]any{"id": "resp_recovered", "status": "completed", "output": []any{item}, "usage": map[string]any{"input_tokens": 20, "output_tokens": 5, "total_tokens": 25}}})
+	}))
+	defer server.Close()
+	r, err := New(Config{Binary: binary, Model: "offline-test-model", BaseURL: server.URL, APIKey: "offline-test-key", StateDir: t.TempDir(), Timeout: 25 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := runtimeTestRequest()
+	req.ThreadID = "11111111-1111-4111-8111-111111111111"
+	req.Tools = &recordingAgentTools{}
+	req.History = service.ConversationState{AgentThreadID: req.ThreadID, AgentTokenUsage: &service.AgentTokenUsage{Total: 900}, Turns: []service.ConversationExchange{{Request: "Create card", Reply: "Created known-card"}}}
+	result, err := r.Run(context.Background(), req)
+	if err != nil || result.ThreadID == "" || result.ThreadID == req.ThreadID || result.Text != "Recovered" || calls.Load() != 1 || len(req.Tools.(*recordingAgentTools).calls) != 0 {
+		t.Fatalf("recovery=%+v err=%v model calls=%d", result, err, calls.Load())
+	}
+	if result.TokenUsage == nil || result.TokenUsage.Total != 25 {
+		t.Fatalf("old cumulative usage reused: %+v", result.TokenUsage)
 	}
 }
