@@ -83,11 +83,11 @@ func (*fakeProvider) AuthorizeURL(s, v string) string {
 	return "https://auth.atlassian.com/authorize?state=" + s
 }
 func (*fakeProvider) Exchange(context.Context, string, string) (Credentials, error) {
-	return Credentials{"access-secret", "refresh-secret", time.Now().Add(time.Hour)}, nil
+	return Credentials{"access-secret", "refresh-secret", time.Now().Add(time.Hour), ""}, nil
 }
 func (p *fakeProvider) Refresh(context.Context, string) (Credentials, error) {
 	p.refreshes++
-	return Credentials{"rotated-access", "rotated-refresh", time.Now().Add(time.Hour)}, nil
+	return Credentials{"rotated-access", "rotated-refresh", time.Now().Add(time.Hour), ""}, nil
 }
 func (p *fakeProvider) Account(context.Context, string) (Account, error) {
 	return p.account, p.accountError

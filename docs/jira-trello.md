@@ -7,8 +7,10 @@ projelerini veya Trello panolarını seçer. Seçim kaydedilmeden bağlantı etk
 Bu sürüm hesap bağlama, bağlantı durumunu doğrulama, seçili alanları listeleme,
 görev/kart listeleme ve açıklamalarını okumayı destekler. Jira’da tüm durumdaki
 görevler, Trello’da açık kartlar listelenir; bilinen bir arşivlenmiş kart da kendi
-seçili panosunda okunabilir. Görev/kart oluşturma, güncelleme ve webhook üzerinden
-otomatik bildirim bu sürümün kapsamına dahil değildir. Jira Data Center desteklenmez.
+seçili panosunda okunabilir. Yeni Trello kartları ve Jira görevleri oluşturulabilir;
+Trello kartları aynı panonun açık listeleri arasında, Jira görevleri mevcut iş
+akışının izin verdiği durumlar arasında taşınabilir. Webhook üzerinden otomatik
+bildirim ve Jira alt görev oluşturma bu sürümün kapsamına dahil değildir. Jira Data Center desteklenmez.
 
 ## Sunucu ayarları
 
@@ -39,7 +41,7 @@ otomatik ve tekrar çalıştırılabilir biçimde oluşturulur. Mevcut tablolar 
    üzerinden Nudgy için OAuth 2.0 integration oluştur.
 2. Authorization → OAuth 2.0 (3LO) callback URL:
    `https://<Nudgy host>/jira/oauth/callback`.
-3. Permissions bölümünde **Jira API** için `read:jira-work`, **User Identity API**
+3. Permissions bölümünde **Jira API** için `read:jira-work` ve `write:jira-work`, **User Identity API**
    için `read:me` kapsamlarını ekle. Nudgy ayrıca `offline_access` ister.
 4. Client ID ve client secret değerlerini yukarıdaki Jira ayarlarına kaydet.
    Diğer kullanıcıların bağlanabilmesi için uygulamanın dağıtım ayarını da aç.
@@ -56,7 +58,7 @@ ve [güncel görev arama API’si](https://developer.atlassian.com/cloud/jira/pl
    uygulamasının OAuth 2.0 client ayarlarını oluştur.
 2. Sunucuda secret tutulacağı için **confidential** client kullan.
 3. Callback URL: `https://<Nudgy host>/trello/oauth/callback`.
-4. Kapsamlar: `read:member:trello`, `read:board:trello`.
+4. Kapsamlar: `read:member:trello`, `read:board:trello`, `write:board:trello`.
    Nudgy yenileme tokenı için ayrıca `offline_access` ister.
 5. OAuth 2.0 client ID ve secret değerlerini Trello ayarlarına kaydet.
    Bunlar eski Trello API key / kullanıcı tokenı değildir.
@@ -76,6 +78,10 @@ ve [confidential client akışı](https://developer.atlassian.com/cloud/trello/g
 - `@Nudgy <proje adı> Jira görevlerini listele`
 - `@Nudgy <pano adı> Trello kartlarını özetle`
 - `@Nudgy <proje adı> içindeki ABC-123 görevini oku`
+- `@Nudgy Trello <pano adı> panosunun Doing listesinde “Giriş ekranını düzelt” kartı oluştur`
+- `@Nudgy Trello <pano adı> panosundaki <kart> kartını Doing’den Testing’e taşı`
+- `@Nudgy Jira <proje adı> projesinde “Giriş ekranını düzelt” başlıklı Task oluştur`
+- `@Nudgy Jira <proje adı> projesindeki ABC-123 görevini Testing’e taşı`
 
 Bağlantı isteği özel DM gönderir; OAuth izni ve proje/pano seçimi kullanıcıya
 aittir. Link 20 dakika, OAuth ve seçim oturumları 10 dakika geçerlidir. Seçimi
@@ -85,7 +91,9 @@ mevcut çalışan bağlantıyı değiştirmez.
 Araçlar: `jira_connect`, `jira_connection_status`, `jira_projects_list`,
 `jira_issues_list`, `jira_issue_read`, `trello_connect`,
 `trello_connection_status`, `trello_boards_list`, `trello_cards_list`,
-`trello_card_read`. Liste araçları en fazla 50 görev/kart döndürür;
+`trello_card_read`, `trello_lists_list`, `trello_card_create`, `trello_card_move`,
+`jira_create_options`, `jira_issue_transitions`, `jira_issue_create`, `jira_issue_move`.
+Liste araçları en fazla 50 görev/kart döndürür;
 `next_cursor` varsa sonraki sayfa okunmalıdır. Proje/pano keşfi 2000 alanla,
 Jira site keşfi 100 siteyle sınırlıdır; sınır aşılırsa eksik liste yerine hata döner.
 
@@ -98,7 +106,7 @@ Jira site keşfi 100 siteyle sınırlıdır; sınır aşılırsa eksik liste yer
   değerinin kendisi yerine özeti saklanır.
 - Token yenileme PostgreSQL satır kilidi altında yapılır; yenilenen tokenlar
   sonraki API sorguları başarısız olsa bile kaydedilir.
-- Her okumada hesap kimliği, seçilen alanlar ve güncel sağlayıcı erişimi
+- Her okuma ve değişiklikte hesap kimliği, seçilen alanlar ve güncel sağlayıcı erişimi
   doğrulanır. Görev/kartın seçili proje/panoya ait olduğu ayrıca kontrol edilir.
 - HTTP yönlendirmeleri takip edilmez. API hata gövdeleri ve kimlik bilgileri
   modele veya uygulama loglarına aktarılmaz.
@@ -127,3 +135,40 @@ Kodun deploy edilmesi ve OAuth uygulama ayarlarının tamamlanması canlı bağl
 için gereklidir. Deploy sonrasında iki farklı Slack kullanıcısıyla ayrı alanlar
 seçerek bağlan; birinin seçimi diğerinde görünmemeli. Bağlantı iptalini ve yeniden
 yetkilendirmeyi kontrol et. Yerel sahte API testleri canlı OAuth onayı yerine geçmez.
+
+## Yazma izinlerine geçiş
+
+Deploy öncesinde Jira uygulamasına `write:jira-work`, Trello uygulamasına
+`write:board:trello` iznini ekle. Sonrasında kullanıcı Slack’ten yeniden bağlantı
+istemeli, yeni izni onaylamalı ve alanlarını seçmeli. Client ID/secret veya
+şifreleme anahtarını değiştirmek gerekmez. Eski bağlantılar okumaya devam eder;
+yazma izni olmayan bir bağlantıyla oluşturma/taşıma yapılmaz.
+`connection_status` yanıtındaki `write_enabled` bağlantının kapsamını gösterir;
+sağlayıcının proje/pano yetkileri ayrıca geçerlidir.
+
+Trello’da önce `trello_lists_list`, Jira’da `jira_create_options` ile gerçek
+kimlikler keşfedilir. Jira’da görev türü seçildikten sonra aynı araçla zorunlu
+alanlar okunur. Ek alanlar `fields_json` içinde API biçiminde gönderilir; yalnızca
+oluşturma/geçiş ekranının izin verdiği alanlar kabul edilir. Eksik zorunlu değerler
+kullanıcıdan istenir. Proje, görev türü ve üst görev bu ek alanlarla değiştirilemez.
+Jira açıklamaları düz metinden Atlassian Document Format’a dönüştürülür.
+
+Taşıma öncesinde kart/görev okunur; `status_id`, `expected_status_id` olarak
+iletilir. Trello’da bu kimlik mevcut listeyi, Jira’da mevcut durumu belirtir.
+Jira’da hedef durum kimliği yerine `jira_issue_transitions` sonucundaki geçiş
+kimliği kullanılır. Durum değişmişse işlem durur; aynı hedefteki Trello kartı
+tekrar taşınmaz. Sağlayıcı API’leri atomik durum karşılaştırması sunmadığından
+son kontrol ile yazma arasında başka kullanıcıların değişiklik yapması mümkündür.
+
+Aynı Slack olayının aynı parametrelerle tekrar işlenmesi, bağlantıda şifreli
+saklanan işlem kaydıyla yedi gün boyunca engellenir (en fazla 1000 kayıt).
+Yazmadan önce kayıt kalıcılaştırılır. Zaman aşımı, bağlantı kopması veya belirsiz
+API yanıtında otomatik tekrar yapılmaz; sonuç okumayla kontrol edilir. Onaylanan
+başarı kaydı tekrar çağrıldığında aynı sonuç döner. Aynı hesaba yeniden izin
+vermek kayıtları korur; bağlantıyı silmek veya hesabı değiştirmek korumayı sıfırlar.
+Bu koruma farklı yeni Slack mesajları veya değiştirilmiş parametreler arasında
+aynı içeriği oluşturmayı engellemez. Belirsiz sonuçta yeni bir deneme için
+kullanıcının açık yeni isteği gerekir.
+
+API referansları: [Trello kart oluşturma ve güncelleme](https://developer.atlassian.com/cloud/trello/rest/api-group-cards/),
+[Jira görev oluşturma, metadata ve geçişler](https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issues/).

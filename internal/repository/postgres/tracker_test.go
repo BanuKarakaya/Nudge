@@ -85,6 +85,29 @@ func TestTrackerStorePostgres(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	// Mutation reservations/results survive reconnects and process restarts.
+	if err = store.WithConnection(ctx, "jira", 1, func(c *tracker.Connection) error {
+		c.Mutations = map[string]tracker.MutationReceipt{"request-hash": {Started: time.Now(), Result: &tracker.MutationResult{Status: "created", Item: tracker.Item{ID: "private-created-item"}}}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	c.Provider = "jira"
+	if err = store.Save(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	if err = restarted.WithConnection(ctx, "jira", 1, func(c *tracker.Connection) error {
+		receipt, ok := c.Mutations["request-hash"]
+		if !ok || receipt.Result == nil || receipt.Result.Item.ID != "private-created-item" {
+			t.Fatal("reconnect erased replay protection")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.QueryRow(ctx, `SELECT encrypted FROM tracker_connections WHERE provider='jira' AND user_id=1`).Scan(&raw); err != nil || strings.Contains(raw, "private-created-item") {
+		t.Fatal("mutation receipt unencrypted", err)
+	}
 	var consumed atomic.Int32
 	var wg sync.WaitGroup
 	for range 8 {

@@ -29,9 +29,9 @@ func (c Client) Validate() error {
 }
 func (c Client) scopes() string {
 	if c.Kind() == "jira" {
-		return "read:me read:jira-work offline_access"
+		return "read:me read:jira-work write:jira-work offline_access"
 	}
-	return "read:member:trello read:board:trello offline_access"
+	return "read:member:trello read:board:trello write:board:trello offline_access"
 }
 func (c Client) AuthorizeURL(state, verifier string) string {
 	q := url.Values{"client_id": {c.ClientID}, "redirect_uri": {c.RedirectURL}, "response_type": {"code"}, "prompt": {"consent"}, "scope": {c.scopes()}, "state": {state}}
@@ -48,11 +48,25 @@ func (c Client) AuthorizeURL(state, verifier string) string {
 // All destinations are fixed provider origins. Never follow API-supplied URLs
 // or redirects with credentials; errors and response bodies stay out of logs.
 func (c Client) request(ctx context.Context, endpoint, token string, body any, out any) error {
+	method := http.MethodGet
+	if body != nil {
+		method = http.MethodPost
+	}
+	return c.requestMethod(ctx, method, endpoint, token, body, out)
+}
+func (c Client) requestMethod(ctx context.Context, method, endpoint, token string, body any, out any) error {
 	u, err := url.Parse(endpoint)
 	if err != nil || u.Scheme != "https" || u.User != nil || u.Fragment != "" || (u.Host != "auth.atlassian.com" && !(c.Kind() == "jira" && u.Host == "api.atlassian.com") && !(c.Kind() == "trello" && u.Host == "api.trello.com")) {
 		return ErrArguments
 	}
-	method := http.MethodGet
+	if method != http.MethodGet && method != http.MethodPost && method != http.MethodPut {
+		return ErrArguments
+	}
+	mutation := method != http.MethodGet && u.Host != "auth.atlassian.com"
+	failure := ErrUnavailable
+	if mutation {
+		failure = ErrOutcomeUnknown
+	}
 	var reader io.Reader
 	if body != nil {
 		raw, err := json.Marshal(body)
@@ -60,7 +74,6 @@ func (c Client) request(ctx context.Context, endpoint, token string, body any, o
 			return ErrArguments
 		}
 		reader = bytes.NewReader(raw)
-		method = http.MethodPost
 	}
 	req, err := http.NewRequestWithContext(ctx, method, endpoint, reader)
 	if err != nil {
@@ -80,7 +93,7 @@ func (c Client) request(ctx context.Context, endpoint, token string, body any, o
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	resp, err := client.Do(req)
 	if err != nil {
-		return ErrUnavailable
+		return failure
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == 401 {
@@ -92,12 +105,18 @@ func (c Client) request(ctx context.Context, endpoint, token string, body any, o
 	if resp.StatusCode == 400 && u.Host == "auth.atlassian.com" {
 		return ErrConnect
 	}
+	if mutation && resp.StatusCode >= 400 && resp.StatusCode < 500 {
+		return ErrRejected
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return ErrUnavailable
+		return failure
+	}
+	if out == nil && resp.StatusCode == http.StatusNoContent {
+		return nil
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, (4<<20)+1))
 	if err != nil || len(raw) > 4<<20 || json.Unmarshal(raw, out) != nil {
-		return ErrUnavailable
+		return failure
 	}
 	return nil
 }
@@ -118,19 +137,23 @@ func (c Client) token(ctx context.Context, body map[string]string) (Credentials,
 	}
 	if token.Scope != "" {
 		for _, scope := range strings.Fields(c.scopes()) {
-			if scope != "offline_access" && !strings.Contains(" "+token.Scope+" ", " "+scope+" ") {
+			if scope != "offline_access" && !strings.HasPrefix(scope, "write:") && !strings.Contains(" "+token.Scope+" ", " "+scope+" ") {
 				return Credentials{}, ErrDenied
 			}
 		}
 	}
-	return Credentials{token.Access, token.Refresh, time.Now().Add(time.Duration(token.Expires) * time.Second)}, nil
+	return Credentials{Access: token.Access, Refresh: token.Refresh, Expires: time.Now().Add(time.Duration(token.Expires) * time.Second), Scopes: token.Scope}, nil
 }
 func (c Client) Exchange(ctx context.Context, code, verifier string) (Credentials, error) {
 	body := map[string]string{"grant_type": "authorization_code", "code": code, "redirect_uri": c.RedirectURL}
 	if c.Kind() == "trello" {
 		body["code_verifier"] = verifier
 	}
-	return c.token(ctx, body)
+	creds, err := c.token(ctx, body)
+	if err == nil && creds.Scopes == "" {
+		creds.Scopes = c.scopes()
+	}
+	return creds, err
 }
 func (c Client) Refresh(ctx context.Context, token string) (Credentials, error) {
 	return c.token(ctx, map[string]string{"grant_type": "refresh_token", "refresh_token": token})

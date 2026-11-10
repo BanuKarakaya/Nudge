@@ -328,8 +328,12 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 				tools, codingReply = h.gitlab.ToolsForReply(tools, identity, codingReply)
 			}
 			var runTools service.AgentTools = tools
+			trackerRequestID := ""
+			if eventID != "" {
+				trackerRequestID = event.TeamID + ":" + event.Event.Channel + ":" + eventID
+			}
 			for _, integration := range h.trackers {
-				runTools = integration.Tools(runTools, worktracker.Identity{UserID: userID, Team: event.TeamID})
+				runTools = integration.Tools(runTools, worktracker.Identity{UserID: userID, Team: event.TeamID}, trackerRequestID)
 			}
 			if resolver, ok := h.runtime.(service.MergeIntentResolver); ok {
 				runTools = service.WithMergeIntentTools(runTools, resolver, key, identity, history)

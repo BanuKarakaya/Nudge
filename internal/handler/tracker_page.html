@@ -57,7 +57,7 @@
             <fieldset class="resources"><legend>{{if eq .Kind "trello"}}Bağlanacak panolar{{else}}Bağlanacak projeler{{end}}</legend>
               {{range .Resources}}<label class="resource"><input type="checkbox" name="resource" value="{{.ID}}"><span>{{.Name}}</span></label>{{end}}
             </fieldset>
-            <p class="account-help">En az bir {{if eq .Kind "trello"}}pano{{else}}proje{{end}} seç. Nudgy yalnızca seçtiklerini okur; {{if eq .Kind "trello"}}kart oluşturmaz veya taşımaz{{else}}görev oluşturmaz veya değiştirmez{{end}}. Seçim ekranı 10 dakika geçerlidir.</p>
+            <p class="account-help">En az bir {{if eq .Kind "trello"}}pano{{else}}proje{{end}} seç. Nudgy yalnızca seçtiğin alanlarda çalışır. İsteğinle {{if eq .Kind "trello"}}kart oluşturabilir ve listeler arasında taşıyabilir{{else}}görev oluşturabilir ve izin verilen durum geçişlerini uygulayabilir{{end}}. Seçim ekranı 10 dakika geçerlidir.</p>
             <button class="primary" type="submit">Seçimi kaydet ve bağlan <span aria-hidden="true">→</span></button>
           </form>
           {{else}}<p class="account-help">Bağlayabileceğin bir {{if eq .Kind "trello"}}pano{{else}}proje{{end}} bulunamadı. Hesabının erişimini kontrol edip Slack’ten yeni bağlantı iste.</p><a class="primary" href="https://slack.com/app" rel="noreferrer">Slack’e dön <span aria-hidden="true">↗</span></a>{{end}}
@@ -65,8 +65,8 @@
         {{if .Success}}
           <p class="account-help">Bu hesap sana ait değilse Slack’te Nudgy’den yeni bir bağlantı iste ve {{.Name}}’da doğru hesabı seç.</p>
           <div class="capabilities"><h2>Şimdi neler yapabilirsin?</h2>
-            <p>{{if eq .Kind "trello"}}Seçtiğin panolardaki kartları listelet, açıklamalarını okut ve işlerin özetini al.{{else}}Seçtiğin projelerdeki görevleri listelet, açıklamalarını okut ve işlerin özetini al.{{end}}</p>
-            <p class="limit">Bu bağlantı yalnızca okuma izni kullanır. {{if eq .Kind "trello"}}Yeni kart oluşturma ve listeler arasında taşıma henüz desteklenmiyor.{{else}}Görev oluşturma ve durum değiştirme henüz desteklenmiyor.{{end}}</p>
+            <p>{{if eq .Kind "trello"}}Seçtiğin panolardaki kartları oku, yeni kart oluştur veya kartlarını Doing’den Testing’e taşı.{{else}}Seçtiğin projelerdeki görevleri oku, yeni görev oluştur veya iş akışındaki durumlarını değiştir.{{end}}</p>
+            <p class="limit">Oluşturma ve taşıma için yazma izni gerekir. Eski bir okuma bağlantın varsa yeniden bağlan. Nudgy değişiklikleri yalnızca isteğin üzerine yapar.</p>
           </div>
           <div class="prompt"><p><span class="mention">@Nudgy</span> {{if eq .Kind "trello"}}Trello panolarımı listele.{{else}}Jira projelerimi listele.{{end}}</p></div>
         {{end}}

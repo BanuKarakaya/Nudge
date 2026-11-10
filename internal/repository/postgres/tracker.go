@@ -69,17 +69,40 @@ func (s *TrackerStore) ConsumeState(ctx context.Context, provider, hash string) 
 	return state, err
 }
 func (s *TrackerStore) Save(ctx context.Context, c tracker.Connection) error {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var previous string
+	err = tx.QueryRow(ctx, `SELECT encrypted FROM tracker_connections WHERE provider=$1 AND user_id=$2 FOR UPDATE`, c.Provider, c.UserID).Scan(&previous)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	if err == nil {
+		var old tracker.Connection
+		if err = s.decode(previous, &old); err != nil {
+			return err
+		}
+		// Reauthorization of the same account must not erase replay protection.
+		if old.Identity == c.Identity && old.Account.ID == c.Account.ID {
+			c.Mutations = old.Mutations
+		}
+	}
 	raw, err := s.encode(c)
 	if err != nil {
 		return err
 	}
-	result, err := s.db.Exec(ctx, `INSERT INTO tracker_connections(provider,user_id,encrypted)
+	result, err := tx.Exec(ctx, `INSERT INTO tracker_connections(provider,user_id,encrypted)
 SELECT $1,u.id,$3 FROM users u JOIN slack_installations i ON i.team_id=u.team_id WHERE u.id=$2 AND u.team_id=$4
 ON CONFLICT(provider,user_id) DO UPDATE SET encrypted=EXCLUDED.encrypted,updated_at=NOW()`, c.Provider, c.UserID, raw, c.Team)
-	if err == nil && result.RowsAffected() != 1 {
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() != 1 {
 		return tracker.ErrDenied
 	}
-	return err
+	return tx.Commit(ctx)
 }
 func (s *TrackerStore) WithConnection(ctx context.Context, provider string, user int64, fn func(*tracker.Connection) error) error {
 	tx, err := s.db.Begin(ctx)

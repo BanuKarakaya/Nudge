@@ -28,6 +28,7 @@ type Account struct {
 type Credentials struct {
 	Access, Refresh string
 	Expires         time.Time
+	Scopes          string
 }
 type Resource struct {
 	ID        string `json:"id"`
@@ -42,6 +43,7 @@ type Item struct {
 	Title       string `json:"title"`
 	URL         string `json:"url"`
 	Status      string `json:"status,omitempty"`
+	StatusID    string `json:"status_id,omitempty"`
 	Description any    `json:"description,omitempty"`
 	Assignee    string `json:"assignee,omitempty"`
 	Due         string `json:"due,omitempty"`
@@ -51,8 +53,9 @@ type Page struct {
 	NextCursor string `json:"next_cursor,omitempty"`
 }
 type Access struct {
-	Account   Account    `json:"account"`
-	Resources []Resource `json:"resources"`
+	Account      Account    `json:"account"`
+	Resources    []Resource `json:"resources"`
+	WriteEnabled bool       `json:"write_enabled"`
 }
 type Connection struct {
 	Identity
@@ -60,6 +63,7 @@ type Connection struct {
 	Account     Account
 	Credentials Credentials
 	Selected    []string
+	Mutations   map[string]MutationReceipt
 }
 type State struct {
 	UserID          int64
@@ -166,7 +170,7 @@ func (s *Service) Selection(ctx context.Context, state, code string) (string, Ac
 	next := randomState()
 	c := Connection{Identity: Identity{saved.UserID, team}, Provider: s.Kind(), Account: account, Credentials: creds}
 	err = s.store.PutState(ctx, s.Kind(), stateHash(next), State{UserID: saved.UserID, Phase: "select", Pending: &c, Expires: time.Now().Add(10 * time.Minute)})
-	return next, Access{account, resources}, err
+	return next, Access{account, resources, canWrite(s.Kind(), creds)}, err
 }
 func (s *Service) Complete(ctx context.Context, state string, ids []string) (Account, error) {
 	if len(ids) == 0 || len(ids) > 2000 {
@@ -216,6 +220,10 @@ func (s *Service) connection(ctx context.Context, id Identity) (Connection, erro
 			if err != nil {
 				return err
 			}
+			// OAuth may omit scope when refreshing an unchanged grant.
+			if creds.Scopes == "" {
+				creds.Scopes = c.Credentials.Scopes
+			}
 			c.Credentials = creds
 		}
 		result = *c
@@ -258,7 +266,7 @@ func (s *Service) access(ctx context.Context, id Identity) (Connection, []Resour
 }
 func (s *Service) Access(ctx context.Context, id Identity) (Access, error) {
 	c, resources, err := s.access(ctx, id)
-	return Access{c.Account, resources}, err
+	return Access{c.Account, resources, canWrite(s.Kind(), c.Credentials)}, err
 }
 func (s *Service) resource(ctx context.Context, id Identity, resource string) (Connection, Resource, error) {
 	c, resources, err := s.access(ctx, id)

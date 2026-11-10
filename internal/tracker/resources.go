@@ -87,7 +87,7 @@ type jiraIssue struct {
 	Fields  struct {
 		Summary     string
 		Description any
-		Status      struct{ Name string }
+		Status      struct{ ID, Name string }
 		Project     struct{ ID string }
 		Assignee    *struct{ DisplayName string }
 	}
@@ -103,7 +103,7 @@ func (issue jiraIssue) item(r Resource) Item {
 		u.Fragment = ""
 		browserURL = u.String()
 	}
-	item := Item{ID: issue.ID, Key: issue.Key, Title: issue.Fields.Summary, Status: issue.Fields.Status.Name, Description: issue.Fields.Description, URL: browserURL}
+	item := Item{ID: issue.ID, Key: issue.Key, Title: issue.Fields.Summary, Status: issue.Fields.Status.Name, StatusID: issue.Fields.Status.ID, Description: issue.Fields.Description, URL: browserURL}
 	if issue.Fields.Assignee != nil {
 		item.Assignee = issue.Fields.Assignee.DisplayName
 	}
@@ -123,7 +123,7 @@ func (card trelloCard) item() Item {
 	if card.Closed {
 		status = "archived"
 	}
-	return Item{ID: card.ID, Title: card.Name, URL: safeURL(card.URL), Description: card.Desc, Status: status, Due: card.Due}
+	return Item{ID: card.ID, Title: card.Name, URL: safeURL(card.URL), Description: card.Desc, Status: status, StatusID: card.List, Due: card.Due}
 }
 func validResource(kind string, r Resource) bool {
 	if kind == "trello" {

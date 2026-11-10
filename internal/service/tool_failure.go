@@ -11,6 +11,14 @@ import (
 // original error: provider/network/database diagnostics can contain secrets.
 func AgentToolFailure(err error) (code, message string) {
 	switch {
+	case errors.Is(err, tracker.ErrOutcomeUnknown):
+		return "tracker_outcome_unknown", "İşlem sonucu doğrulanamadı veya aynı istek hâlâ işleniyor. Başarılı olduğunu söyleme, yazma işlemini tekrarlama ve parametre değiştirerek tekrar deneme. Kartları/görevi okuyarak sonucu kontrol et; yeni bir yazma denemesi için kullanıcıdan açık yeni istek bekle."
+	case errors.Is(err, tracker.ErrWriteScope):
+		return "tracker_write_scope_required", "Mevcut bağlantı yalnızca okumaya izin veriyor. Oluşturma/taşıma için ilgili jira_connect veya trello_connect aracıyla yazma izni içeren yeni bağlantı gönder. OAuth uygulamasında Jira write:jira-work veya Trello write:board:trello kapsamı etkin olmalı."
+	case errors.Is(err, tracker.ErrChanged):
+		return "tracker_status_changed", "Kartın/görevin durumu okunduğundan beri değişmiş. İşlem yapılmadı. Güncel durumu oku ve yeni hareket için kullanıcıyla hedefi netleştir."
+	case errors.Is(err, tracker.ErrRejected):
+		return "tracker_change_rejected", "Sağlayıcı değişikliği kabul etmedi veya zorunlu alanlar eksik. Oluşturma/geçiş metadatasını ve güncel durumu kontrol et. Eksik değerleri kullanıcıdan iste; aynı isteği otomatik tekrarlama veya başarı iddia etme."
 	case errors.Is(err, tracker.ErrConnect):
 		return "tracker_connection_required", "İstenen Jira/Trello bağlantısı kurulmalı veya yenilenmeli. Aynı sağlayıcının jira_connect ya da trello_connect aracını kullan; token isteme."
 	case errors.Is(err, tracker.ErrDenied):

@@ -44,7 +44,7 @@ func TestOAuthParametersAndTokenExchange(t *testing.T) {
 			}
 			u, _ := url.Parse(c.AuthorizeURL("state", "verifier"))
 			q := u.Query()
-			if q.Get("state") != "state" || q.Get("redirect_uri") != c.RedirectURL || !strings.Contains(q.Get("scope"), "offline_access") {
+			if q.Get("state") != "state" || q.Get("redirect_uri") != c.RedirectURL || !strings.Contains(q.Get("scope"), "offline_access") || !strings.Contains(q.Get("scope"), "write:") {
 				t.Fatal(q)
 			}
 			if kind == "jira" {

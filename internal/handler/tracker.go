@@ -128,7 +128,7 @@ func (h *TrackerHandler) callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setOAuthCookie(w, r, "nudgy_"+h.service.Kind()+"_selection", next, "/"+h.service.Kind()+"/select")
-	h.page(w, 200, trackerPageData{Selecting: true, Title: "Nudgy neleri görebilsin?", Description: "Nudgy’nin okuyabileceği alanları seç. Seçimini kaydettiğinde bağlantın tamamlanır.", State: next, Account: access.Account.Name, Resources: access.Resources})
+	h.page(w, 200, trackerPageData{Selecting: true, Title: "Nudgy hangi alanlarda çalışsın?", Description: "Nudgy’nin erişebileceği alanları seç. Seçimini kaydettiğinde bağlantın tamamlanır.", State: next, Account: access.Account.Name, Resources: access.Resources})
 }
 func (h *TrackerHandler) selectResources(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Sec-Fetch-Site") == "cross-site" || (r.Header.Get("Origin") != "" && r.Header.Get("Origin") != h.publicURL) {
@@ -154,7 +154,7 @@ func (h *TrackerHandler) selectResources(w http.ResponseWriter, r *http.Request)
 	}
 	h.page(w, 200, trackerPageData{Success: true, Title: h.service.Name() + " hesabın bağlandı.", Description: "Seçtiğin alanlardaki işleri artık Slack’ten takip edebilirsin. İlk sorunu sor, birlikte bakalım.", Account: account.Name})
 }
-func (h *TrackerHandler) Tools(base service.AgentTools, id tracker.Identity) service.AgentTools {
+func (h *TrackerHandler) Tools(base service.AgentTools, id tracker.Identity, requestID ...string) service.AgentTools {
 	return service.NewTrackerTools(base, h.service, id, func(ctx context.Context) error {
 		if err := h.service.Authorize(ctx, id); err != nil {
 			return err
@@ -171,8 +171,8 @@ func (h *TrackerHandler) Tools(base service.AgentTools, id tracker.Identity) ser
 		if err != nil {
 			return err
 		}
-		return h.client.PostMessage(ctx, installation.BotToken, channel, fmt.Sprintf("🔗 *Nudgy · %s bağlantısı*\n<%s|%s hesabını bağla>\nHesabına izin verdikten sonra Nudgy’nin okuyabileceği alanları seç. Bu özel bağlantı 20 dakika geçerlidir.", h.service.Name(), link, h.service.Name()))
-	})
+		return h.client.PostMessage(ctx, installation.BotToken, channel, fmt.Sprintf("🔗 *Nudgy · %s bağlantısı*\n<%s|%s hesabını bağla>\nHesabına izin verdikten sonra Nudgy’nin erişebileceği alanları seç. Bu özel bağlantı 20 dakika geçerlidir.", h.service.Name(), link, h.service.Name()))
+	}, requestID...)
 }
 func (h *SlackEventHandler) WithTracker(handler *TrackerHandler) *SlackEventHandler {
 	h.trackers = append(h.trackers, handler)
