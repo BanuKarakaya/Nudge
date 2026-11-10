@@ -22,7 +22,7 @@ var trackerPageTemplate = template.Must(template.New("tracker").Parse(trackerPag
 
 type trackerPageData struct {
 	Name, Kind, Title, Description, State, Account string
-	Selecting                                      bool
+	Selecting, Success                             bool
 	Resources                                      []tracker.Resource
 }
 type TrackerHandler struct {
@@ -43,7 +43,7 @@ func (h *TrackerHandler) page(w http.ResponseWriter, status int, data trackerPag
 		// Preserve the origin for CSRF checks without exposing callback paths or codes.
 		w.Header().Set("Referrer-Policy", "strict-origin")
 	}
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
 	data.Name = h.service.Name()
 	data.Kind = h.service.Kind()
 	var body bytes.Buffer
@@ -152,7 +152,7 @@ func (h *TrackerHandler) selectResources(w http.ResponseWriter, r *http.Request)
 		h.failure(w, 400)
 		return
 	}
-	h.page(w, 200, trackerPageData{Title: h.service.Name() + " hesabın bağlandı.", Description: "Seçtiğin alanlardaki görevleri artık Nudgy ile okuyabilir ve özetleyebilirsin. Slack’e dönebilirsin.", Account: account.Name})
+	h.page(w, 200, trackerPageData{Success: true, Title: h.service.Name() + " hesabın bağlandı.", Description: "Seçtiğin alanlardaki işleri artık Slack’ten takip edebilirsin. İlk sorunu sor, birlikte bakalım.", Account: account.Name})
 }
 func (h *TrackerHandler) Tools(base service.AgentTools, id tracker.Identity) service.AgentTools {
 	return service.NewTrackerTools(base, h.service, id, func(ctx context.Context) error {
