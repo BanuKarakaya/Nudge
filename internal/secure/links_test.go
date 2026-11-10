@@ -2,6 +2,7 @@ package secure
 
 import (
 	"encoding/base64"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -42,5 +43,25 @@ func TestAccountLinksBindUserPurposeAndExpiry(t *testing.T) {
 	}
 	if _, err := NewLinkSigner(""); err == nil {
 		t.Fatal("accepted empty key")
+	}
+}
+
+func TestWorkspaceLinksAreShortLivedAndPurposeBound(t *testing.T) {
+	signer, _ := NewLinkSigner(base64.StdEncoding.EncodeToString(make([]byte, 32)))
+	now := time.Unix(1000, 0)
+	link, err := signer.URL("https://nudgy.test", 7, "workspace", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, err := url.Parse(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := u.Query().Get("token")
+	if u.Path != "/workspace/install" || !signer.Verify(token, 7, "workspace", now) {
+		t.Fatal("invalid workspace link")
+	}
+	if signer.Verify(token, 8, "workspace", now) || signer.Verify(token, 7, "github", now) || signer.Verify(token, 7, "workspace", now.Add(20*time.Minute)) {
+		t.Fatal("workspace capability escaped its user, purpose or expiry")
 	}
 }

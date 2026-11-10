@@ -19,7 +19,7 @@ import (
 	"nudge/internal/tracker"
 )
 
-func configureTrackers(db *pgxpool.Pool, public, admin *http.ServeMux, events *handler.SlackEventHandler, installations repository.InstallationRepository, client slack.APIClient, links secure.LinkSigner, onboarding *service.OnboardingService) error {
+func configureTrackers(db *pgxpool.Pool, public, admin *http.ServeMux, events *handler.SlackEventHandler, installations repository.InstallationRepository, client slack.APIClient, links secure.LinkSigner, onboarding *service.OnboardingService, portal *handler.WorkspaceHandler) error {
 	if os.Getenv("NUDGY_JIRA_ENABLED") != "true" && os.Getenv("NUDGY_TRELLO_ENABLED") != "true" {
 		return nil
 	}
@@ -49,6 +49,8 @@ func configureTrackers(db *pgxpool.Pool, public, admin *http.ServeMux, events *h
 		}
 		s := tracker.New(store, provider)
 		h := handler.NewTrackerHandler(s, installations, client, links, base)
+		portal.RegisterTracker(s)
+		h.WithWorkspacePortal(portal)
 		h.RegisterRoutes(public, admin)
 		events.WithTracker(h)
 		onboarding.Register(service.ConnectionInvitation{Purpose: kind, Name: s.Name(), Description: s.Name() + " hesabını bağla; Nudgy’nin okuyabileceği proje veya panoları seç.", Connected: s.Connected})

@@ -15,6 +15,7 @@ import (
 )
 
 type SlackHandler struct {
+	workspace  *WorkspaceHandler
 	onboarding interface {
 		EnqueueWorkspace(context.Context, int64) error
 	}
@@ -23,9 +24,17 @@ type SlackHandler struct {
 	states      *oauthStateStore
 }
 
+func (h *SlackHandler) WithWorkspacePortal(p *WorkspaceHandler) *SlackHandler {
+	h.workspace = p
+	return h
+}
+
 func (h *SlackHandler) WithOnboarding(s interface {
 	EnqueueWorkspace(context.Context, int64) error
-}) *SlackHandler { h.onboarding = s; return h }
+}) *SlackHandler {
+	h.onboarding = s
+	return h
+}
 
 func NewSlackHandler(oauthClient slack.OAuthClient, installRepo repository.InstallationRepository) *SlackHandler {
 	return &SlackHandler{
@@ -85,6 +94,10 @@ func (h *SlackHandler) callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if result.Team.ID == "" || result.AuthedUser.ID == "" || result.AccessToken == "" {
+		writeError(w, 502, "Slack installation identity missing")
+		return
+	}
 	userID, err := h.installRepo.Save(r.Context(), domain.SlackInstallation{
 		TeamID:      result.Team.ID,
 		TeamName:    result.Team.Name,
@@ -100,6 +113,14 @@ func (h *SlackHandler) callback(w http.ResponseWriter, r *http.Request) {
 		if err := h.onboarding.EnqueueWorkspace(r.Context(), userID); err != nil {
 			log.Printf("onboarding stage=enqueue_failed user_id=%d", userID)
 		}
+	}
+	if h.workspace != nil {
+		if err := h.workspace.startSession(w, r, userID, ""); err != nil {
+			writeError(w, 503, "workspace session unavailable")
+			return
+		}
+		http.Redirect(w, r, "/workspace", http.StatusSeeOther)
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"message": "Slack workspace connected",

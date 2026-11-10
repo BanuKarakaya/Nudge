@@ -37,15 +37,16 @@ type FileChange struct {
 // Review is the immutable payload presented before approval. A change to any
 // file, base revision, target branch or test state invalidates its digest.
 type Review struct {
-	TaskID     string       `json:"task_id"`
-	Repository Repository   `json:"repository"`
-	BaseCommit string       `json:"base_commit"`
-	BaseTree   string       `json:"base_tree"`
-	Branch     string       `json:"branch"`
-	Summary    string       `json:"summary"`
-	Changes    []FileChange `json:"changes"`
-	Tests      string       `json:"tests"`
-	CreatedAt  time.Time    `json:"created_at"`
+	Author     *CommitAuthor `json:"author,omitempty"`
+	TaskID     string        `json:"task_id"`
+	Repository Repository    `json:"repository"`
+	BaseCommit string        `json:"base_commit"`
+	BaseTree   string        `json:"base_tree"`
+	Branch     string        `json:"branch"`
+	Summary    string        `json:"summary"`
+	Changes    []FileChange  `json:"changes"`
+	Tests      string        `json:"tests"`
+	CreatedAt  time.Time     `json:"created_at"`
 }
 
 var gitObjectID = regexp.MustCompile(`^[0-9a-f]{40}$`)
@@ -74,6 +75,9 @@ func ValidFilePath(name string) bool {
 }
 
 func (r Review) Validate() error {
+	if r.Author != nil && !r.Author.valid() {
+		return ErrArguments
+	}
 	if !taskID.MatchString(r.TaskID) || !r.Repository.Valid() || !gitObjectID.MatchString(r.BaseCommit) || !gitObjectID.MatchString(r.BaseTree) {
 		return ErrArguments
 	}

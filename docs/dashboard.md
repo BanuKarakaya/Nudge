@@ -1,5 +1,9 @@
 # AI analytics dashboard
 
+Customer integration setup and personal account verification use the separate
+[`/workspace` panel](workspace-panel.md). This operator dashboard retains its
+existing all-workspaces scope and must not be shared with customers.
+
 Nudge exposes the private dashboard at `/dashboard` and its data endpoint at
 `/api/dashboard`. Each Slack mention is stored in `nudge_ai_interactions` with
 the request, response, action, selected model(s), provider(s), end-to-end

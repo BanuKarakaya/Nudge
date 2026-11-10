@@ -8,6 +8,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"time"
+
+	"nudge/internal/workspace"
 )
 
 var (
@@ -96,11 +98,12 @@ type Provider interface {
 	Item(context.Context, string, Resource, string) (Item, error)
 }
 type Service struct {
-	store    Store
-	provider Provider
+	workspace workspace.Policy
+	store     Store
+	provider  Provider
 }
 
-func New(store Store, provider Provider) *Service { return &Service{store, provider} }
+func New(store Store, provider Provider) *Service { return &Service{store: store, provider: provider} }
 func (s *Service) Kind() string                   { return s.provider.Kind() }
 func (s *Service) Name() string {
 	if s.Kind() == "jira" {
@@ -127,6 +130,9 @@ func stateHash(state string) string {
 	return hex.EncodeToString(h[:])
 }
 func (s *Service) Begin(ctx context.Context, user int64) (string, string, error) {
+	if err := s.CanConnect(ctx, user); err != nil {
+		return "", "", err
+	}
 	team, err := s.store.SlackTeam(ctx, user)
 	if err != nil || team == "" || user <= 0 {
 		return "", "", ErrDenied
@@ -172,8 +178,15 @@ func (s *Service) Selection(ctx context.Context, state, code string) (string, Ac
 	if err != nil || team == "" {
 		return "", Access{}, ErrDenied
 	}
-	next := randomState()
 	c := Connection{Identity: Identity{saved.UserID, team}, Provider: s.Kind(), Account: account, Credentials: creds}
+	if s.workspace != nil {
+		if err := s.CanConnect(ctx, saved.UserID); err != nil {
+			return "", Access{}, err
+		}
+		err = s.store.Save(ctx, c)
+		return "", Access{Account: account, Resources: []Resource{}, WriteEnabled: canWrite(s.Kind(), creds)}, err
+	}
+	next := randomState()
 	err = s.store.PutState(ctx, s.Kind(), stateHash(next), State{UserID: saved.UserID, Phase: "select", Pending: &c, Expires: time.Now().Add(10 * time.Minute)})
 	return next, Access{account, resources, canWrite(s.Kind(), creds)}, err
 }
@@ -184,6 +197,9 @@ func (s *Service) Complete(ctx context.Context, state string, ids []string) (Acc
 	saved, err := s.consume(ctx, state, "select")
 	if err != nil || saved.Pending == nil {
 		return Account{}, ErrConnect
+	}
+	if err := s.CanConnect(ctx, saved.UserID); err != nil {
+		return Account{}, err
 	}
 	c := *saved.Pending
 	if c.UserID != saved.UserID || c.Provider != s.Kind() || s.Authorize(ctx, c.Identity) != nil {
@@ -257,8 +273,22 @@ func (s *Service) access(ctx context.Context, id Identity) (Connection, []Resour
 	if err != nil {
 		return c, nil, err
 	}
+	ids := c.Selected
+	if s.workspace != nil {
+		scope, e := s.workspace.Scope(ctx, id.UserID, s.Kind())
+		if e != nil {
+			return c, nil, ErrUnavailable
+		}
+		if !scope.Enabled {
+			return c, nil, ErrDenied
+		}
+		ids = nil
+		for _, r := range scope.Resources {
+			ids = append(ids, r.ID)
+		}
+	}
 	selected := map[string]bool{}
-	for _, id := range c.Selected {
+	for _, id := range ids {
 		selected[id] = true
 	}
 	allowed := []Resource{}

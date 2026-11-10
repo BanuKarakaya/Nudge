@@ -233,7 +233,14 @@ func (d *gitDirectory) commit(ctx context.Context, review Review) (string, error
 	}
 	stamp := review.CreatedAt.UTC().Format(time.RFC3339)
 	env := []string{"GIT_AUTHOR_NAME=Nudgy", "GIT_AUTHOR_EMAIL=nudgy@users.noreply.github.com", "GIT_COMMITTER_NAME=Nudgy", "GIT_COMMITTER_EMAIL=nudgy@users.noreply.github.com", "GIT_AUTHOR_DATE=" + stamp, "GIT_COMMITTER_DATE=" + stamp}
+	if review.Author != nil {
+		env[0] = "GIT_AUTHOR_NAME=" + review.Author.Name
+		env[1] = "GIT_AUTHOR_EMAIL=" + review.Author.Email
+	}
 	message := fmt.Sprintf("Nudgy: approved changes\n\n%s\n\nNudgy-Review: %s\n", review.Summary, digest)
+	if review.Author != nil {
+		message += fmt.Sprintf("Nudgy-Requested-By: %s:%d:%s\n", review.Repository.Kind(), review.Author.AccountID, review.Author.Name)
+	}
 	out, err = d.run(ctx, "", []byte(message), 256, env, "--git-dir="+d.repo, "-c", "commit.gpgsign=false", "commit-tree", tree, "-p", review.BaseCommit)
 	if err != nil {
 		return "", err

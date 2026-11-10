@@ -3,6 +3,7 @@ package coding
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -21,6 +22,22 @@ func (s *Service) validToken(token string) bool {
 	return strings.HasPrefix(token, "ghu_")
 }
 func (s *Service) filterSelected(ctx context.Context, user int64, repos []Repository) ([]Repository, error) {
+	if s.workspace != nil {
+		scope, err := s.workspace.Scope(ctx, user, s.Kind())
+		if err != nil {
+			return nil, ErrUnavailable
+		}
+		if !scope.Enabled {
+			return nil, ErrDenied
+		}
+		result := []Repository{}
+		for _, r := range repos {
+			if scope.Allows(strconv.FormatInt(r.ID, 10)) {
+				result = append(result, r)
+			}
+		}
+		return result, nil
+	}
 	if s.Kind() != "gitlab" {
 		return repos, nil
 	}
@@ -42,6 +59,9 @@ func (s *Service) filterSelected(ctx context.Context, user int64, repos []Reposi
 	return result, nil
 }
 func (s *Service) BeginGitLab(ctx context.Context, user int64) (string, string, error) {
+	if err := s.CanConnect(ctx, user); err != nil {
+		return "", "", err
+	}
 	if s.Kind() != "gitlab" {
 		return "", "", ErrArguments
 	}
@@ -94,11 +114,18 @@ func (s *Service) GitLabSelection(ctx context.Context, state, code string) (stri
 	if err != nil || team == "" {
 		return "", Account{}, nil, ErrDenied
 	}
+	pending := Connection{UserID: saved.UserID, Team: team, GitHubUserID: id, Login: login, Credentials: creds}
+	if s.workspace != nil {
+		if err := s.CanConnect(ctx, saved.UserID); err != nil {
+			return "", Account{}, nil, err
+		}
+		err = s.store.SaveConnection(ctx, pending)
+		return "", Account{ID: id, Login: login}, nil, err
+	}
 	next, err := RandomID()
 	if err != nil {
 		return "", Account{}, nil, err
 	}
-	pending := Connection{UserID: saved.UserID, Team: team, GitHubUserID: id, Login: login, Credentials: creds}
 	err = s.store.PutOAuthState(ctx, stateHash(next), OAuthState{UserID: saved.UserID, Phase: "gitlab-select", Expires: time.Now().Add(10 * time.Minute), Pending: &pending})
 	return next, Account{ID: id, Login: login}, repos, err
 }
@@ -109,6 +136,9 @@ func (s *Service) CompleteGitLabSelection(ctx context.Context, state string, ids
 	saved, err := s.store.ConsumeOAuthState(ctx, stateHash(state))
 	if err != nil || saved.Phase != "gitlab-select" || saved.Pending == nil || !time.Now().Before(saved.Expires) {
 		return Account{}, ErrConnect
+	}
+	if err := s.CanConnect(ctx, saved.UserID); err != nil {
+		return Account{}, err
 	}
 	c := *saved.Pending
 	if c.UserID != saved.UserID || s.AuthorizeIdentity(ctx, Identity{UserID: c.UserID, Team: c.Team}) != nil {

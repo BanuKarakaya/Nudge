@@ -7,12 +7,16 @@ import (
 	"errors"
 	"log"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"nudge/internal/workspace"
 )
 
 type Service struct {
+	workspace   workspace.Policy
 	mergePeer   *Service
 	branchRules BranchRules
 	kind        string
@@ -66,6 +70,9 @@ func stateHash(raw string) string {
 }
 
 func (s *Service) BeginConnect(ctx context.Context, userID int64) (string, string, error) {
+	if err := s.CanConnect(ctx, userID); err != nil {
+		return "", "", err
+	}
 	if userID <= 0 {
 		return "", "", ErrArguments
 	}
@@ -126,6 +133,9 @@ func (s *Service) CompleteConnectAccount(ctx context.Context, state, code string
 	if err != nil || saved.Phase != "oauth" || saved.InstallationID < 0 || !time.Now().Before(saved.Expires) {
 		return Account{}, ErrConnect
 	}
+	if err := s.CanConnect(ctx, saved.UserID); err != nil {
+		return Account{}, err
+	}
 	credentials, err := s.provider.Exchange(ctx, code, saved.Verifier)
 	if err != nil {
 		return Account{}, ErrConnect
@@ -134,7 +144,37 @@ func (s *Service) CompleteConnectAccount(ctx context.Context, state, code string
 	if err != nil || id <= 0 || login == "" {
 		return Account{}, ErrConnect
 	}
-	if err := s.provider.VerifyInstallation(ctx, credentials.Access, saved.InstallationID, Account{ID: id, Login: login}); err != nil {
+	if s.workspace != nil {
+		scope, e := s.workspace.Scope(ctx, saved.UserID, s.Kind())
+		if e != nil {
+			return Account{}, ErrUnavailable
+		}
+		if saved.InstallationID == 0 {
+			// An employee authorizes the existing app, including organization installations.
+			// Repositories verifies app ID, suspension and this user's live permissions.
+			if !scope.Enabled && !scope.Manager {
+				return Account{}, ErrDenied
+			}
+			repos, e := s.provider.Repositories(ctx, credentials.Access)
+			if e != nil {
+				return Account{}, e
+			}
+			allowed := scope.Manager // Managers can repair setup before shared scope exists.
+			for _, r := range repos {
+				if scope.Allows(strconv.FormatInt(r.ID, 10)) {
+					allowed = true
+					break
+				}
+			}
+			if !allowed {
+				return Account{}, ErrDenied
+			}
+		} else if !scope.Manager {
+			return Account{}, ErrDenied
+		} else if e := s.provider.VerifyInstallation(ctx, credentials.Access, saved.InstallationID, Account{ID: id, Login: login}); e != nil {
+			return Account{}, e
+		}
+	} else if err := s.provider.VerifyInstallation(ctx, credentials.Access, saved.InstallationID, Account{ID: id, Login: login}); err != nil {
 		return Account{}, err
 	}
 	team, err := s.store.SlackTeam(ctx, saved.UserID)

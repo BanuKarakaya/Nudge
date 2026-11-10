@@ -26,6 +26,7 @@ type trackerPageData struct {
 	Resources                                      []tracker.Resource
 }
 type TrackerHandler struct {
+	workspace     *WorkspaceHandler
 	service       *tracker.Service
 	installations repository.InstallationRepository
 	client        codingMessenger
@@ -34,8 +35,13 @@ type TrackerHandler struct {
 }
 
 func NewTrackerHandler(s *tracker.Service, installations repository.InstallationRepository, client codingMessenger, links secure.LinkSigner, base string) *TrackerHandler {
-	return &TrackerHandler{s, installations, client, links, base}
+	return &TrackerHandler{service: s, installations: installations, client: client, links: links, publicURL: base}
 }
+func (h *TrackerHandler) WithWorkspacePortal(p *WorkspaceHandler) *TrackerHandler {
+	h.workspace = p
+	return h
+}
+
 func (h *TrackerHandler) page(w http.ResponseWriter, status int, data trackerPageData) {
 	privatePageHeaders(w)
 	if data.Selecting {
@@ -127,6 +133,10 @@ func (h *TrackerHandler) callback(w http.ResponseWriter, r *http.Request) {
 		h.failure(w, 400)
 		return
 	}
+	if next == "" && h.workspace != nil {
+		http.Redirect(w, r, "/workspace?done=verified", http.StatusSeeOther)
+		return
+	}
 	setOAuthCookie(w, r, "nudgy_"+h.service.Kind()+"_selection", next, "/"+h.service.Kind()+"/select")
 	h.page(w, 200, trackerPageData{Selecting: true, Title: "Nudgy hangi alanlarda çalışsın?", Description: "Nudgy’nin erişebileceği alanları seç. Seçimini kaydettiğinde bağlantın tamamlanır.", State: next, Account: access.Account.Name, Resources: access.Resources})
 }
@@ -156,6 +166,9 @@ func (h *TrackerHandler) selectResources(w http.ResponseWriter, r *http.Request)
 }
 func (h *TrackerHandler) Tools(base service.AgentTools, id tracker.Identity, requestID ...string) service.AgentTools {
 	return service.NewTrackerTools(base, h.service, id, func(ctx context.Context) error {
+		if h.workspace != nil {
+			return h.workspace.SendLink(ctx, id.UserID, id.Team)
+		}
 		if err := h.service.Authorize(ctx, id); err != nil {
 			return err
 		}

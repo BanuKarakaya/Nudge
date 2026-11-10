@@ -20,6 +20,9 @@ func connectionProvider(text string) string {
 	text = strings.Join(strings.Fields(strings.ToLower(text)), " ")
 	text = strings.TrimRight(text, ".!?")
 	text = strings.TrimPrefix(text, "lütfen ")
+	if text == "panel" || text == "paneli aç" || text == "entegrasyonlar" || text == "dashboard" {
+		return "workspace"
+	}
 	for _, provider := range []string{"gitlab", "github", "jira", "trello"} {
 		for _, request := range []string{
 			provider + " hesabımı bağla",
@@ -40,6 +43,25 @@ func connectionProvider(text string) string {
 }
 
 func (h *SlackEventHandler) connectionReply(ctx context.Context, provider string, identity coding.Identity, job *repository.SlackJob) (string, bool) {
+	if h.workspace != nil {
+		if job != nil {
+			if err := h.jobs.CheckLease(ctx, *job); err != nil {
+				return "Panel bağlantısı gönderilemedi. Yeniden dene.", false
+			}
+		}
+		started := time.Now()
+		sendCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		defer cancel()
+		err := h.workspace.SendLink(sendCtx, identity.UserID, identity.Team)
+		analytics.RecordTool(ctx, "workspace_connect", "host", started, err == nil, `{"private_panel_link":true}`)
+		if err != nil {
+			return "Panel bağlantısını özel mesajına gönderemedim. Biraz sonra tekrar dene.", false
+		}
+		return "Panel bağlantını Nudgy ile özel mesajına (DM) gönderdim. Yönetici entegrasyonları kurabilir; ekip üyeleri kendi hesaplarını doğrulayabilir.", true
+	}
+	if provider == "workspace" {
+		return "Çalışma alanı paneli bu kurulumda etkin değil.", false
+	}
 	if provider == "jira" || provider == "trello" {
 		return h.trackerConnectionReply(ctx, provider, identity, job)
 	}

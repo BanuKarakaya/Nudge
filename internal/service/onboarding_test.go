@@ -174,3 +174,33 @@ func TestInvitationSkipsConnectedAndUsesFreshUserBoundLink(t *testing.T) {
 		t.Fatal("wrong link binding or lifetime")
 	}
 }
+
+func TestWorkspaceOnboardingReplacesProviderInvitations(t *testing.T) {
+	s, _, q, client, _ := onboardingFixture(t)
+	s.WithWorkspacePortal()
+	for _, kind := range []string{"github", "gitlab", "jira", "trello"} {
+		s.Register(ConnectionInvitation{Purpose: kind, Connected: func(context.Context, int64) (bool, error) {
+			t.Fatal("legacy provider invitation invoked")
+			return false, nil
+		}})
+	}
+	ctx := context.Background()
+	if err := s.Send(ctx, 1); err != nil {
+		t.Fatal(err)
+	}
+	if len(q.messages) != 1 {
+		t.Fatalf("expected one portal invitation, got %d", len(q.messages))
+	}
+	if err := s.DeliverInvitation(ctx, 1, "github"); err != nil {
+		t.Fatal(err)
+	}
+	if len(client.messages) != 0 {
+		t.Fatal("delivered queued legacy invitation")
+	}
+	if err := s.DeliverInvitation(ctx, 1, "workspace"); err != nil {
+		t.Fatal(err)
+	}
+	if len(client.messages) != 1 || !strings.Contains(client.messages[0], "/workspace/install") || !strings.Contains(client.messages[0], "Paneli aç") {
+		t.Fatal("portal link missing", client.messages)
+	}
+}

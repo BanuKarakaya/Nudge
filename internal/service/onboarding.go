@@ -17,12 +17,13 @@ type SlackDirectMessageClient interface {
 }
 
 type OnboardingService struct {
-	queue         repository.NotificationRepository
-	invitations   []ConnectionInvitation
-	installations repository.InstallationRepository
-	client        SlackDirectMessageClient
-	publicURL     string
-	links         secure.LinkSigner
+	workspacePortal bool
+	queue           repository.NotificationRepository
+	invitations     []ConnectionInvitation
+	installations   repository.InstallationRepository
+	client          SlackDirectMessageClient
+	publicURL       string
+	links           secure.LinkSigner
 }
 
 // Register configured integrations before starting HTTP handlers and workers.
@@ -32,6 +33,13 @@ type ConnectionInvitation struct {
 	Connected                  func(context.Context, int64) (bool, error)
 }
 
+func (s *OnboardingService) WithWorkspacePortal() {
+	s.workspacePortal = true
+	s.Register(ConnectionInvitation{Purpose: "workspace", Name: "Nudgy paneli", Description: "Yönetici entegrasyonları bir kez kurar; ekip üyeleri yalnızca kendi hesaplarını doğrular. Bireysel kullanımda tüm ayarlar aynı panelde.", Connected: func(context.Context, int64) (bool, error) { return false, nil }})
+}
+func (s *OnboardingService) portalProvider(p string) bool {
+	return s.workspacePortal && (p == "github" || p == "gitlab" || p == "jira" || p == "trello")
+}
 func (s *OnboardingService) WithQueue(q repository.NotificationRepository) *OnboardingService {
 	s.queue = q
 	return s
@@ -63,6 +71,9 @@ func (s *OnboardingService) enqueueUser(ctx context.Context, userID int64, perio
 	}
 	var failures []error
 	for _, inv := range s.invitations {
+		if s.portalProvider(inv.Purpose) {
+			continue
+		}
 		if inv.Enabled != nil && !inv.Enabled(installation.TeamID) {
 			continue
 		}
@@ -85,6 +96,9 @@ func (s *OnboardingService) EnqueueWorkspace(ctx context.Context, userID int64) 
 	}
 	catalog := ""
 	for _, inv := range s.invitations {
+		if s.portalProvider(inv.Purpose) {
+			continue
+		}
 		if inv.Enabled == nil || inv.Enabled(installation.TeamID) {
 			catalog += "/" + inv.Purpose
 		}
@@ -137,6 +151,9 @@ func (s *OnboardingService) DeliverInvitation(ctx context.Context, userID int64,
 		return err
 	}
 	for _, inv := range s.invitations {
+		if s.portalProvider(inv.Purpose) {
+			continue
+		}
 		if inv.Purpose != purpose {
 			continue
 		}
@@ -160,6 +177,9 @@ func (s *OnboardingService) DeliverInvitation(ctx context.Context, userID int64,
 			return err
 		}
 		text := fmt.Sprintf("👋 *Nudgy · %s bağlantısı*\n%s\n\n<%s|%s hesabını bağla>\n\nBu bağlantı sana özeldir. Yalnızca kullanmak istediğin servisleri bağlayabilirsin.", inv.Name, inv.Description, link, inv.Name)
+		if purpose == "workspace" {
+			text = "👋 *Nudgy panelin*\n" + inv.Description + "\n\n<" + link + "|Paneli aç>\nBu giriş bağlantısı sana özeldir, tek kullanımlıktır ve 20 dakika geçerlidir. Paylaşma. Yenisi için Nudgy’ye “panel” yaz."
+		}
 		if purpose == "github" || purpose == "gitlab" || purpose == "jira" || purpose == "trello" {
 			text += "\nLink 20 dakika geçerlidir. Süresi dolarsa Nudgy’den yeni " + inv.Name + " bağlantısı isteyebilirsin."
 		}

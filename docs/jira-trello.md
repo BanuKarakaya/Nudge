@@ -1,8 +1,11 @@
 # Jira Cloud ve Trello bağlantıları
 
-Jira ve Trello, GitHub/GitLab’dan bağımsız olarak açılabilir. Slack kullanıcısı
-özel bağlantıyı açar, servis üzerinde izin verir ve Nudgy’nin erişeceği Jira
-projelerini veya Trello panolarını seçer. Seçim kaydedilmeden bağlantı etkinleşmez.
+Jira ve Trello, GitHub/GitLab’dan bağımsız olarak açılabilir. Güncel akışta yönetici
+[çalışma alanı panelinden](workspace-panel.md) ortak Jira projelerini veya Trello
+panolarını bir kez seçer. Çalışanlar aynı panelde yalnızca kendi hesaplarına OAuth
+izni verir; proje/pano seçmez. İşlemler ortak seçim ile kullanıcının güncel erişiminin
+kesişiminde, kendi tokenıyla yapılır. Aşağıdaki eski kişisel seçim rotaları önceki
+akışlarla uyumluluk için korunur; sunucu çalışma alanı politikasını ayrıca uygular.
 
 Bu sürüm hesap bağlama, bağlantı durumunu doğrulama, seçili alanları listeleme,
 görev/kart listeleme ve açıklamalarını okumayı destekler. Jira’da tüm durumdaki

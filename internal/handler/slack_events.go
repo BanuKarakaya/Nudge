@@ -25,6 +25,7 @@ import (
 )
 
 type SlackEventHandler struct {
+	workspace         *WorkspaceHandler
 	signingSecret     string
 	installations     repository.InstallationRepository
 	bookmarks         service.BookmarkService

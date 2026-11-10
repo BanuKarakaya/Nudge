@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#351b21">
+<title>Nudgy · Çalışma alanı</title><link rel="icon" href="/dashboard/nudgy-mascot.webp" type="image/webp">
+<link rel="stylesheet" href="/dashboard/styles.css">
+<link rel="stylesheet" href="/dashboard/workspace.css">
+</head>
+<body class="workspace-page">
+<div class="app-shell">
+  <aside class="sidebar" aria-label="Çalışma alanı menüsü">
+    <a class="brand" href="/workspace" aria-label="Nudgy çalışma alanı"><span class="brand-mark" aria-hidden="true"><img src="/dashboard/nudgy-mascot.webp" alt=""></span><span>Nudgy</span><span class="brand-badge">AI</span></a>
+    <div class="workspace"><span class="workspace-dot" aria-hidden="true"></span><span><strong>{{if .Member.UserID}}{{.Member.Name}}{{else}}Çalışma alanın{{end}}</strong><small>{{if .Member.Manager}}Yönetici erişimi{{else if .Member.UserID}}Üye erişimi{{else}}Güvenli giriş{{end}}</small></span></div>
+    <nav class="nav" aria-label="Panel bölümleri">
+      <p class="nav-label">Workspace</p>
+      <a class="nav-item active" href="/workspace" aria-label="Entegrasyonlar" aria-current="page"><span class="nav-icon" aria-hidden="true">◩</span><span class="nav-text">Entegrasyonlar</span></a>
+      {{if .Member.UserID}}<a class="nav-item" href="/workspace#verification" aria-label="Hesap doğrulama"><span class="nav-icon" aria-hidden="true">◎</span><span class="nav-text">Hesap doğrulama</span></a>{{end}}
+    </nav>
+    <div class="sidebar-foot">
+      <div class="system-status"><span class="pulse" aria-hidden="true"></span><div><strong>Kurulum burada</strong><small>Günlük işler Slack’te</small></div></div>
+      <div class="user-mini"><span class="avatar" aria-hidden="true">N</span><span><strong>{{if .Member.Manager}}Çalışma alanı yöneticisi{{else if .Member.UserID}}Çalışma alanı üyesi{{else}}Nudgy paneli{{end}}</strong><small>{{if .Member.UserID}}Kişisel hesap oturumu{{else}}Slack hesabınla devam et{{end}}</small></span></div>
+    </div>
+  </aside>
+  <main class="main">
+    <header class="topbar"><div class="breadcrumbs"><span>Workspace</span><b>/</b><strong>{{if .Settings}}{{.ProviderName}}{{else if .Login}}Giriş{{else}}Entegrasyonlar{{end}}</strong></div><div class="top-actions">{{if .Member.UserID}}<span class="role">{{if .Member.Manager}}Yönetici{{else}}Üye{{end}}</span><span class="top-divider"></span><form method="post" action="/workspace/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="logout-button" type="submit">Çıkış</button></form>{{else}}<span class="date-label">Sana özel çalışma alanı</span>{{end}}</div></header>
+    <div class="workspace-content">
+{{if .Error}}<div class="center auth-view"><div class="notice error" role="alert">{{.Error}}</div><a class="button" href="/workspace">Panele dön</a></div>
+{{else if .Login}}<section class="center auth-view"><div class="panel integration-card"><span class="eyebrow">Sana özel giriş</span><h1>Çalışma alanına hoş geldin.</h1><p class="intro">Entegrasyonlarını yönet, kendi hesaplarını doğrula. İşlerine Slack’ten devam et.</p><form method="post" action="/workspace/login"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="user_id" value="{{.UserID}}"><input type="hidden" name="token" value="{{.Token}}"><button class="primary" type="submit">Paneli aç →</button></form><p class="footnote">Bu bağlantı, Nudgy’nin Slack’te özel mesaj gönderdiği hesaba giriş yapar. Yalnızca kendi bağlantını kullan.</p></div></section>
+{{else if .Settings}}
+<a class="back" href="/workspace">← Entegrasyonlara dön</a><div class="eyebrow"><span class="eyebrow-line"></span> ÇALIŞMA ALANI AYARLARI</div><h1>{{.ProviderName}} alanlarını seç.</h1><p class="intro">Ekip üyeleri, seçtiğin alanlardan yalnızca kendi hesaplarının erişebildiklerini kullanabilir. Bu seçim bireysel kullanımda da geçerlidir.</p>
+{{if eq .Provider "github"}}<form method="post" action="/workspace/connect/github"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="setup" value="1"><button type="submit">GitHub kurulumuna repo ekle / çıkar ↗</button></form><p class="footnote">Yeni bir repo görünmüyorsa GitHub uygulama kurulumundaki erişimleri güncelle, ardından bu listeye dön.</p>{{end}}
+<form method="post" action="/workspace/integrations/{{.Provider}}"><input type="hidden" name="csrf" value="{{.CSRF}}"><label class="enable"><input type="checkbox" name="enabled" value="true" {{if .Enabled}}checked{{end}}>Bu entegrasyonu çalışma alanında etkinleştir</label>
+<div class="choices">{{range .Choices}}<label class="choice"><input type="checkbox" name="resource" value="{{.ID}}" {{if .Selected}}checked{{end}}><span>{{.Name}}</span></label>{{else}}<p class="area muted">Erişilebilir alan bulunamadı. Servisteki repo, proje veya pano izinlerini kontrol et.</p>{{end}}</div><div class="actions"><button class="primary" type="submit">Ayarları kaydet</button><a class="button" href="/workspace">Vazgeç</a></div></form>
+{{else}}
+<div class="page-heading" id="integrations"><div><div class="eyebrow"><span class="eyebrow-line"></span> NUDGY WORKSPACE</div><h1>Entegrasyonlar</h1><p>Servislerini bağla, çalışma alanının erişimlerini tek yerden yönet.</p></div></div>
+<section class="nudgy-note" aria-label="Panel kullanım bilgisi"><div class="mascot-large" aria-hidden="true"><img src="/dashboard/nudgy-mascot.webp" alt=""></div><div><span class="note-kicker">MEET NUDGY</span><h2>Bir kez bağla, birlikte çalış.</h2><p>{{if .Member.Manager}}Ekip için servisleri ve ortak alanları seç. Üyeler kendi hesaplarını doğrulasın. Tek başına çalışıyorsan tüm adımları buradan tamamlayabilirsin.{{else}}Yöneticin entegrasyonları hazırlıyor. Sen yalnızca kullanacağın servislerde kendi hesabını doğrula.{{end}}</p></div></section>
+{{if .Member.Manager}}<div class="steps"><span><b>01</b> Servis hesabını bağla</span><span><b>02</b> Çalışma alanının erişimlerini seç</span><span><b>03</b> Ekibin hesaplarını doğrulasın</span></div>
+{{end}}
+{{if .Member.OwnerMissing}}<div class="notice error" role="status">Bu çalışma alanının yöneticisi henüz doğrulanmamış. Kurulumu yöneten kişi <a href="/slack/install">Nudgy’nin Slack kurulumunu yeniden yetkilendirerek</a> panel yönetimini açabilir. Mevcut kişisel hesap bağlantıları korunur.</div>{{end}}
+{{if .Message}}<div class="notice" role="status">{{.Message}}</div>{{end}}
+<div class="integration-grid">{{range .Cards}}<article class="panel integration-card"><div class="cardhead"><div class="icon" aria-hidden="true">{{if eq .Kind "github"}}GH{{else if eq .Kind "gitlab"}}GL{{else if eq .Kind "jira"}}Ji{{else}}Tr{{end}}</div><div><h2>{{.Name}}</h2><p class="status {{if and .Enabled .Connected}}connected{{end}}">{{.Status}}</p></div></div>
+{{if .Configured}}
+{{if .Manager}}<div class="area"><span class="label">Çalışma alanı ayarları</span><p>{{if .Enabled}}{{.Count}} alan ekibe açıldı.{{else}}Bu servis henüz ekibin kullanımına açılmadı.{{end}}</p><div class="actions">{{if .Connected}}<a class="button" href="/workspace/integrations/{{.Kind}}">Alanları yönet</a>{{else}}<span class="muted status">Önce aşağıdan kendi hesabını bağla.</span>{{end}}{{if .Enabled}}<form method="post" action="/workspace/integrations/{{.Kind}}"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="enabled" value="false"><button class="quiet danger" type="submit">Çalışma alanında kapat</button></form>{{end}}</div></div>{{end}}
+<div class="area"><span class="label">Hesabım</span><p>{{if .Connected}}{{if .AccountName}}<strong>{{.AccountName}}</strong> hesabın bağlı.{{else}}Kişisel hesabın bağlı.{{end}} İşlemler kendi yetkilerinle yapılır.{{else if or .Enabled .Manager}}Kendi hesabına izin ver; Nudgy işlemlerini senin adına gerçekleştirsin.{{else}}Yöneticinin bu servisi etkinleştirmesini bekliyorsun.{{end}}</p><div class="actions">{{if or .Enabled .Manager}}<form method="post" action="/workspace/connect/{{.Kind}}"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button type="submit" class="{{if not .Connected}}primary{{end}}">{{if .Connected}}Yeniden doğrula{{else if .Manager}}Hesabını bağla{{else}}Hesabını doğrula{{end}}</button></form>{{end}}{{if .Connected}}<form method="post" action="/workspace/disconnect/{{.Kind}}"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="quiet danger" type="submit">Hesap bağlantımı kaldır</button></form>{{end}}</div></div>
+{{else}}<div class="area"><p>Bu servisin kullanılabilmesi için Nudgy sunucusunda sağlayıcı ayarlarının tamamlanması gerekiyor.</p></div>{{end}}</article>{{end}}</div>
+<section class="panel verification-guide" id="verification"><div class="panel-head"><div><h2>Hesap doğrulama</h2><p>Her işlem, doğru kişinin hesabıyla.</p></div><span class="guide-icon" aria-hidden="true">◎</span></div><p>Her serviste kendi hesabına izin ver. Repo, proje ve pano kapsamını yönetici belirler; Nudgy yalnızca senin de erişebildiğin alanlarda çalışır. Kişisel bağlantını kaldırmak, diğer üyeleri veya ortak ayarları etkilemez.</p></section>
+{{end}}
+</div><footer class="footer"><span>Nudgy dashboard</span><span>Entegrasyonlar · Kişisel hesaplar</span></footer></main>
+</div></body></html>

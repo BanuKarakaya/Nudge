@@ -119,6 +119,10 @@ func (h *CodingHandler) gitLabCallback(w http.ResponseWriter, r *http.Request) {
 		h.gitLabError(w, 400)
 		return
 	}
+	if next == "" && h.workspace != nil {
+		http.Redirect(w, r, "/workspace?done=verified", http.StatusSeeOther)
+		return
+	}
 	setOAuthCookie(w, r, "nudgy_gitlab_selection", next, "/gitlab/select")
 	renderGitLabPage(w, 200, gitLabPageData{Selecting: true, Title: "Hangi projelerde çalışalım?", Description: "Nudgy’ye açmak istediğin GitLab projelerini seç. Yalnızca yazma yetkin olan projeler gösterilir.", Login: account.Login, State: next, Repositories: repos})
 }

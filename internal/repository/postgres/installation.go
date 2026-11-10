@@ -40,11 +40,12 @@ func NewInstallationRepository(db *pgxpool.Pool) *InstallationRepository {
 func (r *InstallationRepository) Save(ctx context.Context, installation domain.SlackInstallation) (int64, error) {
 	const query = `
 		WITH saved_installation AS (
-			INSERT INTO slack_installations (team_id, team_name, bot_token)
-			VALUES ($1, $2, $3)
+			INSERT INTO slack_installations (team_id, team_name, bot_token, installer_slack_user_id)
+			VALUES ($1, $2, $3, $4)
 			ON CONFLICT (team_id) DO UPDATE SET
 				team_name = EXCLUDED.team_name,
-				bot_token = EXCLUDED.bot_token
+				bot_token = EXCLUDED.bot_token,
+				installer_slack_user_id = COALESCE(NULLIF(slack_installations.installer_slack_user_id, ''), EXCLUDED.installer_slack_user_id)
 			RETURNING team_id
 		)
 		INSERT INTO users (team_id, slack_user_id)

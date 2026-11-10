@@ -41,9 +41,9 @@ func (t *gitLabTools) Definitions() []ToolDefinition {
 		d.Description = strings.ReplaceAll(d.Description, "repository_edit_finish", "gitlab_repository_edit_finish")
 		switch d.Name {
 		case "gitlab_connect":
-			d.Description = "Send the current Slack user a private GitLab OAuth connection link. They authorize on gitlab.com and then select projects on Nudgy. Stop after sending a connection-only link; do not list repositories or create tasks. Never ask for credentials in Slack."
+			d.Description = "Send the current Slack user a private Nudgy panel link. The workspace manager selects shared projects once; employees only verify their own GitLab accounts. Stop after sending a connection-only link; do not list repositories or create tasks. Never ask for credentials in Slack."
 		case "gitlab_repositories_list":
-			d.Description = "List only the GitLab projects selected by this Slack user, after verifying their connected GitLab account and current Developer-or-higher access. Returns exact namespace/subgroup/project paths and gitlab_account. Use these paths rather than guessing."
+			d.Description = "List only the GitLab projects allowed by the workspace manager, after verifying their connected GitLab account and current Developer-or-higher access. Returns exact namespace/subgroup/project paths and gitlab_account. Use these paths rather than guessing."
 		}
 		if properties, ok := d.InputSchema["properties"].(map[string]any); ok {
 			if _, exists := properties["repository"]; exists {

@@ -18,6 +18,7 @@ type codingMessenger interface {
 }
 
 type CodingHandler struct {
+	workspace     *WorkspaceHandler
 	service       *coding.Service
 	installations repository.InstallationRepository
 	client        codingMessenger
@@ -28,6 +29,11 @@ type CodingHandler struct {
 
 func NewCodingHandler(s *coding.Service, installations repository.InstallationRepository, client codingMessenger, links secure.LinkSigner, publicURL string) *CodingHandler {
 	return &CodingHandler{service: s, installations: installations, client: client, links: links, publicURL: publicURL, pushSlots: make(chan struct{}, 4)}
+}
+
+func (h *CodingHandler) WithWorkspacePortal(p *WorkspaceHandler) *CodingHandler {
+	h.workspace = p
+	return h
 }
 
 func (h *CodingHandler) RegisterRoutes(public, admin *http.ServeMux) {
@@ -96,6 +102,23 @@ func (h *CodingHandler) install(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
+	if h.workspace != nil {
+		scope, err := h.workspace.store.Scope(ctx, userID, "github")
+		if err != nil || (!scope.Manager && !scope.Enabled) {
+			writeError(w, 403, "workspace integration must be configured by its manager")
+			return
+		}
+		if !scope.Manager || (scope.Enabled && r.URL.Query().Get("setup") != "1") {
+			state, redirect, err := h.service.BeginVerification(ctx, userID)
+			if err != nil {
+				writeError(w, 503, "account verification unavailable")
+				return
+			}
+			setOAuthCookie(w, r, "nudgy_github_oauth", state, "/github/oauth/callback")
+			http.Redirect(w, r, redirect, http.StatusFound)
+			return
+		}
+	}
 	state, redirect, err := h.service.BeginConnect(ctx, userID)
 	if err != nil {
 		renderGitHubConnectionPage(w, http.StatusServiceUnavailable, githubPageData{Title: "Küçük bir aksilik oldu.", Description: "GitHub bağlantısını şu an başlatamıyoruz. Biraz sonra tekrar deneyebilirsin."})
@@ -175,11 +198,18 @@ func (h *CodingHandler) callback(w http.ResponseWriter, r *http.Request) {
 		renderGitHubConnectionPage(w, http.StatusBadRequest, githubPageData{Title: "Bağlantıyı tamamlayamadık.", Description: "GitHub hesabını ve seçtiğin repoların erişimini doğrulayamadık. Repo seçimini ve yetkilendirmeyi aynı hesapla tamamlamak için Slack’te Nudgy’den yeni bir bağlantı iste."})
 		return
 	}
+	if h.workspace != nil {
+		http.Redirect(w, r, "/workspace?done=verified", http.StatusSeeOther)
+		return
+	}
 	renderGitHubConnectionPage(w, http.StatusOK, githubPageData{Success: true, Title: "GitHub’ın bağlandı.", Description: "Hesabın ve seçtiğin repolar için bağlantı tamamlandı. Slack’e dönebilirsin.", Login: account.Login})
 }
 
 func (h *CodingHandler) Tools(base service.AgentTools, identity coding.Identity, ready ...func(coding.EditInfo)) service.AgentTools {
 	tools := service.NewCodingTools(base, h.service, identity, func(ctx context.Context) error {
+		if h.workspace != nil {
+			return h.workspace.SendLink(ctx, identity.UserID, identity.Team)
+		}
 		installation, err := h.installations.GetByUserID(ctx, identity.UserID)
 		if err != nil {
 			return err

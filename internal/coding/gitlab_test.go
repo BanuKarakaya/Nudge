@@ -33,7 +33,7 @@ func gitLabFixture(t *testing.T) (*Service, *memoryStore, *memoryEdits, *recordi
 			}
 			return response(`{"access_token":"` + glToken + `","refresh_token":"refresh-token-very-private","expires_in":7200,"token_type":"Bearer","scope":"read_user read_api write_repository api"}`), nil
 		case "/api/v4/user":
-			return response(fmt.Sprintf(`{"id":%d,"username":"developer","state":"active"}`, subject)), nil
+			return response(fmt.Sprintf(`{"id":%d,"username":"developer","state":"active","commit_email":"developer@example.com"}`, subject)), nil
 		case "/api/v4/projects":
 			if r.Header.Get("Authorization") != "Bearer "+glToken || r.URL.Query().Get("min_access_level") != "30" {
 				t.Fatal("missing user-scoped access")

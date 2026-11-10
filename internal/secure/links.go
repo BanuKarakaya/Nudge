@@ -35,7 +35,7 @@ var codingReviewPurpose = regexp.MustCompile(`^(coding|gitlab)-review:[0-9a-f]{3
 var codingPushPurpose = regexp.MustCompile(`^coding-push:[0-9a-f]{32}:[0-9a-f]{64}$`)
 
 func (s LinkSigner) Token(userID int64, purpose string, expires time.Time) (string, error) {
-	if len(s.key) != 32 || userID <= 0 || (purpose != "feedbin" && purpose != "raindrop" && purpose != "github" && purpose != "gitlab" && purpose != "jira" && purpose != "trello" && !codingReviewPurpose.MatchString(purpose) && !codingPushPurpose.MatchString(purpose)) {
+	if len(s.key) != 32 || userID <= 0 || (purpose != "workspace" && purpose != "feedbin" && purpose != "raindrop" && purpose != "github" && purpose != "gitlab" && purpose != "jira" && purpose != "trello" && !codingReviewPurpose.MatchString(purpose) && !codingPushPurpose.MatchString(purpose)) {
 		return "", errors.New("invalid account link configuration")
 	}
 	raw, _ := json.Marshal(linkClaims{userID, purpose, expires.Unix()})
@@ -72,7 +72,7 @@ func (s LinkSigner) Verify(token string, userID int64, purpose string, now time.
 
 func (s LinkSigner) URL(base string, userID int64, purpose string, now time.Time) (string, error) {
 	lifetime := 8 * 24 * time.Hour
-	if purpose == "github" || purpose == "gitlab" || purpose == "jira" || purpose == "trello" {
+	if purpose == "workspace" || purpose == "github" || purpose == "gitlab" || purpose == "jira" || purpose == "trello" {
 		lifetime = 20 * time.Minute
 	}
 	token, err := s.Token(userID, purpose, now.Add(lifetime))

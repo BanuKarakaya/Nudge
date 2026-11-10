@@ -93,7 +93,7 @@ func editInfo(e Edit, files bool) EditInfo {
 func approvalCommand(e Edit) string { return "pushla " + e.Task.ID + " " + e.Digest }
 
 func boundReview(e Edit) bool {
-	return e.Review.TaskID == e.Task.ID && e.Review.Repository == e.Task.Repository && e.Snapshot.Repository == e.Task.Repository && e.Review.BaseCommit == e.Snapshot.Commit && e.Review.BaseTree == e.Snapshot.Tree
+	return (e.Review.Author == nil || e.Review.Author.AccountID == e.AccountID) && e.Review.TaskID == e.Task.ID && e.Review.Repository == e.Task.Repository && e.Snapshot.Repository == e.Task.Repository && e.Review.BaseCommit == e.Snapshot.Commit && e.Review.BaseTree == e.Snapshot.Tree
 }
 
 func sameScope(a, b Identity) bool {
@@ -174,12 +174,23 @@ func (s *Service) BeginEdit(ctx context.Context, i Identity, name string) (EditI
 			return EditInfo{}, errors.New("branch kuralı okunamadı; görev başlatılmadı")
 		}
 	}
+	var author *CommitAuthor
+	if p, ok := s.provider.(commitAuthorProvider); ok {
+		a, e := p.CommitAuthor(ctx, token, account)
+		if e != nil {
+			return EditInfo{}, e
+		}
+		if !a.valid() || a.AccountID != account.ID {
+			return EditInfo{}, ErrConnect
+		}
+		author = &a
+	}
 	created := time.Now().UTC()
 	branch, err := RenderBranch(template, id, i.Request, account.Login, repo, created)
 	if err != nil {
 		return EditInfo{}, err
 	}
-	e, err := s.edits.CreateEdit(ctx, Edit{Review: Review{Branch: branch}, Task: Task{ID: id, Identity: i, Provider: s.Kind(), Repository: repo, Instruction: i.Request, Status: "cloning", CreatedAt: created}, AccountID: account.ID})
+	e, err := s.edits.CreateEdit(ctx, Edit{Review: Review{Branch: branch, Author: author}, Task: Task{ID: id, Identity: i, Provider: s.Kind(), Repository: repo, Instruction: i.Request, Status: "cloning", CreatedAt: created}, AccountID: account.ID})
 	if err != nil {
 		return EditInfo{}, err
 	}
@@ -204,7 +215,7 @@ func (s *Service) BeginEdit(ctx context.Context, i Identity, name string) (EditI
 			if !ValidTaskBranch(branch, repo.DefaultBranch) {
 				return ErrArguments
 			}
-			saved.Review = Review{TaskID: saved.Task.ID, Repository: repo, BaseCommit: snapshot.Commit, BaseTree: snapshot.Tree, Branch: branch, Tests: "not_run"}
+			saved.Review = Review{Author: saved.Review.Author, TaskID: saved.Task.ID, Repository: repo, BaseCommit: snapshot.Commit, BaseTree: snapshot.Tree, Branch: branch, Tests: "not_run"}
 			saved.Task.Status = "editing"
 		}
 		e = *saved

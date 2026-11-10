@@ -68,12 +68,24 @@ func main() {
 	bookmarkHandler := handler.NewBookmarkHandler(bookmarkService)
 	bookmarkHandler.RegisterRoutes(privateMux)
 
+	workspaceCtx, workspaceCancel := context.WithTimeout(appCtx, 15*time.Second)
+	workspaceStore, err := postgres.NewWorkspaceStore(workspaceCtx, db)
+	workspaceCancel()
+	if err != nil {
+		log.Fatalf("initialize workspace portal: %v", err)
+	}
 	installationRepository := postgres.NewInstallationRepository(db)
+	workspacePortal := handler.NewWorkspaceHandler(workspaceStore, links, os.Getenv("NUDGE_PUBLIC_URL"), installationRepository, slack.APIClient{HTTPClient: &http.Client{Timeout: 15 * time.Second}})
+	if err := workspacePortal.Validate(); err != nil {
+		log.Fatal(err)
+	}
+	workspacePortal.RegisterRoutes(mux)
 	slackHandler := handler.NewSlackHandler(slack.OAuthClient{
 		ClientID:     os.Getenv("SLACK_CLIENT_ID"),
 		ClientSecret: os.Getenv("SLACK_CLIENT_SECRET"),
 		RedirectURL:  os.Getenv("SLACK_REDIRECT_URL"),
 	}, installationRepository)
+	slackHandler.WithWorkspacePortal(workspacePortal)
 	slackHandler.RegisterRoutes(mux)
 
 	slackAPIClient := slack.APIClient{HTTPClient: &http.Client{Timeout: 15 * time.Second}}
@@ -192,6 +204,7 @@ func main() {
 			return err == nil, err
 		}})
 	}
+	onboardingService.WithWorkspacePortal()
 	slackHandler.WithOnboarding(onboardingService)
 	onboardingHandler.RegisterRoutes(privateMux)
 	_, appTimezone := reminderConfig()
@@ -224,10 +237,10 @@ func main() {
 		appTimezone,
 		analyticsRepository,
 	)
-	if err := configureCoding(db, mux, privateMux, slackEventHandler, slackInteractionHandler, installationRepository, slackAPIClient, links, onboardingService, branchRules); err != nil {
+	if err := configureCoding(db, mux, privateMux, slackEventHandler, slackInteractionHandler, installationRepository, slackAPIClient, links, onboardingService, branchRules, workspacePortal); err != nil {
 		log.Fatalf("repository task configuration: %v", err)
 	}
-	if err := configureTrackers(db, mux, privateMux, slackEventHandler, installationRepository, slackAPIClient, links, onboardingService); err != nil {
+	if err := configureTrackers(db, mux, privateMux, slackEventHandler, installationRepository, slackAPIClient, links, onboardingService, workspacePortal); err != nil {
 		log.Fatalf("Jira/Trello configuration: %v", err)
 	}
 	jobCtx, jobCancel := context.WithTimeout(appCtx, 15*time.Second)
@@ -236,6 +249,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("initialize Slack jobs: %v", err)
 	}
+	slackEventHandler.WithWorkspacePortal(workspacePortal)
 	slackEventHandler.WithJobQueue(jobRepository)
 	slackEventHandler.RegisterRoutes(mux)
 
