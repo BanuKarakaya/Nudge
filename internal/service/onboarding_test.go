@@ -200,7 +200,7 @@ func TestWorkspaceOnboardingReplacesProviderInvitations(t *testing.T) {
 	if err := s.DeliverInvitation(ctx, 1, "workspace"); err != nil {
 		t.Fatal(err)
 	}
-	if len(client.messages) != 1 || !strings.Contains(client.messages[0], "/dashboard/install") || !strings.Contains(client.messages[0], "Paneli aç") {
+	if len(client.messages) != 1 || !strings.Contains(client.messages[0], "/dashboard|Dashboardu aç>") || !strings.Contains(client.messages[0], "Slack ile giriş yap") || strings.Contains(client.messages[0], "token=") || strings.Contains(client.messages[0], "20 dakika") {
 		t.Fatal("portal link missing", client.messages)
 	}
 }

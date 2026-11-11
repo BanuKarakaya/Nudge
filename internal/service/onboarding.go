@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"nudge/internal/domain"
@@ -35,7 +36,7 @@ type ConnectionInvitation struct {
 
 func (s *OnboardingService) WithWorkspacePortal() {
 	s.workspacePortal = true
-	s.Register(ConnectionInvitation{Purpose: "workspace", Name: "Nudgy paneli", Description: "Yönetici entegrasyonları bir kez kurar; ekip üyeleri yalnızca kendi hesaplarını doğrular. Bireysel kullanımda tüm ayarlar aynı panelde.", Connected: func(context.Context, int64) (bool, error) { return false, nil }})
+	s.Register(ConnectionInvitation{Purpose: "workspace", Name: "Nudgy paneli", Description: "Yönetici AI ayarlarını ve entegrasyonları bir kez kurar; ekip üyeleri yalnızca kendi hesaplarını doğrular. Bireysel kullanımda tüm ayarlar aynı panelde.", Connected: func(context.Context, int64) (bool, error) { return false, nil }})
 }
 func (s *OnboardingService) portalProvider(p string) bool {
 	return s.workspacePortal && (p == "github" || p == "gitlab" || p == "jira" || p == "trello")
@@ -171,14 +172,16 @@ func (s *OnboardingService) DeliverInvitation(ctx context.Context, userID int64,
 		if err != nil {
 			return err
 		}
-		// Generate fresh links when sending, so queue delays cannot expire them.
-		link, err := s.links.URL(s.publicURL, userID, purpose, time.Now())
-		if err != nil {
-			return err
-		}
-		text := fmt.Sprintf("👋 *Nudgy · %s bağlantısı*\n%s\n\n<%s|%s hesabını bağla>\n\nBu bağlantı sana özeldir. Yalnızca kullanmak istediğin servisleri bağlayabilirsin.", inv.Name, inv.Description, link, inv.Name)
+		var text string
 		if purpose == "workspace" {
-			text = "👋 *Nudgy panelin*\n" + inv.Description + "\n\n<" + link + "|Paneli aç>\nBu giriş bağlantısı sana özeldir, tek kullanımlıktır ve 20 dakika geçerlidir. Paylaşma. Yenisi için Nudgy’ye “panel” yaz."
+			text = "👋 *Nudgy’ye hoş geldin!*\n" + inv.Description + "\n\n<" + strings.TrimRight(s.publicURL, "/") + "/dashboard|Dashboardu aç>\n*Slack ile giriş yap* düğmesini kullan ve bu çalışma alanındaki hesabını seç. Ardından *Hesaplarım* bölümünden kullanacağın servisleri doğrula.\n\nBu dashboard adresini kaydedebilirsin; bağlantının süresi dolmaz. Kendi işlemlerini ve AI kullanımını da panelden takip edebilirsin."
+		} else {
+			// Personal provider authorization links remain signed and short-lived.
+			link, err := s.links.URL(s.publicURL, userID, purpose, time.Now())
+			if err != nil {
+				return err
+			}
+			text = fmt.Sprintf("👋 *Nudgy · %s bağlantısı*\n%s\n\n<%s|%s hesabını bağla>\n\nBu bağlantı sana özeldir. Yalnızca kullanmak istediğin servisleri bağlayabilirsin.", inv.Name, inv.Description, link, inv.Name)
 		}
 		if purpose == "github" || purpose == "gitlab" || purpose == "jira" || purpose == "trello" {
 			text += "\nLink 20 dakika geçerlidir. Süresi dolarsa Nudgy’den yeni " + inv.Name + " bağlantısı isteyebilirsin."
