@@ -103,11 +103,11 @@ func TestAgentBootstrapsJSONHistoryAndResumesAfterHandlerRestart(t *testing.T) {
 	for i, input := range []string{"<@B123> RSS özetimi ver", "bunlardan hangisini okuyayım?"} {
 		want := state
 		runtime := agentFunc(func(_ context.Context, request service.AgentRequest) (service.AgentResult, error) {
-			if request.Key != key || request.ThreadID != want.AgentThreadID || !reflect.DeepEqual(request.History, want) {
+			if request.UserID != 1 || request.Key != key || request.ThreadID != want.AgentThreadID || !reflect.DeepEqual(request.History, want) {
 				t.Fatalf("missing delivered context: %+v", request)
 			}
 			assertAgentInput(t, request.Input, strings.TrimSpace(slackUserMention.ReplaceAllString(input, "")), "UTC")
-			return service.AgentResult{ThreadID: "codex-thread", Text: "Agent reply"}, nil
+			return service.AgentResult{ThreadID: "codex-thread", Text: "Agent reply", AIRevision: "workspace-revision"}, nil
 		})
 		sender.beforeSend = func(context.Context, string) {
 			before, err := store.Load(context.Background(), key)
@@ -121,6 +121,7 @@ func TestAgentBootstrapsJSONHistoryAndResumesAfterHandlerRestart(t *testing.T) {
 			event.Event.TS, event.Event.ThreadTS = "2.0", "1.0"
 		}
 		h.replyWithSummary(event)
+		state.AIRevision = "workspace-revision"
 		state.AgentThreadID = "codex-thread"
 		state.Remember(input, "Agent reply", "AGENT")
 		got, err := store.Load(context.Background(), key)

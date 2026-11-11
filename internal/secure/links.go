@@ -83,7 +83,11 @@ func (s LinkSigner) URL(base string, userID int64, purpose string, now time.Time
 	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil {
 		return "", errors.New("invalid public URL")
 	}
-	u.Path = strings.TrimRight(u.Path, "/") + "/" + purpose + "/install"
+	pathPurpose := purpose
+	if purpose == "workspace" {
+		pathPurpose = "dashboard"
+	}
+	u.Path = strings.TrimRight(u.Path, "/") + "/" + pathPurpose + "/install"
 	u.RawQuery = url.Values{"user_id": {strconv.FormatInt(userID, 10)}, "token": {token}}.Encode()
 	u.Fragment = ""
 	return u.String(), nil

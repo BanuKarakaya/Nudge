@@ -120,7 +120,7 @@ func (h *CodingHandler) gitLabCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if next == "" && h.workspace != nil {
-		http.Redirect(w, r, "/workspace?done=verified", http.StatusSeeOther)
+		http.Redirect(w, r, "/dashboard/accounts?done=verified", http.StatusSeeOther)
 		return
 	}
 	setOAuthCookie(w, r, "nudgy_gitlab_selection", next, "/gitlab/select")

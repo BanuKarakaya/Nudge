@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"nudge/internal/coding"
+	"nudge/internal/dashboard"
 	"nudge/internal/repository"
 	"nudge/internal/secure"
 	"nudge/internal/tracker"
@@ -41,6 +42,8 @@ type WorkspaceHandler struct {
 	installations repository.InstallationRepository
 	client        codingMessenger
 	providers     []workspaceProvider
+	ai            workspace.AIStore
+	catalog       workspace.Catalog
 }
 
 func NewWorkspaceHandler(store workspace.Store, links secure.LinkSigner, base string, installations repository.InstallationRepository, client codingMessenger) *WorkspaceHandler {
@@ -87,14 +90,40 @@ func (h *WorkspaceHandler) RegisterTracker(s *tracker.Service) {
 	}})
 }
 func (h *WorkspaceHandler) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /workspace", h.home)
-	mux.HandleFunc("GET /workspace/install", h.loginPage)
-	mux.HandleFunc("POST /workspace/login", h.login)
-	mux.HandleFunc("POST /workspace/logout", h.logout)
-	mux.HandleFunc("GET /workspace/integrations/{provider}", h.settings)
-	mux.HandleFunc("POST /workspace/integrations/{provider}", h.save)
-	mux.HandleFunc("POST /workspace/connect/{provider}", h.connect)
-	mux.HandleFunc("POST /workspace/disconnect/{provider}", h.disconnect)
+	mux.HandleFunc("GET /dashboard", h.home)
+	mux.HandleFunc("GET /dashboard/integrations", h.home)
+	mux.HandleFunc("GET /dashboard/accounts", h.home)
+	mux.HandleFunc("GET /dashboard/ai", h.aiPage)
+	mux.HandleFunc("POST /dashboard/ai", h.saveAI)
+	mux.HandleFunc("GET /dashboard/team", h.teamPage)
+	files := http.StripPrefix("/dashboard/", http.FileServer(http.FS(dashboard.Files())))
+	for _, name := range []string{"styles.css", "workspace.css", "nudgy-mascot.webp"} {
+		mux.Handle("GET /dashboard/"+name, files)
+	}
+	for _, path := range []string{"/dashboard/{$}", "/dashboard/index.html", "/dashboard/branch-rules.html"} {
+		mux.HandleFunc("GET "+path, func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/dashboard", http.StatusSeeOther) })
+	}
+	mux.HandleFunc("/api/v1/", retiredDashboard)
+	mux.HandleFunc("/api/dashboard", retiredDashboard)
+	mux.HandleFunc("/api/dashboard/", retiredDashboard)
+	for _, path := range []string{"/workspace", "/workspace/"} {
+		mux.HandleFunc("GET "+path, func(w http.ResponseWriter, r *http.Request) {
+			next := "/dashboard" + strings.TrimPrefix(r.URL.Path, "/workspace")
+			if r.URL.RawQuery != "" {
+				next += "?" + r.URL.RawQuery
+			}
+			privatePageHeaders(w)
+			http.Redirect(w, r, next, http.StatusTemporaryRedirect)
+		})
+	}
+
+	mux.HandleFunc("GET /dashboard/install", h.loginPage)
+	mux.HandleFunc("POST /dashboard/login", h.login)
+	mux.HandleFunc("POST /dashboard/logout", h.logout)
+	mux.HandleFunc("GET /dashboard/integrations/{provider}", h.settings)
+	mux.HandleFunc("POST /dashboard/integrations/{provider}", h.save)
+	mux.HandleFunc("POST /dashboard/connect/{provider}", h.connect)
+	mux.HandleFunc("POST /dashboard/disconnect/{provider}", h.disconnect)
 }
 func workspaceHash(s string) string { v := sha256.Sum256([]byte(s)); return hex.EncodeToString(v[:]) }
 func (h *WorkspaceHandler) session(w http.ResponseWriter, r *http.Request) (workspace.Member, string, bool) {
@@ -139,7 +168,7 @@ func (h *WorkspaceHandler) startSession(w http.ResponseWriter, r *http.Request, 
 	if c, e := r.Cookie(workspaceCookie); e == nil {
 		_ = h.store.DeleteSession(r.Context(), workspaceHash(c.Value))
 	}
-	http.SetCookie(w, &http.Cookie{Name: workspaceCookie, Value: raw, Path: "/workspace", HttpOnly: true, Secure: strings.HasPrefix(h.base, "https://"), SameSite: http.SameSiteLaxMode, MaxAge: 43200})
+	http.SetCookie(w, &http.Cookie{Name: workspaceCookie, Value: raw, Path: "/dashboard", HttpOnly: true, Secure: strings.HasPrefix(h.base, "https://"), SameSite: http.SameSiteLaxMode, MaxAge: 43200})
 	return nil
 }
 func (h *WorkspaceHandler) loginPage(w http.ResponseWriter, r *http.Request) {
@@ -154,12 +183,12 @@ func (h *WorkspaceHandler) loginPage(w http.ResponseWriter, r *http.Request) {
 		h.page(w, 503, workspacePage{Error: "Giriş başlatılamadı."})
 		return
 	}
-	setOAuthCookie(w, r, "nudgy_workspace_login", state, "/workspace/login")
+	setOAuthCookie(w, r, "nudgy_workspace_login", state, "/dashboard/login")
 	h.page(w, 200, workspacePage{Login: true, UserID: user, Token: token, CSRF: state})
 }
 func (h *WorkspaceHandler) login(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 8192)
-	if r.ParseForm() != nil || r.Header.Get("Sec-Fetch-Site") == "cross-site" || (r.Header.Get("Origin") != "" && r.Header.Get("Origin") != h.base) || !consumeOAuthCookie(w, r, "nudgy_workspace_login", r.PostForm.Get("csrf"), "/workspace/login") {
+	if r.ParseForm() != nil || r.Header.Get("Sec-Fetch-Site") == "cross-site" || (r.Header.Get("Origin") != "" && r.Header.Get("Origin") != h.base) || !consumeOAuthCookie(w, r, "nudgy_workspace_login", r.PostForm.Get("csrf"), "/dashboard/login") {
 		h.page(w, 403, workspacePage{Error: "Giriş oturumu doğrulanamadı. Özel bağlantını tekrar aç."})
 		return
 	}
@@ -169,7 +198,7 @@ func (h *WorkspaceHandler) login(w http.ResponseWriter, r *http.Request) {
 		h.page(w, 401, workspacePage{Error: "Bu giriş bağlantısı kullanılmış veya süresi dolmuş. Slack’te Nudgy’ye “panel” yazarak yenisini al."})
 		return
 	}
-	http.Redirect(w, r, "/workspace", http.StatusSeeOther)
+	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 }
 func (h *WorkspaceHandler) logout(w http.ResponseWriter, r *http.Request) {
 	if _, _, ok := h.session(w, r); !ok {
@@ -180,8 +209,8 @@ func (h *WorkspaceHandler) logout(w http.ResponseWriter, r *http.Request) {
 		h.page(w, 503, workspacePage{Error: "Çıkış tamamlanamadı. Tekrar dene."})
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: workspaceCookie, Path: "/workspace", HttpOnly: true, Secure: strings.HasPrefix(h.base, "https://"), SameSite: http.SameSiteLaxMode, MaxAge: -1})
-	http.Redirect(w, r, "/workspace", http.StatusSeeOther)
+	http.SetCookie(w, &http.Cookie{Name: workspaceCookie, Path: "/dashboard", HttpOnly: true, Secure: strings.HasPrefix(h.base, "https://"), SameSite: http.SameSiteLaxMode, MaxAge: -1})
+	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 }
 func (h *WorkspaceHandler) provider(kind string) (workspaceProvider, bool) {
 	for _, p := range h.providers {
@@ -208,9 +237,18 @@ type workspacePage struct {
 	Login, Settings, Enabled                            bool
 	Cards                                               []workspaceCard
 	Choices                                             []workspaceChoice
+	Section, Title, Description                         string
+	AI                                                  workspace.AISettings
+	Models                                              []workspace.Model
+	Members                                             []workspace.Member
+	ActiveIntegrations, VerifiedAccounts                int
 }
 
 func (h *WorkspaceHandler) page(w http.ResponseWriter, status int, data workspacePage) {
+	if data.Title == "" {
+		data.Title = "Çalışma alanı"
+	}
+
 	privatePageHeaders(w)
 	w.Header().Set("Referrer-Policy", "strict-origin")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; img-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
@@ -228,7 +266,37 @@ func (h *WorkspaceHandler) home(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	data := workspacePage{Member: m, CSRF: csrf}
+	section := "overview"
+	if r.URL.Path == "/dashboard/integrations" {
+		section = "integrations"
+		if !m.Manager {
+			h.page(w, 403, workspacePage{Member: m, Error: "Entegrasyonları yalnızca çalışma alanı yöneticisi yönetebilir."})
+			return
+		}
+	}
+	if r.URL.Path == "/dashboard/accounts" {
+		section = "accounts"
+	}
+	data := workspacePage{Member: m, CSRF: csrf, Section: section}
+	switch section {
+	case "overview":
+		data.Title = "Genel bakış"
+		data.Description = "Çalışma alanın, AI ayarların ve hesapların tek yerde."
+	case "integrations":
+		data.Title = "Entegrasyonlar"
+		data.Description = "Ekibin kullanacağı servisleri ve ortak alanları belirle."
+	case "accounts":
+		data.Title = "Hesaplarım"
+		data.Description = "Kendi hesaplarını doğrula; yaptığın işlemler senin kimliğinle kaydedilsin."
+	}
+	if h.ai != nil {
+		var err error
+		data.AI, err = h.ai.AISettings(r.Context(), m.UserID)
+		if err != nil {
+			h.page(w, 503, workspacePage{Member: m, Error: "AI ayarları şu an okunamıyor."})
+			return
+		}
+	}
 	switch r.URL.Query().Get("done") {
 	case "saved":
 		data.Message = "Çalışma alanı ayarları kaydedildi."
@@ -241,7 +309,7 @@ func (h *WorkspaceHandler) home(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	for _, kind := range []string{"github", "gitlab", "jira", "trello"} {
 		names := map[string]string{"github": "GitHub", "gitlab": "GitLab", "jira": "Jira", "trello": "Trello"}
-		card := workspaceCard{Kind: kind, Name: names[kind], Manager: m.Manager}
+		card := workspaceCard{Kind: kind, Name: names[kind], Manager: m.Manager && section == "integrations"}
 		p, configured := h.provider(kind)
 		card.Configured = configured
 		if configured {
@@ -271,6 +339,12 @@ func (h *WorkspaceHandler) home(w http.ResponseWriter, r *http.Request) {
 		default:
 			card.Status = "Hesabını doğrula"
 		}
+		if card.Enabled {
+			data.ActiveIntegrations++
+		}
+		if card.Connected {
+			data.VerifiedAccounts++
+		}
 		data.Cards = append(data.Cards, card)
 	}
 	h.page(w, 200, data)
@@ -297,7 +371,7 @@ func (h *WorkspaceHandler) settings(w http.ResponseWriter, r *http.Request) {
 		h.page(w, 409, workspacePage{Member: m, CSRF: csrf, Error: "Alanları listelemek için önce bu serviste kendi hesabını bağla veya yeniden doğrula."})
 		return
 	}
-	data := workspacePage{Member: m, CSRF: csrf, Settings: true, Provider: p.Kind, ProviderName: p.Name, Enabled: scope.Enabled}
+	data := workspacePage{Member: m, CSRF: csrf, Settings: true, Section: "integrations", Title: p.Name, Provider: p.Kind, ProviderName: p.Name, Enabled: scope.Enabled}
 	selected := map[string]bool{}
 	for _, r := range scope.Resources {
 		selected[r.ID] = true
@@ -354,7 +428,7 @@ func (h *WorkspaceHandler) save(w http.ResponseWriter, r *http.Request) {
 		h.page(w, 503, workspacePage{Error: "Ayarlar kaydedilemedi."})
 		return
 	}
-	http.Redirect(w, r, "/workspace?done=saved", http.StatusSeeOther)
+	http.Redirect(w, r, "/dashboard/integrations?done=saved", http.StatusSeeOther)
 }
 func (h *WorkspaceHandler) connect(w http.ResponseWriter, r *http.Request) {
 	m, _, ok := h.session(w, r)
@@ -395,7 +469,7 @@ func (h *WorkspaceHandler) disconnect(w http.ResponseWriter, r *http.Request) {
 		h.page(w, 503, workspacePage{Error: "Hesap bağlantısı kaldırılamadı."})
 		return
 	}
-	http.Redirect(w, r, "/workspace?done=disconnected", http.StatusSeeOther)
+	http.Redirect(w, r, "/dashboard/accounts?done=disconnected", http.StatusSeeOther)
 }
 func (h *WorkspaceHandler) SendLink(ctx context.Context, user int64, team string) error {
 	i, err := h.installations.GetByUserID(ctx, user)

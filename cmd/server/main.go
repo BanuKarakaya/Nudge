@@ -9,11 +9,9 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
-	"nudge/internal/ai"
 	"nudge/internal/codex"
 	"nudge/internal/database"
 	"nudge/internal/feedbin"
@@ -24,6 +22,7 @@ import (
 	"nudge/internal/secure"
 	"nudge/internal/service"
 	"nudge/internal/slack"
+	"nudge/internal/workspace"
 )
 
 func main() {
@@ -49,7 +48,8 @@ func main() {
 	}
 	mux := http.NewServeMux()
 	privateMux := http.NewServeMux()
-	mux.Handle("/api/v1/", handler.RequireAPIToken(os.Getenv("NUDGE_API_TOKEN"), privateMux))
+	// Legacy operator handlers remain unmounted. A global token plus a chosen
+	// user ID must not grant access to customer data or actions.
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
@@ -143,34 +143,25 @@ func main() {
 	if stateDir == "" {
 		stateDir = "/var/lib/nudgy/codex"
 	}
-	if strings.TrimSpace(os.Getenv("CODEX_COMPLEX_MODEL")) == "" {
-		log.Fatal("Codex harness configuration: CODEX_COMPLEX_MODEL must be explicitly selected")
+	aiEncryptionKey := os.Getenv("NUDGY_AI_ENCRYPTION_KEY")
+	if aiEncryptionKey == "" {
+		aiEncryptionKey = os.Getenv("FEEDBIN_ENCRYPTION_KEY")
 	}
-	runtime, err := codex.New(codex.Config{
-		Binary: os.Getenv("CODEX_BINARY"), Model: os.Getenv("CODEX_SIMPLE_MODEL"),
-		ComplexModel: os.Getenv("CODEX_COMPLEX_MODEL"),
-		APIKey:       os.Getenv("OPENROUTER_API_KEY"), StateDir: stateDir,
-		BaseURL:         "https://openrouter.ai/api/v1",
-		ModelCatalogURL: "https://openrouter.ai/api/v1/models",
-	})
+	aiCipher, err := secure.NewCipherFromBase64(aiEncryptionKey)
 	if err != nil {
-		log.Fatalf("Codex harness configuration: %v", err)
+		log.Fatal("workspace AI encryption is not configured")
 	}
-	log.Printf("Codex app-server harness enabled (provider=OpenRouter simple_model=%s complex_model=%s); legacy AI routing disabled", os.Getenv("CODEX_SIMPLE_MODEL"), os.Getenv("CODEX_COMPLEX_MODEL"))
+	aiStore, err := postgres.NewWorkspaceAIStore(appCtx, db, aiCipher)
+	if err != nil {
+		log.Fatal("workspace AI storage could not initialize")
+	}
+	workspacePortal.WithAI(aiStore, workspace.ProviderCatalog{})
+	runtime, err := codex.NewTenantRuntime(aiStore, workspaceStore, os.Getenv("CODEX_BINARY"), stateDir)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("workspace-owned AI credentials enabled; global model and search credentials are not used")
 	var webAssistant service.WebAssistant
-
-	// Search is a tool offered to Codex, never a conversation router or fallback.
-	if apiKey := os.Getenv("GEMINI_API_KEY"); apiKey != "" {
-		log.Printf("Google web search enabled separately (model=%s)", os.Getenv("GEMINI_MODEL"))
-		geminiClient := ai.GeminiClient{
-			APIKey:     apiKey,
-			Model:      os.Getenv("GEMINI_MODEL"),
-			HTTPClient: &http.Client{Timeout: 60 * time.Second},
-		}
-		webAssistant = geminiClient
-	} else {
-		log.Printf("Google web search disabled: GEMINI_API_KEY is not configured")
-	}
 	_, feedbinTimezone := reminderConfig()
 	digestGenerator := service.NewAgentDigest(runtime, feedbinDigestService, feedbinTimezone)
 	feedbinDigestHandler := handler.NewFeedbinDigestHandler(
@@ -222,9 +213,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("initialize branch rules: %v", err)
 	}
-	dashboardHandler := handler.NewDashboardHandler(analyticsRepository, os.Getenv("NUDGE_DASHBOARD_TOKEN"))
-	dashboardHandler.WithBranchRules(branchRules)
-	dashboardHandler.RegisterRoutes(mux)
+	// The customer portal owns /dashboard. Global analytics and branch-rule APIs
+	// are deliberately not registered: an operator token cannot read tenant data.
 	slackEventHandler := handler.NewSlackEventHandler(
 		os.Getenv("SLACK_SIGNING_SECRET"),
 		installationRepository,

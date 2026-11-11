@@ -58,7 +58,7 @@ func TestWorkspaceLinksAreShortLivedAndPurposeBound(t *testing.T) {
 		t.Fatal(err)
 	}
 	token := u.Query().Get("token")
-	if u.Path != "/workspace/install" || !signer.Verify(token, 7, "workspace", now) {
+	if u.Path != "/dashboard/install" || !signer.Verify(token, 7, "workspace", now) {
 		t.Fatal("invalid workspace link")
 	}
 	if signer.Verify(token, 8, "workspace", now) || signer.Verify(token, 7, "github", now) || signer.Verify(token, 7, "workspace", now.Add(20*time.Minute)) {

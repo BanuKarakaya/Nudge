@@ -119,7 +119,7 @@ func (h *SlackHandler) callback(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 503, "workspace session unavailable")
 			return
 		}
-		http.Redirect(w, r, "/workspace", http.StatusSeeOther)
+		http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{

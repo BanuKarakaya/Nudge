@@ -200,7 +200,7 @@ func TestWorkspaceOnboardingReplacesProviderInvitations(t *testing.T) {
 	if err := s.DeliverInvitation(ctx, 1, "workspace"); err != nil {
 		t.Fatal(err)
 	}
-	if len(client.messages) != 1 || !strings.Contains(client.messages[0], "/workspace/install") || !strings.Contains(client.messages[0], "Paneli aç") {
+	if len(client.messages) != 1 || !strings.Contains(client.messages[0], "/dashboard/install") || !strings.Contains(client.messages[0], "Paneli aç") {
 		t.Fatal("portal link missing", client.messages)
 	}
 }

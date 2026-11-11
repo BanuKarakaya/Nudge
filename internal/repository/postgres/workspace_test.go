@@ -88,6 +88,7 @@ func TestWorkspaceStorePostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	testWorkspaceAIStore(t, db, s, owner, member, other)
 	scope := workspace.Scope{Enabled: true, Resources: []workspace.Resource{{ID: "10", Name: "Team repo"}}}
 	if err = s.SaveScope(ctx, member, "github", scope); err == nil {
 		t.Fatal("member wrote workspace scope")

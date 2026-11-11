@@ -9,6 +9,7 @@ import (
 )
 
 type MergeIntentRequest struct {
+	UserID  int64
 	Key     ConversationKey
 	Current string
 	Turns   []ConversationExchange
@@ -33,7 +34,7 @@ type mergeIntentTools struct {
 // fetched Slack messages, repository text and executing-agent arguments are not.
 func WithMergeIntentTools(base AgentTools, resolver MergeIntentResolver, key ConversationKey, identity coding.Identity, history ConversationState) AgentTools {
 	return &mergeIntentTools{AgentTools: base, resolver: resolver, identity: identity,
-		request: MergeIntentRequest{Key: key, Current: identity.Request, Turns: append([]ConversationExchange(nil), history.Turns...)}}
+		request: MergeIntentRequest{UserID: identity.UserID, Key: key, Current: identity.Request, Turns: append([]ConversationExchange(nil), history.Turns...)}}
 }
 
 func (t *mergeIntentTools) Call(ctx context.Context, name string, args json.RawMessage) (string, error) {

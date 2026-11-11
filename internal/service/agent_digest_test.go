@@ -67,7 +67,7 @@ func TestAgentDigestEnforcesHalfOpenWindowAndPaginatesSharedSnapshot(t *testing.
 		if request.ThreadID != "" || !reflect.DeepEqual(request.History, ConversationState{}) {
 			t.Fatal("scheduled generation must not resume conversation state")
 		}
-		if request.Key.User != "42" || !strings.Contains(request.Input, since.Format(time.RFC3339)) || !strings.Contains(request.Input, until.Format(time.RFC3339)) {
+		if request.UserID != 42 || request.Key.User != "42" || !strings.Contains(request.Input, since.Format(time.RFC3339)) || !strings.Contains(request.Input, until.Format(time.RFC3339)) {
 			t.Fatalf("missing identity/window: %+v", request)
 		}
 		if len(request.Tools.Definitions()) != 2 {

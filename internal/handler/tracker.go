@@ -134,7 +134,7 @@ func (h *TrackerHandler) callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if next == "" && h.workspace != nil {
-		http.Redirect(w, r, "/workspace?done=verified", http.StatusSeeOther)
+		http.Redirect(w, r, "/dashboard/accounts?done=verified", http.StatusSeeOther)
 		return
 	}
 	setOAuthCookie(w, r, "nudgy_"+h.service.Kind()+"_selection", next, "/"+h.service.Kind()+"/select")

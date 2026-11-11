@@ -9,6 +9,7 @@ type AgentRuntime interface {
 }
 
 type AgentRequest struct {
+	UserID   int64
 	Key      ConversationKey
 	ThreadID string
 	Input    string
@@ -17,6 +18,7 @@ type AgentRequest struct {
 }
 
 type AgentResult struct {
+	AIRevision string
 	ThreadID   string
 	Text       string
 	TokenUsage *AgentTokenUsage

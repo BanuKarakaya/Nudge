@@ -20,6 +20,7 @@ type ConversationArticle struct {
 }
 
 type ConversationState struct {
+	AIRevision       string                 `json:"ai_revision,omitempty"`
 	AgentThreadID    string                 `json:"agent_thread_id,omitempty"`
 	AgentToolVersion string                 `json:"agent_tool_version,omitempty"`
 	AgentTokenUsage  *AgentTokenUsage       `json:"agent_token_usage,omitempty"`

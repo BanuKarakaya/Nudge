@@ -100,17 +100,17 @@ func workspaceRequest(s *workspaceMemory, mux *http.ServeMux, user int64, method
 }
 func TestWorkspaceRolesScopeValidationAndIsolation(t *testing.T) {
 	_, s, mux := workspaceFixture(t)
-	for _, path := range []string{"/workspace/integrations/github", "/workspace/integrations/jira"} {
+	for _, path := range []string{"/dashboard/integrations/github", "/dashboard/integrations/jira"} {
 		w := workspaceRequest(s, mux, 2, "POST", path, url.Values{"enabled": {"true"}, "resource": {"10"}, "user_id": {"1"}})
 		if w.Code != 403 {
 			t.Fatalf("member changed shared settings: %d", w.Code)
 		}
 	}
-	w := workspaceRequest(s, mux, 1, "POST", "/workspace/integrations/github", url.Values{"enabled": {"true"}, "resource": {"forged"}})
+	w := workspaceRequest(s, mux, 1, "POST", "/dashboard/integrations/github", url.Values{"enabled": {"true"}, "resource": {"forged"}})
 	if w.Code != 400 || s.saved != 0 {
 		t.Fatal("unverified resource accepted")
 	}
-	w = workspaceRequest(s, mux, 1, "POST", "/workspace/integrations/github", url.Values{"enabled": {"true"}, "resource": {"10"}})
+	w = workspaceRequest(s, mux, 1, "POST", "/dashboard/integrations/github", url.Values{"enabled": {"true"}, "resource": {"10"}})
 	if w.Code != 303 || s.saved != 1 {
 		t.Fatalf("manager save: %d %s", w.Code, w.Body)
 	}
@@ -119,33 +119,33 @@ func TestWorkspaceRolesScopeValidationAndIsolation(t *testing.T) {
 	if !scope.Allows("10") || other.Enabled {
 		t.Fatal("workspace scope leaked")
 	}
-	w = workspaceRequest(s, mux, 2, "GET", "/workspace", nil)
+	w = workspaceRequest(s, mux, 2, "GET", "/dashboard/accounts", nil)
 	if w.Code != 200 || strings.Contains(w.Body.String(), "Alanları yönet") || !strings.Contains(w.Body.String(), "Yeniden doğrula") {
 		t.Fatal("incorrect employee UI", w.Code, w.Body)
 	}
-	w = workspaceRequest(s, mux, 2, "POST", "/workspace/disconnect/github", url.Values{"user_id": {"1"}})
+	w = workspaceRequest(s, mux, 2, "POST", "/dashboard/disconnect/github", url.Values{"user_id": {"1"}})
 	if w.Code != 303 || s.disconnected != 2 {
 		t.Fatal("disconnect used client-provided identity")
 	}
 	if !s.scopes["Tgithub"].Enabled {
 		t.Fatal("personal disconnect changed workspace")
 	}
-	w = workspaceRequest(s, mux, 1, "POST", "/workspace/integrations/github", url.Values{"enabled": {"false"}})
+	w = workspaceRequest(s, mux, 1, "POST", "/dashboard/integrations/github", url.Values{"enabled": {"false"}})
 	if w.Code != 303 {
 		t.Fatal(w.Code)
 	}
-	w = workspaceRequest(s, mux, 2, "POST", "/workspace/connect/github", nil)
+	w = workspaceRequest(s, mux, 2, "POST", "/dashboard/connect/github", nil)
 	if w.Code != 403 {
 		t.Fatal("member connected disabled provider")
 	}
-	w = workspaceRequest(s, mux, 3, "GET", "/workspace", nil)
+	w = workspaceRequest(s, mux, 3, "GET", "/dashboard/integrations", nil)
 	if w.Code != 200 || !strings.Contains(w.Body.String(), "Çalışma alanı ayarları") {
 		t.Fatal("individual lacks admin panel")
 	}
 }
 func TestWorkspaceCSRFAndAuthentication(t *testing.T) {
 	_, s, mux := workspaceFixture(t)
-	for _, path := range []string{"/workspace/connect/github", "/workspace/disconnect/github", "/workspace/integrations/github", "/workspace/logout"} {
+	for _, path := range []string{"/dashboard/connect/github", "/dashboard/disconnect/github", "/dashboard/integrations/github", "/dashboard/logout"} {
 		w := workspaceRequest(s, mux, 1, "POST", path, url.Values{"csrf": {"wrong"}})
 		if w.Code != 403 {
 			t.Fatalf("csrf %s: %d", path, w.Code)
@@ -179,7 +179,7 @@ func TestWorkspaceMagicLinkOneUseCookieBindingAndLogout(t *testing.T) {
 	cookie := w.Result().Cookies()[0]
 	form := url.Values{"user_id": {"2"}, "token": {u.Query().Get("token")}, "csrf": {cookie.Value}}
 	login := func(c *http.Cookie) *httptest.ResponseRecorder {
-		r := httptest.NewRequest("POST", h.base+"/workspace/login", strings.NewReader(form.Encode()))
+		r := httptest.NewRequest("POST", h.base+"/dashboard/login", strings.NewReader(form.Encode()))
 		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		r.Header.Set("Origin", h.base)
 		if c != nil {
@@ -202,13 +202,13 @@ func TestWorkspaceMagicLinkOneUseCookieBindingAndLogout(t *testing.T) {
 			session = c
 		}
 	}
-	if session == nil || !session.HttpOnly || !session.Secure || session.Path != "/workspace" {
+	if session == nil || !session.HttpOnly || !session.Secure || session.Path != "/dashboard" {
 		t.Fatal("insecure session cookie")
 	}
 	if login(cookie).Code != 401 {
 		t.Fatal("magic link replay accepted")
 	}
-	r = httptest.NewRequest("POST", h.base+"/workspace/logout", strings.NewReader(url.Values{"csrf": {workspaceHash("csrf:" + session.Value)}}.Encode()))
+	r = httptest.NewRequest("POST", h.base+"/dashboard/logout", strings.NewReader(url.Values{"csrf": {workspaceHash("csrf:" + session.Value)}}.Encode()))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	r.AddCookie(session)
 	w = httptest.NewRecorder()
@@ -216,7 +216,7 @@ func TestWorkspaceMagicLinkOneUseCookieBindingAndLogout(t *testing.T) {
 	if w.Code != 303 {
 		t.Fatal("logout", w.Code)
 	}
-	r = httptest.NewRequest("GET", h.base+"/workspace", nil)
+	r = httptest.NewRequest("GET", h.base+"/dashboard", nil)
 	r.AddCookie(session)
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, r)
@@ -247,7 +247,7 @@ func TestWorkspaceGitHubMemberOAuthSkipsInstallation(t *testing.T) {
 	r.AddCookie(start.Result().Cookies()[0])
 	result := httptest.NewRecorder()
 	public.ServeHTTP(result, r)
-	if result.Code != 303 || result.Header().Get("Location") != "/workspace?done=verified" || store.saved.UserID != 1 || store.saved.Login != "developer" {
+	if result.Code != 303 || result.Header().Get("Location") != "/dashboard/accounts?done=verified" || store.saved.UserID != 1 || store.saved.Login != "developer" {
 		t.Fatal("member verification failed", result.Code, result.Body)
 	}
 }
@@ -275,7 +275,7 @@ func TestWorkspaceTrackersReturnToPanelWithoutSelection(t *testing.T) {
 			r.AddCookie(start.Result().Cookies()[0])
 			w := httptest.NewRecorder()
 			public.ServeHTTP(w, r)
-			if w.Code != 303 || w.Header().Get("Location") != "/workspace?done=verified" || store.saved.UserID != 1 || len(store.saved.Selected) != 0 {
+			if w.Code != 303 || w.Header().Get("Location") != "/dashboard/accounts?done=verified" || store.saved.UserID != 1 || len(store.saved.Selected) != 0 {
 				t.Fatal("member asked to select resources", w.Code, w.Body)
 			}
 		})
@@ -295,14 +295,14 @@ func TestWorkspaceOriginAndExpiredLogin(t *testing.T) {
 	}
 	token, _ := h.links.Token(1, "workspace", time.Now().Add(-time.Minute))
 	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, httptest.NewRequest("GET", h.base+"/workspace/install?user_id=1&token="+token, nil))
+	mux.ServeHTTP(w, httptest.NewRequest("GET", h.base+"/dashboard/install?user_id=1&token="+token, nil))
 	if w.Code != 401 {
 		t.Fatal("expired login accepted")
 	}
 	raw := strings.Repeat("a", 64)
 	s.sessions[workspaceHash(raw)] = 1
 	form := url.Values{"csrf": {workspaceHash("csrf:" + raw)}}
-	r := httptest.NewRequest("POST", h.base+"/workspace/disconnect/github", strings.NewReader(form.Encode()))
+	r := httptest.NewRequest("POST", h.base+"/dashboard/disconnect/github", strings.NewReader(form.Encode()))
 	r.AddCookie(&http.Cookie{Name: workspaceCookie, Value: raw})
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	r.Header.Set("Origin", "https://evil.test")

@@ -60,7 +60,7 @@ func TestAnalyticsOperationsPostgres(t *testing.T) {
 	if _, err := NewAnalyticsRepository(ctx, db); err != nil {
 		t.Fatal(err)
 	}
-	record := repository.InteractionRecord{RequestID: "new", RequestText: "RSS getir", Status: "success", Operations: []analytics.Operation{{Tool: "rss_articles", Title: "RSS başlıkları getirildi", Detail: "3 kayıt", Status: "success", StartedAt: time.Now()}}, Usage: []analytics.AIUsage{{Model: "test-model"}}}
+	record := repository.InteractionRecord{RequestID: "new", RequestText: "private request", ResponseText: "private reply", Status: "success", Operations: []analytics.Operation{{Tool: "rss_articles", Title: "RSS başlıkları getirildi", Detail: "private content", Path: "private/path", Diff: "private source code", Status: "success", StartedAt: time.Now()}}, Usage: []analytics.AIUsage{{Model: "test-model"}}}
 	if err := repo.RecordInteraction(ctx, record); err != nil {
 		t.Fatal(err)
 	}
@@ -74,6 +74,9 @@ func TestAnalyticsOperationsPostgres(t *testing.T) {
 	}
 	if data.TotalMessages != 2 || len(data.Recent) != 2 || data.Recent[0].TraceVersion != 1 || len(data.Recent[0].Operations) != 2 || data.Recent[0].Operations[1].Status != "failed" || data.Recent[1].TraceVersion != 0 || len(data.Recent[1].Operations) != 0 {
 		t.Fatalf("unexpected dashboard: %+v", data)
+	}
+	if data.Recent[0].Request != "" || data.Recent[0].Response != "" || data.Recent[0].Operations[0].Detail != "" || data.Recent[0].Operations[0].Path != "" || data.Recent[0].Operations[0].Diff != "" {
+		t.Fatal("analytics retained customer content")
 	}
 	page, err := repo.Dashboard(ctx, repository.DashboardFilters{Limit: 1, Offset: 1})
 	if err != nil || len(page.Recent) != 1 || page.Recent[0].Request != "old" {

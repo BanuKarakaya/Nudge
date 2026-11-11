@@ -22,6 +22,7 @@ import (
 	"nudge/internal/service"
 	"nudge/internal/slack"
 	worktracker "nudge/internal/tracker"
+	"nudge/internal/workspace"
 )
 
 type SlackEventHandler struct {
@@ -316,7 +317,13 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 			now := time.Now().In(location)
 			threadContext := h.threadContext(ctx, installation.BotToken, event)
 			input := fmt.Sprintf("Current time: %s\nTimezone: %s%s\n\nSlack message:\n%s", now.Format(time.RFC3339), location.String(), threadContext, analyticsRecord.RequestText)
-			tools := service.NewAgentTools(h.feedbinDigest, h.bookmarks, h.web, userID, now, location)
+			web := h.web
+			if scoped, ok := h.runtime.(interface {
+				WebForUser(context.Context, int64) service.WebAssistant
+			}); ok {
+				web = scoped.WebForUser(ctx, userID)
+			}
+			tools := service.NewAgentTools(h.feedbinDigest, h.bookmarks, web, userID, now, location)
 			eventID := event.EventID
 			if eventID == "" {
 				eventID = event.Event.TS
@@ -347,7 +354,8 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 			}
 			log.Printf("slack_request=%s stage=agent_started", requestID)
 			result, err = h.runtime.Run(ctx, service.AgentRequest{
-				Key: key, ThreadID: state.AgentThreadID, Input: input, History: history,
+				UserID: userID,
+				Key:    key, ThreadID: state.AgentThreadID, Input: input, History: history,
 				Tools: runTools,
 			})
 			if err == nil && (strings.TrimSpace(result.Text) == "" || utf8.RuneCountInString(result.Text) > 35000) {
@@ -361,6 +369,8 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 	message := agentFailureMessage
 	if err == nil {
 		message = result.Text
+	} else if errors.Is(err, workspace.ErrAINotConfigured) {
+		message = "Çalışma alanının AI ayarları henüz hazır değil. Yönetici panelde kendi API anahtarını ekleyip modelini seçmeli. Panel bağlantısı için bana “panel” yazabilirsin."
 	}
 	analyticsRecord.ResponseText = message
 	analyticsRecord.Action = "AGENT"
@@ -402,6 +412,7 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 			codingReply.mu.Unlock()
 		}
 		if success && localReply == "" {
+			state.AIRevision = result.AIRevision
 			state.AgentThreadID = result.ThreadID
 			state.AgentTokenUsage = result.TokenUsage
 			state.Remember(event.Event.Text, message, "AGENT")
@@ -449,6 +460,7 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 	// Courtesy exchanges are recorded in analytics, not model-bound history.
 	// Preserve the native thread and its cumulative usage counters unchanged.
 	if success && localReply == "" {
+		state.AIRevision = result.AIRevision
 		state.AgentThreadID = result.ThreadID
 		state.AgentTokenUsage = result.TokenUsage
 		state.Remember(event.Event.Text, message, "AGENT")

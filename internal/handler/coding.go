@@ -199,7 +199,7 @@ func (h *CodingHandler) callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.workspace != nil {
-		http.Redirect(w, r, "/workspace?done=verified", http.StatusSeeOther)
+		http.Redirect(w, r, "/dashboard/accounts?done=verified", http.StatusSeeOther)
 		return
 	}
 	renderGitHubConnectionPage(w, http.StatusOK, githubPageData{Success: true, Title: "GitHub’ın bağlandı.", Description: "Hesabın ve seçtiğin repolar için bağlantı tamamlandı. Slack’e dönebilirsin.", Login: account.Login})

@@ -44,6 +44,7 @@ func (g *agentDigest) Generate(ctx context.Context, userID int64, since, until t
 	}
 	tools := newScheduledDigestTools(g.digest, userID, since, until, g.timezone)
 	result, err := g.runtime.Run(ctx, AgentRequest{
+		UserID: userID,
 		Key: ConversationKey{
 			Team: "scheduled", Channel: "feedbin_digest", User: strconv.FormatInt(userID, 10),
 			Thread: since.UTC().Format(time.RFC3339Nano) + "/" + until.UTC().Format(time.RFC3339Nano),

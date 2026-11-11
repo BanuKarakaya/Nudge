@@ -87,3 +87,27 @@
  .workspace-page .auth-view h1{font-size:26px}
  .workspace-page .footer{align-items:flex-start;flex-direction:column;gap:8px;line-height:1.5}
 }
+
+.workspace-page .workspace-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:17px;margin:22px 0}
+.workspace-page .summary-card{padding:23px}
+.workspace-page .summary-card h2{font-size:25px;margin:14px 0 9px;color:#38242c;overflow-wrap:anywhere}
+.workspace-page .summary-card p{font-size:12px;line-height:1.7;color:#71676c;overflow-wrap:anywhere}
+.workspace-page .setup-list{padding:24px}
+.workspace-page .setup-list>a{display:flex;align-items:center;gap:15px;padding:20px 0;border-top:1px solid #eeeaec;color:#49353f;text-decoration:none}
+.workspace-page .setup-list>a:hover strong{color:#9a526d}
+.workspace-page .setup-list>a>span:nth-child(2){flex:1}
+.workspace-page .setup-list strong,.workspace-page .member-list strong{display:block;font-size:13px;line-height:1.6}
+.workspace-page .setup-list small,.workspace-page .member-list small{display:block;font-size:11px;line-height:1.7;color:#71676c;margin-top:3px}
+.workspace-page .step-number{border:1px solid #e9e2e5;background:#f6f0f3;padding:9px;border-radius:8px;font-size:11px}
+.workspace-page .settings-panel{padding:24px;margin-bottom:20px}
+.workspace-page .settings-panel .panel-head{margin-bottom:22px}
+.workspace-page .form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
+.workspace-page .form-grid label{font-size:12px;font-weight:600;color:#49353f;min-width:0}
+.workspace-page .form-grid input,.workspace-page .form-grid select{display:block;width:100%;min-width:0;margin-top:10px;padding:12px;border:1px solid #ded5d9;border-radius:7px;background:#fff;color:#49353f;font:inherit;line-height:1.5}
+.workspace-page .field-help{font-size:12px;color:#71676c;line-height:1.8;margin:16px 0}
+.workspace-page form.remove-form{margin-top:20px;padding-top:20px;border-top:1px solid #eeeaec}
+.workspace-page .member-list>div{display:flex;align-items:center;gap:15px;padding:16px 0;border-top:1px solid #eeeaec;color:#49353f}
+.workspace-page .integration-grid{margin-top:20px}
+.workspace-page :is(a,button,input,select):focus-visible{outline:3px solid #b38293;outline-offset:3px}
+@media(max-width:900px){.workspace-page .workspace-metrics{grid-template-columns:1fr}.workspace-page .form-grid{grid-template-columns:1fr}}
+@media(max-width:720px){.workspace-page .settings-panel,.workspace-page .setup-list{padding:18px}.workspace-page .summary-card{padding:18px}}

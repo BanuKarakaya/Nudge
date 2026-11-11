@@ -43,9 +43,12 @@ func recordInteraction(ctx context.Context, db interface {
 	if record.StartedAt.IsZero() {
 		record.StartedAt = time.Now()
 	}
-	operations := record.Operations
-	if operations == nil {
-		operations = []analytics.Operation{}
+	// Analytics keeps operational counters, not a second copy of customer
+	// messages, source code, paths or tool result details. Conversation storage
+	// and delivery jobs retain only the state needed for the product itself.
+	operations := make([]analytics.Operation, 0, len(record.Operations))
+	for _, op := range record.Operations {
+		operations = append(operations, analytics.Operation{Tool: op.Tool, Status: op.Status, Model: op.Model, StartedAt: op.StartedAt, DurationMS: op.DurationMS})
 	}
 	encodedOperations, err := json.Marshal(operations)
 	if err != nil {
@@ -58,13 +61,13 @@ func recordInteraction(ctx context.Context, db interface {
 			 prompt_tokens, completion_tokens, total_tokens, created_at, operations, trace_version)
 		VALUES ($1,$2,$3,$4,$5,NULLIF($6, 0),$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18::jsonb,1)
 		ON CONFLICT (request_id) DO UPDATE SET
-			response_text=EXCLUDED.response_text, action=EXCLUDED.action,
+			request_text=EXCLUDED.request_text, response_text=EXCLUDED.response_text, action=EXCLUDED.action,
 			status=EXCLUDED.status, provider=EXCLUDED.provider, model=EXCLUDED.model,
 			latency_ms=EXCLUDED.latency_ms, prompt_tokens=EXCLUDED.prompt_tokens,
 			completion_tokens=EXCLUDED.completion_tokens, total_tokens=EXCLUDED.total_tokens,
 			operations=EXCLUDED.operations, trace_version=EXCLUDED.trace_version`,
 		record.RequestID, record.TeamID, record.ChannelID, record.ThreadTS, record.SlackUserID,
-		record.UserID, record.RequestText, record.ResponseText, record.Action, record.Status,
+		record.UserID, "", "", record.Action, record.Status,
 		strings.Join(providers, " → "), strings.Join(models, " → "), record.LatencyMS,
 		prompt, completion, total, record.StartedAt, encodedOperations)
 	return err
