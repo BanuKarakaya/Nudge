@@ -86,4 +86,5 @@ func TestAnalyticsOperationsPostgres(t *testing.T) {
 	if err != nil || filtered.TotalMessages != 1 || len(filtered.Recent[0].Operations) != 2 {
 		t.Fatalf("filters=%+v err=%v", filtered, err)
 	}
+	testWorkspaceAnalytics(t, db, repo)
 }

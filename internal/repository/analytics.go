@@ -84,3 +84,9 @@ type AnalyticsRepository interface {
 	RecordInteraction(context.Context, InteractionRecord) error
 	Dashboard(context.Context, DashboardFilters) (DashboardSummary, error)
 }
+
+// WorkspaceAnalyticsRepository resolves tenant and role from the authenticated user.
+// Workspace totals never include individual interactions.
+type WorkspaceAnalyticsRepository interface {
+	WorkspaceDashboard(context.Context, int64, bool, DashboardFilters) (DashboardSummary, error)
+}

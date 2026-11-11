@@ -12,6 +12,7 @@ import (
 
 	"nudge/internal/analytics"
 	"nudge/internal/repository"
+	"nudge/internal/workspace"
 	"nudge/migrations"
 )
 
@@ -93,6 +94,35 @@ func aggregateUsage(calls []analytics.AIUsage) (models, providers []string, prom
 }
 
 func (r *AnalyticsRepository) Dashboard(ctx context.Context, filters repository.DashboardFilters) (repository.DashboardSummary, error) {
+	return r.dashboard(ctx, filters, "", nil, false, false)
+}
+
+func (r *AnalyticsRepository) WorkspaceDashboard(ctx context.Context, user int64, totals bool, filters repository.DashboardFilters) (repository.DashboardSummary, error) {
+	if user <= 0 {
+		return repository.DashboardSummary{}, workspace.ErrDenied
+	}
+	var team, slackUser string
+	var manager bool
+	err := r.db.QueryRow(ctx, `SELECT u.team_id,u.slack_user_id,COALESCE(i.installer_slack_user_id=u.slack_user_id,FALSE)
+ FROM users u JOIN slack_installations i ON i.team_id=u.team_id WHERE u.id=$1`, user).Scan(&team, &slackUser, &manager)
+	if err != nil {
+		return repository.DashboardSummary{}, err
+	}
+	if totals && !manager {
+		return repository.DashboardSummary{}, workspace.ErrDenied
+	}
+	scope := " AND team_id=$3"
+	args := []any{team}
+	if !totals {
+		// Both Slack identity and internal identity must agree. Historical rows without
+		// an internal ID can still be attributed by their verified team+Slack user.
+		scope += " AND slack_user_id=$4 AND (user_id=$5 OR user_id IS NULL)"
+		args = append(args, slackUser, user)
+	}
+	return r.dashboard(ctx, filters, scope, args, true, totals)
+}
+
+func (r *AnalyticsRepository) dashboard(ctx context.Context, filters repository.DashboardFilters, scope string, scopeArgs []any, safe, totals bool) (repository.DashboardSummary, error) {
 	if filters.Limit <= 0 || filters.Limit > 100 {
 		filters.Limit = 24
 	}
@@ -106,8 +136,8 @@ func (r *AnalyticsRepository) Dashboard(ctx context.Context, filters repository.
 		filters.From = filters.To.Add(-7 * 24 * time.Hour)
 	}
 
-	where := "created_at >= $1 AND created_at < $2"
-	args := []any{filters.From, filters.To}
+	where := "created_at >= $1 AND created_at < $2" + scope
+	args := append([]any{filters.From, filters.To}, scopeArgs...)
 	if filters.Model != "" {
 		where += fmt.Sprintf(" AND model ILIKE $%d", len(args)+1)
 		args = append(args, "%"+filters.Model+"%")
@@ -168,10 +198,19 @@ func (r *AnalyticsRepository) Dashboard(ctx context.Context, filters repository.
 	}
 	rows.Close()
 
+	if totals {
+		return result, nil
+	}
+	columns := "id, request_text, response_text, action, status, model, provider, latency_ms, prompt_tokens, completion_tokens, total_tokens, created_at, operations, trace_version, request_id"
+	if safe {
+		// Project only operational metadata, including for legacy rows that still
+		// contain messages, code and tool-result details. Never retrieve those fields.
+		columns = `id, '', '', action, status, model, provider, latency_ms, prompt_tokens, completion_tokens, total_tokens, created_at,
+   COALESCE((SELECT jsonb_agg(jsonb_build_object('tool',op->>'tool','status',op->>'status','model',op->>'model','duration_ms',op->'duration_ms')) FROM jsonb_array_elements(COALESCE(operations,'[]'::jsonb)) op),'[]'::jsonb), trace_version, ''`
+	}
 	argsRecent := append([]any{}, args...)
 	argsRecent = append(argsRecent, filters.Limit, filters.Offset)
-	rows, err = r.db.Query(ctx, `SELECT id, request_text, response_text, action, status, model, provider, latency_ms, prompt_tokens, completion_tokens, total_tokens, created_at, operations, trace_version, request_id
-		FROM nudge_ai_interactions WHERE `+where+` ORDER BY created_at DESC, id DESC LIMIT $`+fmt.Sprint(len(argsRecent)-1)+` OFFSET $`+fmt.Sprint(len(argsRecent)), argsRecent...)
+	rows, err = r.db.Query(ctx, `SELECT `+columns+` FROM nudge_ai_interactions WHERE `+where+` ORDER BY created_at DESC, id DESC LIMIT $`+fmt.Sprint(len(argsRecent)-1)+` OFFSET $`+fmt.Sprint(len(argsRecent)), argsRecent...)
 	if err != nil {
 		return result, err
 	}

@@ -209,6 +209,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("initialize analytics: %v", err)
 	}
+	workspacePortal.WithAnalytics(analyticsRepository)
 	branchRules, err := postgres.NewBranchRuleStore(context.Background(), db)
 	if err != nil {
 		log.Fatalf("initialize branch rules: %v", err)

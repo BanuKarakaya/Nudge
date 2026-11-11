@@ -6,7 +6,7 @@ entegrasyonları kurar; ekip üyeleri yalnızca kendi sağlayıcı hesaplarını
 Bireysel kullanıcı hem yönetici hem üyedir.
 
 Yönetici ve çalışan ayrı paneller kullanmaz. Menü oturumdaki role göre açılır:
-Genel bakış ve Hesaplarım herkes içindir; AI ayarları, Entegrasyonlar ve Çalışma
+Genel bakış, Hesaplarım, İşlemlerim ve kendi Kullanım verileri herkes içindir; AI ayarları, Entegrasyonlar ve Çalışma
 alanı yalnızca yöneticidir. Bireysel kullanıcı kendi çalışma alanının yöneticisidir.
 Eski genel analiz ekranı ve `/api/dashboard*` API’leri kapalıdır. Global anahtar ve
 `X-User-ID` ile kullanıcı seçmeye izin veren `/api/v1/*` yolları da HTTP 410 döner.
@@ -79,8 +79,8 @@ anahtarıyla müşteri içeriğini okumaya izin vermez.
    `dashboard` mesajı yeni bir özel panel bağlantısı gönderir. Mevcut sağlayıcı
    bağlantı komutları ve agent bağlantı araçları da aynı panele yönlendirir.
 
-GitHub, GitLab, Jira ve Trello için ayrı otomatik kurulum davetleri yerine tek
-panel daveti gönderilir. Feedbin/Raindrop kişisel bağlantı akışları korunur.
+GitHub, GitLab, Jira ve Trello için ayrı otomatik kurulum davetleri yerine kalıcı
+`/dashboard` adresi ve Slack ile giriş adımları içeren tek panel daveti gönderilir. Feedbin/Raindrop kişisel bağlantı akışları korunur.
 Daveti kaçıran veya bağlantısı süresi dolan kullanıcı doğrudan `/dashboard` adresinden giriş yapabilir. Alternatif olarak Nudgy’nin bulunduğu bir kanalda `@Nudgy panel` yazabilir.
 
 Yöneticinin **Hesabım** bölümü de kendi hesabıdır; yöneticinin kişisel tokenı hiçbir

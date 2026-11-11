@@ -10,6 +10,8 @@ panel bağlantıları da alternatif olarak çalışmaya devam eder.
 | Bölüm | Erişim |
 | --- | --- |
 | Genel bakış | Kendi çalışma alanının hazırlık durumu ve kendi bağlantı sayısı |
+| İşlemlerim | Kendi istekleri ve içerik içermeyen araç adımları; tarih/durum/model filtreleri, 25 kayıtlık sayfalar |
+| Kullanım | Kendi token ve model kullanımı; yönetici ayrıca yalnızca kendi çalışma alanının toplu sayaçlarını görebilir |
 | AI ayarları | Yalnızca yönetici; sağlayıcı, şifreli anahtar, model seçimi |
 | Entegrasyonlar | Yalnızca yönetici; ortak repo/proje/pano kapsamı |
 | Hesaplarım | Her kullanıcı; yalnızca kendi servis hesapları |
@@ -29,3 +31,25 @@ analiz JavaScript’i ve HTML’i artık erişilebilir dosya yolları değildir.
 
 AI anahtarı saklama, sağlayıcı doğrulama, model yönlendirme, gizlilik sınırı ve
 geçiş adımları için [çalışma alanı paneli](workspace-panel.md) belgesine bakın.
+
+İşlemler `/dashboard/operations`, kullanım `/dashboard/usage` adresindedir.
+Her iki sayfa da mevcut müşteri oturumunu kullanır; query parametreleri veya
+operatör tokenı kullanıcı/çalışma alanı seçemez. Repository kimliği ve rolü
+veritabanından tekrar çözer. Kişisel kayıtlar team + Slack user ile eşleştirilir;
+varsa dahili user ID de aynı olmalıdır. Dahili ID’si olmayan eski kayıtlar bu
+Slack kimliği eşleşmesiyle görülebilir. Eşleştirilemeyen eski kayıtlar gösterilmez.
+Yönetici çalışma alanı toplamlarını seçtiğinde hiçbir kişisel işlem listesi
+getirilmez. Eski satırlardaki mesaj, yanıt, path, diff ve araç sonuçları dahi
+müşteri sorgusuna dahil edilmez; yalnızca güvenli işlem metadata’sı seçilir.
+
+Kullanım sağlayıcının bildirdiği tokenlara dayanır; fiyat/bakiye/fatura değildir.
+Birden çok model kullanılan istekler birleşik model adıyla gruplanır. Günler
+Türkiye saatine göre hesaplanır; dönemler son 24 saat/7/30/90 gün veya tüm zamandır.
+Yeni kayıt bulunmaması ile veri okuma hatası farklı durumlar olarak gösterilir.
+
+Otomatik karşılama daveti artık kalıcı `/dashboard` bağlantısını ve **Slack ile
+giriş yap → Hesaplarım** adımlarını içerir. Link kişisel token içermez. Diğer
+servislerin OAuth bağlantıları kısa ömürlü olmaya devam eder. Davet tekilleştirme
+anahtarı değiştirilmedi: eski kullanıcılara toplu yeniden mesaj gönderilmez ve
+önceden gönderilmiş mesajlar düzenlenmez. İstenirse Slack’teki `panel` komutu
+önceki kişisel hızlı giriş bağlantısını da üretmeye devam eder.

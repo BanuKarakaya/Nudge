@@ -30,3 +30,9 @@ ALTER TABLE nudge_ai_interactions
     ADD COLUMN IF NOT EXISTS operations JSONB NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE nudge_ai_interactions
     ADD COLUMN IF NOT EXISTS trace_version INTEGER NOT NULL DEFAULT 0;
+
+-- Scope customer views before applying date/order filters.
+CREATE INDEX IF NOT EXISTS nudge_ai_interactions_team_created_idx
+    ON nudge_ai_interactions (team_id, created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS nudge_ai_interactions_member_created_idx
+    ON nudge_ai_interactions (team_id, slack_user_id, created_at DESC, id DESC);

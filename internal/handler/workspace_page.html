@@ -14,6 +14,7 @@
     <nav class="nav" aria-label="Panel bölümleri">
       <p class="nav-label">Çalışma alanın</p>
       <a class="nav-item {{if eq .Section "overview"}}active{{end}}" href="/dashboard" aria-label="Genel bakış"><span class="nav-icon" aria-hidden="true">◩</span><span class="nav-text">Genel bakış</span></a>
+      {{if .Member.UserID}}<a class="nav-item {{if eq .Section "operations"}}active{{end}}" href="/dashboard/operations" aria-label="İşlemlerim"><span class="nav-icon" aria-hidden="true">☷</span><span class="nav-text">İşlemlerim</span></a><a class="nav-item {{if eq .Section "usage"}}active{{end}}" href="/dashboard/usage" aria-label="Kullanım"><span class="nav-icon" aria-hidden="true">◷</span><span class="nav-text">Kullanım</span></a>{{end}}
       {{if .Member.Manager}}
       <a class="nav-item {{if eq .Section "ai"}}active{{end}}" href="/dashboard/ai" aria-label="AI ayarları"><span class="nav-icon" aria-hidden="true">✳</span><span class="nav-text">AI ayarları</span></a>
       <a class="nav-item {{if eq .Section "integrations"}}active{{end}}" href="/dashboard/integrations" aria-label="Entegrasyonlar"><span class="nav-icon" aria-hidden="true">⌁</span><span class="nav-text">Entegrasyonlar</span></a>
@@ -44,7 +45,8 @@
 <div class="page-heading"><div><div class="eyebrow"><span class="eyebrow-line"></span> NUDGY WORKSPACE</div><h1>{{.Title}}</h1><p>{{.Description}}</p></div></div>
 {{if .Member.OwnerMissing}}<div class="notice error" role="status">Çalışma alanının yöneticisi henüz doğrulanmamış. Kurulumu yöneten kişi <a href="/slack/install">Slack kurulumunu yeniden yetkilendirerek</a> yönetimi açabilir. Kişisel bağlantılar korunur.</div>{{end}}
 {{if .Message}}<div class="notice" role="status">{{.Message}}</div>{{end}}
-{{if eq .Section "overview"}}
+{{if or (eq .Section "operations") (eq .Section "usage")}}{{template "workspace-analytics" .}}
+{{else if eq .Section "overview"}}
 <section class="nudgy-note"><div class="mascot-large" aria-hidden="true"><img src="/dashboard/nudgy-mascot.webp" alt=""></div><div><span class="note-kicker">SANA AİT ÇALIŞMA ALANI</span><h2>Senin modellerin. Ekibinin hesapları.</h2><p>{{if .Member.Manager}}AI anahtarını ve modellerini seç, ekibinin kullanacağı servisleri aç. Tek başına çalışıyorsan tüm adımları kendin tamamlayabilirsin.{{else}}AI ayarlarını ve ortak entegrasyonları yöneticin hazırlar. Sen kendi servis hesaplarını doğrulayarak başlayabilirsin.{{end}}</p></div></section>
 <div class="workspace-metrics">
 <article class="panel summary-card"><span class="label">AI durumu</span><h2>{{if .AI.Ready}}Hazır{{else}}Kurulum gerekli{{end}}</h2><p>{{if .AI.Ready}}{{.AI.Model}}{{else}}API anahtarı ve model seçimi bekleniyor.{{end}}</p></article>

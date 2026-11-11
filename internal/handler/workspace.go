@@ -24,7 +24,7 @@ import (
 
 //go:embed workspace_page.html
 var workspaceHTML string
-var workspaceTemplate = template.Must(template.New("workspace").Parse(workspaceHTML))
+var workspaceTemplate = template.Must(template.New("workspace").Funcs(template.FuncMap{"count": formatCount, "millis": formatMillis, "activityTime": formatActivityTime, "activityStatus": activityStatus, "activityLabel": activityLabel}).Parse(workspaceHTML + workspaceAnalyticsHTML))
 
 const workspaceCookie = "nudgy_workspace"
 
@@ -45,6 +45,7 @@ type WorkspaceHandler struct {
 	ai            workspace.AIStore
 	catalog       workspace.Catalog
 	slackSignIn   bool
+	analytics     repository.WorkspaceAnalyticsRepository
 }
 
 func NewWorkspaceHandler(store workspace.Store, links secure.LinkSigner, base string, installations repository.InstallationRepository, client codingMessenger) *WorkspaceHandler {
@@ -94,6 +95,8 @@ func (h *WorkspaceHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dashboard", h.home)
 	mux.HandleFunc("GET /dashboard/integrations", h.home)
 	mux.HandleFunc("GET /dashboard/accounts", h.home)
+	mux.HandleFunc("GET /dashboard/operations", h.analyticsPage)
+	mux.HandleFunc("GET /dashboard/usage", h.analyticsPage)
 	mux.HandleFunc("GET /dashboard/ai", h.aiPage)
 	mux.HandleFunc("POST /dashboard/ai", h.saveAI)
 	mux.HandleFunc("GET /dashboard/team", h.teamPage)
@@ -249,6 +252,11 @@ type workspacePage struct {
 	AI                                                  workspace.AISettings
 	Models                                              []workspace.Model
 	Members                                             []workspace.Member
+	Stats                                               repository.DashboardSummary
+	Range, Scope, Status, Model, Previous, Next         string
+	PageNumber                                          int
+	MaxDailyTokens                                      int64
+	ErrorRate                                           float64
 	ActiveIntegrations, VerifiedAccounts                int
 }
 
