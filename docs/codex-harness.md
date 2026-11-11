@@ -10,6 +10,17 @@ verification and delivery, identity, permissions, tool execution, persistence,
 bounded execution, scheduling/outbox delivery and telemetry. These infrastructure
 responsibilities are not delegated to the model.
 
+## Workspace credential routing (current)
+
+Production uses `codex.TenantRuntime`: authenticated user/workspace identity
+selects encrypted provider credentials and model IDs saved at `/dashboard/ai`.
+Global OpenRouter/OpenAI/Gemini keys and model environment variables are not a
+production fallback. Scheduled digests and independent merge-intent calls use
+the same tenant policy. See [workspace panel](workspace-panel.md) for the current
+configuration and migration requirements. The environment-based examples below
+refer to the original rollout and opt-in developer smoke tests, not customer
+configuration. Persistent state directories and the pinned transport still apply.
+
 ## Configuration and deployment gate
 
 Do not deploy this migration before verifying both live model routes and

@@ -1,19 +1,72 @@
 # Çalışma alanı paneli
 
-Müşteri paneli `/workspace` adresindedir. Şirket ve bireysel kullanım aynı akışı
+Müşteri paneli `/dashboard` adresindedir. Eski `/workspace` GET bağlantıları buraya yönlenir. Şirket ve bireysel kullanım aynı akışı
 kullanır: Nudgy’yi Slack çalışma alanına kuran kişi yöneticidir. Yönetici ortak
 entegrasyonları kurar; ekip üyeleri yalnızca kendi sağlayıcı hesaplarını doğrular.
 Bireysel kullanıcı hem yönetici hem üyedir.
 
-`/dashboard` hâlâ Nudgy işletmecisinin bütün kurulumları görebildiği özel analiz
-panelidir. Dashboard/API tokenları müşteri panelinde giriş yöntemi değildir ve
-çalışanlara dağıtılmaz.
+Yönetici ve çalışan ayrı paneller kullanmaz. Menü oturumdaki role göre açılır:
+Genel bakış ve Hesaplarım herkes içindir; AI ayarları, Entegrasyonlar ve Çalışma
+alanı yalnızca yöneticidir. Bireysel kullanıcı kendi çalışma alanının yöneticisidir.
+Eski genel analiz ekranı ve `/api/dashboard*` API’leri kapalıdır. Global anahtar ve
+`X-User-ID` ile kullanıcı seçmeye izin veren `/api/v1/*` yolları da HTTP 410 döner.
+Bu tokenlar müşteri paneline giriş veya veriye erişim sağlamaz.
+
+## Çalışma alanına ait AI hesabı
+
+Yönetici `/dashboard/ai` altında OpenRouter veya OpenAI API anahtarını kaydeder.
+Anahtar sabit sağlayıcı adresinde doğrulanır; yönlendirmeler takip edilmez. Ardından
+sağlayıcı kataloğundan günlük model ve isteğe bağlı gelişmiş model seçilir. İki
+seçim aynıysa tek model kullanılır. Katalog erişimi, modelin Responses/tool-call
+uyumluluğunu, bakiyeyi veya çıkarım iznini kanıtlamaz; gerçek kullanım hataları
+ortak bir hesapla tekrar denenmez. Yeni anahtar kaydı model seçimini sıfırlar.
+
+Web araması isteğe bağlıdır ve aynı sayfada ayrı Google AI anahtarı/modeli ister.
+Anahtar yoksa araç sunulmaz; sunucunun `GEMINI_API_KEY` değeri kullanılmaz.
+
+`workspace_ai_settings` yalnızca bir Slack çalışma alanına aittir. AES-GCM ile
+şifrelenen zarf çalışma alanı kimliğini de içerir; farklı satıra kopyalanmış
+şifreli anahtar açılmaz. `NUDGY_AI_ENCRYPTION_KEY` ayarlanmışsa bu anahtar,
+aksi halde mevcut `FEEDBIN_ENCRYPTION_KEY` kullanılır. İlk kayıttan sonra bu seçimi
+ve anahtarı değiştirmeyin; ayrı bir yeniden şifreleme geçişi gerekir.
+
+Anahtarlar HTML’e, API yanıtlarına veya loglara yazılmaz. Üyeler model adını ve
+hazırlık durumunu görebilir; anahtarı okuyamaz/değiştiremez. Aynı anda açılmış
+formlarda revision kontrolü eski bir formun yeni ayarı veya silinmiş anahtarı
+geri getirmesini engeller.
+
+Her AI çağrısı sunucuda çözümlenen kullanıcı/Slack çalışma alanı bağıyla ayarları
+okur. Slack yanıtı, gelişmiş modele geçiş, merge niyeti kontrolü ve zamanlanmış
+Feedbin özetleri aynı çalışma alanının hesabını kullanır. `OPENROUTER_API_KEY`,
+`OPENAI_API_KEY`, `CODEX_SIMPLE_MODEL`, `CODEX_COMPLEX_MODEL`, `GEMINI_API_KEY` ve
+`GEMINI_MODEL` üretim çağrılarında kullanılmaz. Eksik anahtar/model, saklama hatası,
+kota veya sağlayıcı hatası durumunda başka bir hesaba geçilmez.
+
+Ayar değişikliği yeni native thread alanı başlatır; yalnızca aynı kullanıcıya daha
+önce iletilmiş geçmiş taşınır. Anahtar kaldırılınca sonraki çağrılar durur. Hâlihazırda
+başlamış bir sağlayıcı isteği, normal istek zaman aşımına kadar tamamlanabilir.
+
+## Gizlilik sınırı
+
+İşletmeci veya çalışma alanı yöneticisi için özel konuşmaları, kod farklarını ve
+başka kullanıcıların tokenlarını gösteren bir ekran/API yoktur. Yeni analiz
+kayıtları yalnızca durum, süre, kullanım ve araç adları gibi operasyon metadatasını
+tutar; mesaj, yanıt, dosya yolu ve diff kopyalanmaz. Geçmiş kayıtlar bu geçişte
+silinmez; eski API’lerden erişilemez.
+
+Bu sunucuda işlenen bir SaaS hizmetidir, uçtan uca şifreli veya zero-knowledge bir
+sistem değildir. Sohbet bağlamı, teslimat işleri ve kod görevleri hizmetin çalışması
+için sunucu/veritabanında bulunur; altyapı yöneticisinin doğrudan veritabanı/disk
+ayrıcalıkları uygulama yetkileriyle ortadan kalkmaz. Altyapı erişim denetimi ve veri
+saklama politikası ayrıca yönetilmelidir. Normal ürün erişimi hiçbir işletmeci
+anahtarıyla müşteri içeriğini okumaya izin vermez.
 
 ## Kurulum ve kullanım
 
 1. Yönetici `/slack/install` üzerinden Nudgy’yi kurar. Slack’in doğruladığı kurucu
    kimliği kaydedilir; tarayıcı kendi çalışma alanının paneline yönlendirilir.
-2. Yönetici panelde kullanacağı GitHub, GitLab, Jira veya Trello hesabına izin
+2. Yönetici önce **AI ayarları** bölümünden kendi anahtarını ve modellerini kaydeder.
+   Ardından **Entegrasyonlar** bölümünde kullanacağı GitHub, GitLab, Jira veya Trello hesabına izin
    verir. GitHub App kurulumu ve GitHub repo izinleri bu adımda yönetici tarafından
    yapılır. Diğer servisler mevcut OAuth uygulamasını kullanır.
 3. **Alanları yönet** ekranından ortak repo, proje veya panoları seçer ve
@@ -72,7 +125,7 @@ doğrulanır. Giriş linkinin hash’i PostgreSQL’de tek kullanımlık olarak 
 eşzamanlı tekrarların yalnızca biri başarılı olur.
 
 Oturumlar rastgele 256 bit token kullanır; veritabanında yalnızca hash tutulur.
-Çerez HttpOnly, SameSite=Lax, HTTPS üzerinde Secure ve `/workspace` yoluyla sınırlıdır.
+Çerez HttpOnly, SameSite=Lax, HTTPS üzerinde Secure ve `/dashboard` yoluyla sınırlıdır.
 Oturum süresi 12 saattir; çıkış sunucu tarafında oturumu iptal eder. Tüm değişiklikler
 POST, oturuma bağlı CSRF doğrulaması ve origin kontrolü gerektirir. Panel cevapları
 `no-store` ve `strict-origin` politikaları kullanır; dış betik çalıştırmaz.
@@ -82,6 +135,13 @@ POST, oturuma bağlı CSRF doğrulaması ve origin kontrolü gerektirir. Panel c
 mevcut sağlayıcı callback’leri kullanılır.
 
 ## Mevcut kurulumların geçişi
+
+Bu sürüm yayımlandığında mevcut ortak AI anahtarı otomatik olarak hiçbir çalışma
+alanına kopyalanmaz. Her yönetici AI ayarlarını tamamlamalıdır; o zamana kadar AI
+çağrıları kapalıdır. Eski panel oturumları `/workspace` kapsamlı olduğu için yeniden
+giriş gerekir; süresi dolmamış giriş linkleri `/dashboard/install` adresine taşınır.
+`workspace_ai.sql` eklemeli ve idempotent olarak başlangıçta uygulanır.
+
 
 `migrations/workspace.sql` sunucu başlangıcında idempotent olarak uygulanır.
 Yeni tablolar: `workspace_integrations`, `workspace_sessions`, `workspace_used_links`.
@@ -106,3 +166,16 @@ OAuth sonrası seçim ekranının üyeye gösterilmemesini, çalışma alanı iz
 CSRF’yi, oturum çıkışını ve eşzamanlı link tekrarlarını kapsar. Gerçek Git fixture’ı
 commit yazarlığını ve tekrar denemelerde aynı commit’in kullanılmasını doğrular.
 Canlı sağlayıcılarda son OAuth kontrolü için yönetici ve ayrı bir üye hesabı gerekir.
+
+## Bu değişiklikte doğrulama
+
+Yerel testler sağlayıcı HTTP yanıtlarını ve Codex süreç protokolünü taklit eder;
+ücretli gerçek model çağrısı yapılmaz. Yönetici/üye rolleri, tenant izolasyonu,
+anahtar rotasyonu/silme, no-fallback, CSRF, API kapatma ve PostgreSQL şifreleme
+sınanır. Canlı kabul testi için yönetici kendi anahtarıyla kısa bir Slack yanıtı,
+araç çağrısı ve seçilmişse gelişmiş model çağrısını doğrulamalıdır.
+
+Sağlayıcı sözleşmeleri: [Codex sağlayıcı ayarları](https://learn.chatgpt.com/docs/config-file/config-reference),
+[OpenRouter anahtar doğrulama](https://openrouter.ai/docs/api/api-reference/api-keys/get-current-api-key),
+[OpenRouter model listesi](https://openrouter.ai/docs/api/api-reference/models/list-all-models-and-their-properties),
+[Google model bilgileri](https://aistudio.google.com/api-reference/models).
