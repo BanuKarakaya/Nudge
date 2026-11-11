@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,13 +20,15 @@ type SlackHandler struct {
 	onboarding interface {
 		EnqueueWorkspace(context.Context, int64) error
 	}
-	oauth       slack.OAuthClient
-	installRepo repository.InstallationRepository
-	states      *oauthStateStore
+	oauth          slack.OAuthClient
+	installRepo    repository.InstallationRepository
+	states         *oauthStateStore
+	exchangeSignIn slackSignInExchange
 }
 
 func (h *SlackHandler) WithWorkspacePortal(p *WorkspaceHandler) *SlackHandler {
 	h.workspace = p
+	p.slackSignIn = h.signInReady()
 	return h
 }
 
@@ -38,14 +41,16 @@ func (h *SlackHandler) WithOnboarding(s interface {
 
 func NewSlackHandler(oauthClient slack.OAuthClient, installRepo repository.InstallationRepository) *SlackHandler {
 	return &SlackHandler{
-		oauth:       oauthClient,
-		installRepo: installRepo,
-		states:      newOAuthStateStore(),
+		oauth:          oauthClient,
+		installRepo:    installRepo,
+		states:         newOAuthStateStore(),
+		exchangeSignIn: oauthClient.ExchangeSignIn,
 	}
 }
 
 func (h *SlackHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /slack/install", h.install)
+	mux.HandleFunc("GET /slack/signin", h.signIn)
 	mux.HandleFunc("GET /slack/oauth/callback", h.callback)
 }
 
@@ -67,6 +72,10 @@ func (h *SlackHandler) install(w http.ResponseWriter, r *http.Request) {
 
 func (h *SlackHandler) callback(w http.ResponseWriter, r *http.Request) {
 	privatePageHeaders(w)
+	if strings.HasPrefix(r.URL.Query().Get("state"), "signin.") {
+		h.signInCallback(w, r)
+		return
+	}
 	if !consumeOAuthCookie(w, r, "nudge_slack_oauth", r.URL.Query().Get("state"), "/slack/oauth/callback") {
 		writeError(w, http.StatusBadRequest, "OAuth browser session mismatch")
 		return
@@ -148,6 +157,11 @@ func newOAuthStateStore() *oauthStateStore {
 func (s *oauthStateStore) add(state string, lifetime time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	for key, expires := range s.values {
+		if time.Now().After(expires) {
+			delete(s.values, key)
+		}
+	}
 	s.values[state] = time.Now().Add(lifetime)
 }
 

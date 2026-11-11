@@ -44,6 +44,7 @@ type WorkspaceHandler struct {
 	providers     []workspaceProvider
 	ai            workspace.AIStore
 	catalog       workspace.Catalog
+	slackSignIn   bool
 }
 
 func NewWorkspaceHandler(store workspace.Store, links secure.LinkSigner, base string, installations repository.InstallationRepository, client codingMessenger) *WorkspaceHandler {
@@ -130,12 +131,12 @@ func (h *WorkspaceHandler) session(w http.ResponseWriter, r *http.Request) (work
 	privatePageHeaders(w)
 	c, err := r.Cookie(workspaceCookie)
 	if err != nil || len(c.Value) != 64 {
-		h.page(w, 401, workspacePage{Error: "Panel oturumun yok veya süresi dolmuş. Slack’te Nudgy’ye “panel” yaz; sana özel giriş bağlantısı gelsin."})
+		h.signedOut(w, r, "")
 		return workspace.Member{}, "", false
 	}
 	user, err := h.store.SessionUser(r.Context(), workspaceHash(c.Value))
 	if err != nil {
-		h.page(w, 401, workspacePage{Error: "Oturumun sona ermiş. Slack’te Nudgy’ye “panel” yazarak yeniden giriş yapabilirsin."})
+		h.signedOut(w, r, "Oturumun sona ermiş. Slack hesabınla yeniden giriş yapabilirsin.")
 		return workspace.Member{}, "", false
 	}
 	m, err := h.store.Member(r.Context(), user)
@@ -152,6 +153,13 @@ func (h *WorkspaceHandler) session(w http.ResponseWriter, r *http.Request) (work
 		}
 	}
 	return m, csrf, true
+}
+func (h *WorkspaceHandler) signedOut(w http.ResponseWriter, r *http.Request, message string) {
+	status := http.StatusUnauthorized
+	if r.Method == http.MethodGet {
+		status = http.StatusOK
+	}
+	h.page(w, status, workspacePage{SignIn: true, Title: "Giriş", Message: message})
 }
 func (h *WorkspaceHandler) startSession(w http.ResponseWriter, r *http.Request, user int64, link string) error {
 	if _, err := h.store.Member(r.Context(), user); err != nil {
@@ -175,7 +183,7 @@ func (h *WorkspaceHandler) loginPage(w http.ResponseWriter, r *http.Request) {
 	user, _ := strconv.ParseInt(r.URL.Query().Get("user_id"), 10, 64)
 	token := r.URL.Query().Get("token")
 	if !h.links.Verify(token, user, "workspace", time.Now()) {
-		h.page(w, 401, workspacePage{Error: "Bu giriş bağlantısı geçersiz veya süresi dolmuş. Slack’te Nudgy’ye “panel” yazarak yenisini al."})
+		h.page(w, 401, workspacePage{Error: "Bu giriş bağlantısı geçersiz veya süresi dolmuş. Slack hesabınla yeniden giriş yapabilirsin."})
 		return
 	}
 	state, err := newOAuthState()
@@ -195,7 +203,7 @@ func (h *WorkspaceHandler) login(w http.ResponseWriter, r *http.Request) {
 	user, _ := strconv.ParseInt(r.PostForm.Get("user_id"), 10, 64)
 	token := r.PostForm.Get("token")
 	if !h.links.Verify(token, user, "workspace", time.Now()) || h.startSession(w, r, user, workspaceHash(token)) != nil {
-		h.page(w, 401, workspacePage{Error: "Bu giriş bağlantısı kullanılmış veya süresi dolmuş. Slack’te Nudgy’ye “panel” yazarak yenisini al."})
+		h.page(w, 401, workspacePage{Error: "Bu giriş bağlantısı kullanılmış veya süresi dolmuş. Slack hesabınla yeniden giriş yapabilirsin."})
 		return
 	}
 	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
@@ -234,7 +242,7 @@ type workspacePage struct {
 	Member                                              workspace.Member
 	CSRF, Error, Message, Token, Provider, ProviderName string
 	UserID                                              int64
-	Login, Settings, Enabled                            bool
+	Login, SignIn, SlackSignIn, Settings, Enabled       bool
 	Cards                                               []workspaceCard
 	Choices                                             []workspaceChoice
 	Section, Title, Description                         string
@@ -245,6 +253,10 @@ type workspacePage struct {
 }
 
 func (h *WorkspaceHandler) page(w http.ResponseWriter, status int, data workspacePage) {
+	data.SlackSignIn = h.slackSignIn
+	if data.Error != "" && data.Member.UserID == 0 && !data.Login {
+		data.SignIn = true
+	}
 	if data.Title == "" {
 		data.Title = "Çalışma alanı"
 	}

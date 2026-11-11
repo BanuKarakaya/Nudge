@@ -157,7 +157,7 @@ func TestCustomerDashboardReplacesGlobalAnalytics(t *testing.T) {
 	for _, path := range []string{"/dashboard", "/dashboard/ai", "/dashboard/accounts", "/dashboard/team"} {
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
-		if w.Code != 401 || strings.Contains(w.Body.String(), "Tüm çalışma alanları") {
+		if w.Code != 200 || !strings.Contains(w.Body.String(), "Hoş geldin.") || strings.Contains(w.Body.String(), "Tüm çalışma alanları") {
 			t.Fatal("unsigned customer dashboard", path, w.Code)
 		}
 	}

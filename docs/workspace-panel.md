@@ -72,7 +72,7 @@ anahtarıyla müşteri içeriğini okumaya izin vermez.
 3. **Alanları yönet** ekranından ortak repo, proje veya panoları seçer ve
    entegrasyonu etkinleştirir. İlk başta bütün entegrasyonlar kapalıdır. Sunucuda
    yapılandırılmamış sağlayıcılar bağlanabilir olarak gösterilmez.
-4. Üyeler Nudgy’nin özel mesajındaki **Paneli aç** bağlantısıyla giriş yapar;
+4. Üyeler `/dashboard` adresinde **Slack ile giriş yap** düğmesiyle giriş yapar;
    etkin servislerde **Hesabını doğrula** düğmesine basıp kendi hesaplarına izin
    verir. Üyeler GitHub App kurmaz ve repo/proje/pano seçmez.
 5. Günlük istekler Slack’ten yapılır. `panel`, `paneli aç`, `entegrasyonlar` veya
@@ -81,7 +81,7 @@ anahtarıyla müşteri içeriğini okumaya izin vermez.
 
 GitHub, GitLab, Jira ve Trello için ayrı otomatik kurulum davetleri yerine tek
 panel daveti gönderilir. Feedbin/Raindrop kişisel bağlantı akışları korunur.
-Daveti kaçıran veya bağlantısı süresi dolan kullanıcı Slack’ten `panel` isteyebilir.
+Daveti kaçıran veya bağlantısı süresi dolan kullanıcı doğrudan `/dashboard` adresinden giriş yapabilir. Alternatif olarak Nudgy’nin bulunduğu bir kanalda `@Nudgy panel` yazabilir.
 
 Yöneticinin **Hesabım** bölümü de kendi hesabıdır; yöneticinin kişisel tokenı hiçbir
 üyenin işleminde kullanılmaz. GitHub’da **Alanları yönet → GitHub kurulumuna repo
@@ -117,6 +117,28 @@ ve kullanıcı kimliğini belirtir. Yazar bilgisi inceleme özetine dahildir; de
 inceleme hash’ini değiştirir. Eski incelemelerin hash’leri ve yazarları korunur.
 
 ## Giriş ve oturumlar
+
+`GET /dashboard` ve korumalı GET sayfaları oturumsuzken HTTP 200 ile giriş ekranını
+gösterir; POST işlemleri oturumsuzken HTTP 401 döner ve hiçbir veri değiştirmez.
+**Slack ile giriş yap**, `/slack/signin` üzerinden Slack OpenID Connect akışını
+başlatır (`openid profile`; e-posta ve bot izinleri istenmez). Mevcut
+`SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` ve Slack’te zaten kayıtlı
+`SLACK_REDIRECT_URL` kullanılır. Yeni callback veya ortam değişkeni gerekmez.
+Kurulum ve giriş aynı callback’e döner; `signin.` önekli, ayrı tarayıcı çerezine
+bağlı, 10 dakikalık tek kullanımlık state ile ayrılır. Yeniden başlatma sırasında
+bekleyen girişler reddedilir; kullanıcı tekrar başlatabilir. State deposu mevcut
+tek replica düzeni içindir; birden fazla replica için ortak state deposu gerekir.
+
+`go-oidc` Slack’in sabit JWKS adresiyle RS256 imzasını, issuer, audience ve süreyi
+doğrular; nonce, varsa access-token hash ve Slack kullanıcı/workspace claim’leri
+kontrol edilir. Kod/token/sağlayıcı hata gövdeleri loglanmaz veya saklanmaz.
+Doğrulanan kullanıcı yalnızca mevcut Slack kurulumuna eklenir. Giriş işlemi
+kurulum oluşturmaz, bot tokenını veya yöneticiyi değiştirmez; workspace üyeliği
+session oluşturmadan önce sunucuda tekrar doğrulanır. Yeni kurulum isteyen kullanıcı
+ayrı **Slack çalışma alanına ekle** bağlantısını kullanır.
+
+Referans: [Slack OIDC girişi](https://docs.slack.dev/authentication/sign-in-with-slack/),
+[ID token claim’leri](https://docs.slack.dev/reference/methods/openid.connect.token/).
 
 Panel bağlantıları mevcut `NUDGE_LINK_SIGNING_KEY` ile ayrı `workspace` amacı için
 imzalanır ve 20 dakika geçerlidir. Sadece kullanıcının Slack DM’ine gönderilir.

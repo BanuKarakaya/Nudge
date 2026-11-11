@@ -89,6 +89,39 @@ func TestWorkspaceStorePostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	testWorkspaceAIStore(t, db, s, owner, member, other)
+	loginMember, err := installs.SignInUser(ctx, "legacy", "LOGIN-MEMBER")
+	if err != nil {
+		t.Fatal(err)
+	}
+	loginAgain, err := installs.SignInUser(ctx, "legacy", "LOGIN-MEMBER")
+	if err != nil || loginAgain != loginMember {
+		t.Fatal("sign-in identity is not stable", err)
+	}
+	loginIdentity, err := s.Member(ctx, loginMember)
+	if err != nil || loginIdentity.Manager || loginIdentity.Team != "legacy" {
+		t.Fatal("sign-in changed workspace or granted manager", loginIdentity, err)
+	}
+	loginOwner, err := installs.SignInUser(ctx, "legacy", "OWNER")
+	if err != nil || loginOwner != owner {
+		t.Fatal("sign-in changed owner identity", err)
+	}
+	ownerIdentity, err := s.Member(ctx, owner)
+	if err != nil || !ownerIdentity.Manager {
+		t.Fatal("member sign-in changed installation owner", err)
+	}
+	if _, err := installs.SignInUser(ctx, "not-installed", "U"); err == nil {
+		t.Fatal("sign-in created an installation")
+	}
+	if _, err := installs.SignInUser(ctx, "legacy", ""); err == nil {
+		t.Fatal("empty identity accepted")
+	}
+	if _, err := installs.SignInUser(ctx, "not-installed", "OWNER"); err == nil {
+		t.Fatal("sign-in matched a user in another workspace")
+	}
+	var missingUsers int
+	if err := db.QueryRow(ctx, `SELECT count(*) FROM users WHERE team_id='not-installed'`).Scan(&missingUsers); err != nil || missingUsers != 0 {
+		t.Fatal("failed sign-in left an orphan user", missingUsers, err)
+	}
 	scope := workspace.Scope{Enabled: true, Resources: []workspace.Resource{{ID: "10", Name: "Team repo"}}}
 	if err = s.SaveScope(ctx, member, "github", scope); err == nil {
 		t.Fatal("member wrote workspace scope")

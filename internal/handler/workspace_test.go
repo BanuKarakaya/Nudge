@@ -220,7 +220,7 @@ func TestWorkspaceMagicLinkOneUseCookieBindingAndLogout(t *testing.T) {
 	r.AddCookie(session)
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, r)
-	if w.Code != 401 {
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "Hoş geldin.") {
 		t.Fatal("logout did not revoke session")
 	}
 }

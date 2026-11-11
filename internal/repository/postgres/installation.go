@@ -94,6 +94,17 @@ func (r *InstallationRepository) UpsertUser(ctx context.Context, teamID, slackUs
 	return userID, err
 }
 
+// SignInUser accepts a verified Slack identity only for an existing installation.
+// Signing in cannot create an installation or claim its administrator role.
+func (r *InstallationRepository) SignInUser(ctx context.Context, teamID, slackUserID string) (int64, error) {
+	var id int64
+	err := r.db.QueryRow(ctx, `INSERT INTO users (team_id, slack_user_id)
+		SELECT team_id, $2 FROM slack_installations WHERE team_id=$1 AND bot_token<>'' AND $2<>''
+		ON CONFLICT (team_id, slack_user_id) DO UPDATE SET slack_user_id=EXCLUDED.slack_user_id
+		RETURNING id`, teamID, slackUserID).Scan(&id)
+	return id, err
+}
+
 func (r *InstallationRepository) ListUsersByTeam(ctx context.Context, teamID string) ([]domain.WorkspaceUser, error) {
 	const query = `
 		SELECT id, team_id, slack_user_id

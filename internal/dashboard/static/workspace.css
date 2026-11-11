@@ -111,3 +111,10 @@
 .workspace-page :is(a,button,input,select):focus-visible{outline:3px solid #b38293;outline-offset:3px}
 @media(max-width:900px){.workspace-page .workspace-metrics{grid-template-columns:1fr}.workspace-page .form-grid{grid-template-columns:1fr}}
 @media(max-width:720px){.workspace-page .settings-panel,.workspace-page .setup-list{padding:18px}.workspace-page .summary-card{padding:18px}}
+
+.workspace-page .signin-card .mascot-large{margin-bottom:20px}
+.workspace-page .signin-card .mascot-large img{width:100%;height:100%;object-fit:contain}
+.workspace-page .slack-signin{align-self:flex-start;font-size:14px;padding:12px 20px;border-color:#c8b5bd;color:#38242c;gap:12px}
+.workspace-page .slack-signin:focus-visible{outline:3px solid #b38293;outline-offset:4px}
+.workspace-page .signin-setup{display:flex;flex-direction:column;gap:9px;border-top:1px solid #eeeaec;padding-top:20px;color:#71676c;font-size:12px;line-height:1.6}
+.workspace-page .signin-setup a{color:#653a49;font-weight:600;text-decoration:underline}

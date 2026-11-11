@@ -1,8 +1,11 @@
 # Müşteri dashboard’u
 
 Nudgy’nin tek müşteri paneli `/dashboard` adresindedir. Eski bordo tasarım,
-sol menü ve beyaz kartlar korunur. Giriş Slack’teki kişisel panel bağlantısından
-veya Slack kurulumu tamamlandığında açılan oturumdan yapılır.
+sol menü ve beyaz kartlar korunur. Oturumu olmayan kullanıcı giriş ekranında **Slack ile giriş yap** düğmesini görür.
+Slack hesabıyla doğrulama sonrası kendi çalışma alanına yönlenir; yönetici rolü
+kurucu kaydından okunur. Oturum 12 saat sürer. İlk kurulum için ayrı
+**Slack çalışma alanına ekle** bağlantısı bulunur. Slack özel mesajındaki kişisel
+panel bağlantıları da alternatif olarak çalışmaya devam eder.
 
 | Bölüm | Erişim |
 | --- | --- |
