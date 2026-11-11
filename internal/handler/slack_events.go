@@ -369,6 +369,8 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 	message := agentFailureMessage
 	if err == nil {
 		message = result.Text
+	} else if errors.Is(err, context.DeadlineExceeded) {
+		message = agentTimeoutMessage
 	} else if errors.Is(err, workspace.ErrAINotConfigured) {
 		message = "Çalışma alanının AI ayarları henüz hazır değil. Yönetici panelde kendi API anahtarını ekleyip modelini seçmeli. Panel bağlantısı için bana “panel” yazabilirsin."
 	}
@@ -469,6 +471,8 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 	log.Printf("slack_request=%s stage=done success=%t total_ms=%d", requestID, success, time.Since(started).Milliseconds())
 	return nil
 }
+
+const agentTimeoutMessage = "İsteği süre sınırı içinde tamamlayamadım. Gerçekleşen adımları paneldeki İşlemlerim bölümünden kontrol edebilirsin."
 
 const agentFailureMessage = "Yanıtını şu anda tamamlayamadım. Biraz sonra tekrar deneyebilir misin?"
 

@@ -257,7 +257,7 @@ func TestQueuedAgentFailureIsDeliveredAndTerminal(t *testing.T) {
 	if err := h.ProcessJob(context.Background(), q.job); err != nil {
 		t.Fatal(err)
 	}
-	if !q.completed || q.success || len(sender.messages) != 1 || sender.messages[0] != agentFailureMessage {
+	if !q.completed || q.success || len(sender.messages) != 1 || sender.messages[0] != agentTimeoutMessage {
 		t.Fatal("failure lost or retried forever")
 	}
 }

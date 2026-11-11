@@ -148,3 +148,31 @@ func TestManagementToolsAcceptTwoMembersAndExcludeDelete(t *testing.T) {
 		t.Fatal("identity injection")
 	}
 }
+
+type cardOverviewToolProvider struct{ *trackerToolProvider }
+
+func (p *cardOverviewToolProvider) CreateOptions(context.Context, string, tracker.Resource, string) (tracker.CreateOptions, error) {
+	return tracker.CreateOptions{Options: []tracker.Option{{ID: "list", Name: "Doing"}}}, nil
+}
+func (p *cardOverviewToolProvider) Items(context.Context, string, tracker.Resource, string) (tracker.Page, error) {
+	return tracker.Page{Items: []tracker.Item{{ID: "card", StatusID: "list", MemberIDs: []string{"account"}}}}, nil
+}
+func TestTrelloCardToolReturnsAnswerReadyPage(t *testing.T) {
+	store := &trackerToolStore{connection: tracker.Connection{Identity: tracker.Identity{UserID: 1, Team: "T"}, Provider: "trello", Account: tracker.Account{ID: "account"}, Credentials: tracker.Credentials{Access: "secret", Expires: time.Now().Add(time.Hour)}, Selected: []string{"selected"}}}
+	provider := &cardOverviewToolProvider{&trackerToolProvider{Client: tracker.Client{Provider: "trello"}}}
+	tools := NewTrackerTools(trackerBaseTools{}, tracker.New(store, provider), tracker.Identity{UserID: 1, Team: "T"}, nil)
+	raw, err := tools.Call(context.Background(), "trello_cards_list", json.RawMessage(`{"resource_id":"selected","cursor":""}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var page tracker.CardPage
+	if err = json.Unmarshal([]byte(raw), &page); err != nil || !page.Complete || len(page.Items) != 1 || page.Items[0].ListName != "Doing" || !page.Items[0].AssignedToCurrentUser {
+		t.Fatal(raw, err)
+	}
+	if provider.creates != 0 || provider.moves != 0 || strings.Contains(raw, "secret") {
+		t.Fatal("read mutated data or leaked credential")
+	}
+	if _, err := tools.Call(context.Background(), "trello_cards_list", json.RawMessage(`{"resource_id":"list","cursor":""}`)); !errors.Is(err, tracker.ErrDenied) {
+		t.Fatal("list ID accepted as board", err)
+	}
+}

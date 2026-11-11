@@ -225,11 +225,15 @@ func TestAgentFailureResetsThreadAndBootstrapsOnlyDeliveredHistory(t *testing.T)
 			if !tc.nilRuntime && calls != 1 {
 				t.Fatalf("runtime failure triggered fallback/retry: calls=%d", calls)
 			}
+			expectedFailure := agentFailureMessage
+			if errors.Is(tc.err, context.DeadlineExceeded) {
+				expectedFailure = agentTimeoutMessage
+			}
 			if tc.sendFails {
 				if len(sender.messages) != 0 {
 					t.Fatalf("unexpected delivery: %v", sender.messages)
 				}
-			} else if len(sender.messages) != 1 || sender.messages[0] != agentFailureMessage {
+			} else if len(sender.messages) != 1 || sender.messages[0] != expectedFailure {
 				t.Fatalf("unsafe failure response: %v", sender.messages)
 			}
 			sender.fail = false

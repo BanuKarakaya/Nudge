@@ -246,3 +246,21 @@ Kaynaklar: [Trello kart işlemleri](https://developer.atlassian.com/cloud/trello
 [Jira atanabilir kullanıcı araması](https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-user-search/),
 [Jira görev işlemleri ve arşivleme](https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issues/),
 [Jira yorumları](https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-comments/).
+
+## Trello liste ve kişi sorguları
+
+`trello_cards_list` için `resource_id` seçili pano kimliğidir; liste veya kart
+kimliği değildir. Araç aynı yetkili pano içinde açık listeleri ve kart sayfasını
+okur. Sonuçta `board_id`, `current_user_id`, `lists`, `items`, `next_cursor` ve
+`complete` bulunur. Kartlara `list_name` ve `assigned_to_current_user` eklenir;
+kişi eşlemesi Slack kimliğiyle değil doğrulanmış Trello hesabıyla yapılır.
+Böylece Doing listesi/kişiye atanma soruları için kart açıklamalarını tek tek
+okumak gerekmez. `complete` yalnızca başka sayfa kalmadığını belirtir; tüm
+kartları saymak veya yokluk bildirmek için önceki sayfalar da okunmalıdır.
+Liste/kart API hatası boş sonuç olarak gösterilmez. Yetki denetimi mevcut
+çalışma alanı kapsamı ile kişisel pano erişimini korur; yeni yazma izni gerekmez.
+
+Modelin başarılı sayfaları yeniden başlatmaması ve yeterli kanıtla yanıt vermesi
+araç açıklamalarında belirtilir. Bu yönlendirme model davranışını kesin olarak
+garanti etmez. Süre sınırı aşılırsa Slack yanıtı bunu açıkça belirtir ve kullanıcıyı
+İşlemlerim ekranına yönlendirir; otomatik olarak bir yazma işlemi tekrarlanmaz.
