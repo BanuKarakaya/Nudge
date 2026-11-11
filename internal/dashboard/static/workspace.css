@@ -162,3 +162,9 @@
 .workspace-page .activity-pagination{display:flex;align-items:center;justify-content:center;gap:16px;padding:20px;border-top:1px solid #eeeaec;color:#71676c;font-size:11px;flex-wrap:wrap}
 @media(max-width:1100px){.workspace-page .activity-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.workspace-page .activity-charts{grid-template-columns:1fr}.workspace-page .activity-record summary{grid-template-columns:minmax(120px,1fr) 110px}.workspace-page .activity-model{grid-column:1 / -1}}
 @media(max-width:720px){.workspace-page .activity-filters{padding:16px;gap:12px}.workspace-page .activity-filters label{min-width:100%}.workspace-page .activity-metrics{grid-template-columns:1fr;gap:12px}.workspace-page .activity-record summary{padding:16px;gap:10px;grid-template-columns:minmax(0,1fr) 100px}.workspace-page .daily-row{grid-template-columns:76px minmax(30px,1fr) 60px;gap:6px}.workspace-page .activity-pagination{gap:10px}}
+
+.workspace-page .enable>span{min-width:0}
+.workspace-page .enable strong{display:block;font-size:12px;font-weight:650}
+.workspace-page .enable small{display:block;margin-top:7px;color:#71676c;font-size:11px;line-height:1.7}
+.workspace-page .resource-heading{margin:26px 0 8px;font-size:18px;line-height:1.4;color:var(--text)}
+.workspace-page .resource-help{margin:0 0 14px;color:var(--muted);font-size:12px;line-height:1.7}
