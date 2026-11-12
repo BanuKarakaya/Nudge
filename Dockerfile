@@ -1,4 +1,4 @@
-FROM golang:1.25-alpine AS build
+FROM golang:1.26.11-alpine AS build
 
 WORKDIR /app
 COPY go.mod go.sum ./
@@ -18,6 +18,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && mkdir -p /var/lib/nudgy/codex \
     && chown -R node:node /var/lib/nudgy
 COPY --from=build /nudge-server /app/nudge-server
+COPY LICENSE THIRD_PARTY_NOTICES.md /usr/share/doc/nudgy/
+COPY LICENSES/ /usr/share/doc/nudgy/LICENSES/
 
 ENV NUDGY_CODEX_STATE_DIR=/var/lib/nudgy/codex
 USER node

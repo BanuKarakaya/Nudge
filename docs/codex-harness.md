@@ -21,83 +21,53 @@ configuration and migration requirements. The environment-based examples below
 refer to the original rollout and opt-in developer smoke tests, not customer
 configuration. Persistent state directories and the pinned transport still apply.
 
-## Configuration and deployment gate
+## Current configuration and deployment
 
-Do not deploy this migration before verifying both live model routes and
-preparing the volume. Build success and catalog discovery are not evidence of
-live Responses/tool-call compatibility or account access.
+Use [the self-hosting guide](self-hosting.md) for a new installation. Managers
+configure their own OpenAI or OpenRouter key, daily model and optional advanced
+model in `/dashboard/ai`. The production runtime does not read server-wide model
+keys or model IDs. Optional Google search is also configured per workspace.
 
-- `CODEX_SIMPLE_MODEL`: required; selected value
-  `deepseek/deepseek-v4.1-flash-1017`.
-- `CODEX_COMPLEX_MODEL`: required; selected value `openai/gpt-6-luna`.
-- `OPENROUTER_API_KEY`: required server-side credential from the funded
-  OpenRouter account. **Both models use this account/balance**, including Luna.
-  No direct OpenAI credit or desktop login/ChatGPT subscription is used.
-  Do not paste keys into Slack or commit them.
-- `NUDGY_CODEX_STATE_DIR`: absolute path, default `/var/lib/nudgy/codex`. Mount a
-  persistent Railway volume here. The image runs as uid/gid **1000**; ensure the
-  mounted directory is owned/writable by that user. Never mount an existing
-  developer Codex home. Back up this directory alongside Postgres.
-- `CODEX_BINARY`: defaults to `codex`; optional absolute local path.
-- `GEMINI_API_KEY` / `GEMINI_MODEL`: optional existing public web-search tool,
-  not a second harness or fallback answer generator.
+- `NUDGY_CODEX_STATE_DIR`: persistent absolute path, default
+  `/var/lib/nudgy/codex`. The container runs as uid/gid **1000**; the directory
+  must be writable by that user. Do not mount a developer's personal Codex home.
+- `CODEX_BINARY`: defaults to `codex`; an absolute local path is supported.
+- AI credential encryption uses `NUDGY_AI_ENCRYPTION_KEY`, falling back to
+  `FEEDBIN_ENCRYPTION_KEY` only as documented. Keep that choice stable.
 
-The Dockerfile pins `@openai/codex` **0.164.0**. Dynamic tools are experimental:
-review/regenerate schemas and run protocol tests before changing the pin. The
-Node launcher and native subprocess are both terminated as a process group on
-timeout. No app-server TCP/WebSocket port is exposed.
+The Dockerfile pins `@openai/codex` **0.164.0**. Review protocol compatibility
+before changing it. The Node launcher and native subprocess are terminated as a
+process group on timeout. No app-server TCP/WebSocket port is exposed.
 
-For the initial Railway rollout use **one application replica**. Slack mentions now
-use a [durable PostgreSQL queue](slack-jobs.md) for event deduplication, claims and
-conversation ordering. The queue does not make separate native-state volumes
-interchangeable; a shared volume alone is not a runtime scaling strategy.
-Stop old instances before rollout.
-Keep existing database, Feedbin encryption, Slack, account-link and admin secrets.
-Keep `OPENROUTER_API_KEY`. Legacy `OPENROUTER_MODEL`/routing variables,
-`CODEX_MODEL`, `CODEX_API_KEY`, `OPENAI_*`, `OPENCODE_*` and `DEEPSEEK_*` no longer
-select the assistant and can be removed separately after rollout.
+Use one application replica. The durable [Slack queue](slack-jobs.md) does not
+make OAuth in-memory state or separate native-state volumes interchangeable.
+Back up the database, encryption keys and runtime volume; stop old instances
+before a rollout. Railway is optional.
 
-The provider is configured for `https://openrouter.ai/api/v1`, Responses wire
-format, HTTP streaming and explicit key authentication. The same-origin
-`https://openrouter.ai/api/v1/models` catalog is configured explicitly because
-environment-key authentication alone does not enable Codex catalog discovery.
-The unauthenticated public list returned a `data` array during development;
-that is **not** proof of a Codex `models` catalog. Before rollout, validate the
-authenticated catalog's schema and entries against the pinned client. If the
-provider still returns only its ordinary API model list, obtain a Codex-compatible
-catalog rather than accepting generic model metadata. This remains a live-test
-gate, not something the offline transport test proves.
-No shell-based key helper is used. The adapter only accepts HTTPS provider URLs
-(loopback HTTP is permitted for offline tests); a catalog cannot send the key
-to a different origin.
+The adapter uses the Responses protocol with streaming and explicit key
+authentication. A successful provider catalog fetch is not proof of inference,
+model account access, complete capability metadata or tool-call compatibility.
+Validate the selected models with a deliberate live acceptance test before
+serving users. Offline protocol tests do not prove that gate.
 
 ## Model routing owned by Codex
 
-Standalone common greetings and thanks are answered locally without model calls
-(see conversations.md); they do not enter the native thread. Every other user
-request starts on DeepSeek. Its instructions keep simple questions, RSS
-counts/titles and straightforward summaries on that model.
-For writing/debugging code, architecture or complex multi-step reasoning, Codex
-is instructed to call the internal `handoff_to_luna` tool before attempting the
-task. The tool takes no model identifier or other arguments; Go does not classify
-the user's intent. This is model-guided routing, not a perfect complexity oracle.
+Standalone greetings and thanks can be answered locally without model calls.
+Other requests start on the workspace's daily model. When a different advanced
+model is configured, the model can request a handoff for complex work. The
+internal tool retains its historical name `handoff_to_luna`; that name does not
+force a particular vendor or model. It uses the manager's advanced-model choice.
 
-The adapter acknowledges the tool, interrupts the current native turn, waits for
-both the interrupt acknowledgement and turn termination (at most 10 seconds),
-then starts Luna in **the same native thread**. Original messages and tool
-results remain in Codex history. Only Luna's final answer is delivered. A race
-where the old turn completes normally is safe; failed turns/interrupts are not
-treated as a handoff. New data calls are refused while switching, and only one
-handoff is permitted per user run. The next user message starts on DeepSeek again.
-Both stages share one concurrency slot and the original 120-second deadline.
+The adapter acknowledges the handoff, interrupts the current turn, waits for
+acknowledgement and termination, then starts the advanced model in the same
+native thread. Original messages and tool results remain in context. Only one
+handoff is permitted per user run, and both stages share the original deadline
+and concurrency slot. A new user request starts on the daily model again.
 
-Complex tasks incur a short DeepSeek routing call **plus** Luna's model/tool
-usage; they are not billed as Luna-only. Failed/canceled upstream requests may
-also incur usage. There is no automatic free-model fallback or hidden direct
-OpenAI route. A paid model failure uses the normal handled-error path.
-This integration supports coding assistance in replies, not arbitrary code
-execution or repository editing: filesystem/shell tools remain disabled. Those
-capabilities require separately designed tenant isolation and authorization.
+A two-stage request can incur usage on both models. Failed or canceled provider
+requests may also incur usage. There is no hidden shared account or free-model
+fallback. Repository editing is implemented through Go permission-checked tools;
+native filesystem and shell execution remain disabled.
 
 ## Isolation and tools
 
@@ -150,7 +120,7 @@ be mistaken for a final response. An acknowledged routing interruption only
 permits the next model turn; it is never a successful user reply. Tool results can fail within a successful turn;
 Codex must explain that rather than fabricate data.
 The 23:00 scheduled RSS notification sends titles and links directly, without
-using this runtime. The protected AI test-digest endpoint still uses the digest
+using this runtime. The legacy AI test-digest handler (not mounted by `cmd/server`) uses the digest
 generator; a conversational explanation is not successful generation:
 at least one RSS retrieval must succeed and no RSS retrieval may have failed.
 Otherwise generation fails instead of treating a retrieval error as an empty inventory.
@@ -187,7 +157,7 @@ Railway logs contain request stages and native thread/turn IDs, tool names,
 durations and outcomes, not provider stderr, arguments, content or API keys.
 Codex token counters, when reported, feed the dashboard separately for each
 model stage, subtracting the previous native-thread total to avoid double
-counting. Missing counters are unknown, not zero-cost proof. OpenRouter's usage
+counting. Missing counters are unknown, not zero-cost proof. The selected provider's usage
 ledger remains the billing authority; these counters are not a dollar invoice. Native rollout
 files and the existing Postgres analytics/transcripts contain private content;
 restrict volume/database access and plan retention before broader use.
@@ -221,7 +191,7 @@ Protocol reference: https://learn.chatgpt.com/docs/app-server
 
 OpenRouter integration: https://openrouter.ai/blog/tutorials/codex-cli-openrouter/
 
-### Live smoke-test findings (2026-10-24)
+### Historical live smoke-test findings (2026-10-24)
 
 With explicit approval, both selected OpenRouter models completed streamed
 Responses requests and a synthetic function-call/output/final-answer loop.

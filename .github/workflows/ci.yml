@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: nudge
+          POSTGRES_PASSWORD: nudge
+          POSTGRES_DB: nudge_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U nudge -d nudge_test"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      NUDGE_TEST_DATABASE_URL: postgres://nudge:nudge@localhost:5432/nudge_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+      - run: go mod verify
+      - run: make check
+      - run: make build
+      - name: Initialize empty database and check server startup
+        env:
+          DATABASE_URL: postgres://nudge:nudge@localhost:5432/nudge_test?sslmode=disable
+          NUDGE_PUBLIC_URL: http://localhost:8080
+          NUDGE_REMINDER_USER_ID: '0'
+        run: |
+          sh scripts/init-db.sh
+          export NUDGE_LINK_SIGNING_KEY="$(openssl rand -base64 32)"
+          export FEEDBIN_ENCRYPTION_KEY="$(openssl rand -base64 32)"
+          export NUDGY_CODEX_STATE_DIR="$RUNNER_TEMP/nudgy-codex"
+          mkdir -p "$NUDGY_CODEX_STATE_DIR"
+          ./bin/nudge-server > "$RUNNER_TEMP/nudgy-server.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          curl --fail --retry 15 --retry-connrefused --retry-delay 1 http://localhost:8080/health/db
+          curl --fail http://localhost:8080/dashboard > /dev/null
+
+  security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+      - name: Check reachable Go vulnerabilities
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+          govulncheck ./...
+      - name: Scan Git history for secrets
+        run: |
+          go install github.com/zricethezav/gitleaks/v8@v8.30.1
+          gitleaks git --redact --no-banner --log-opts=--all .
+
+  container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - run: python3 scripts/setup-env.py
+      - run: docker compose --profile app up -d --build --wait
+      - name: Check container startup
+        run: curl --fail --retry 15 --retry-connrefused --retry-delay 1 http://localhost:8080/health/db
+      - name: Stop disposable CI containers
+        if: always()
+        run: docker compose --profile app down -v

@@ -1,9 +1,10 @@
 # GitLab.com bağlantısı ve kod düzenleme
 
-GitLab desteği GitHub ile birlikte veya tek başına etkinleştirilebilir. Kullanıcı
-Slack’te “GitLab hesabımı bağla” dediğinde özel OAuth bağlantısı alır; GitLab’da
-izin verdikten sonra Nudgy ekranında erişilecek projeleri seçer. Bağlantı ancak
-bu seçim kaydedildikten sonra tamamlanır. Bağlantı isteği kod görevi başlatmaz.
+GitLab desteği GitHub ile birlikte veya tek başına etkinleştirilebilir. Yönetici
+[çalışma alanı panelinde](workspace-panel.md) GitLab hesabını bağlar, ortak projeleri
+seçer ve entegrasyonu etkinleştirir. Üyeler **Hesaplarım** bölümünden yalnızca kendi
+hesaplarını doğrular. Her işlem ortak kapsam ile kullanıcının güncel erişiminin
+kesişiminde yapılır. Bağlantı isteği kod görevi başlatmaz.
 
 ## Bir defalık kurulum
 
@@ -13,7 +14,7 @@ GitLab.com’da **Edit profile → Access → Applications → Add new applicati
 - Redirect URI: `https://<NUDGE_PUBLIC_URL-host>/gitlab/oauth/callback`.
 - **Confidential** açık olmalı; uygulama sırrı yalnızca sunucuda kullanılır.
 - Scopes: `read_user`, `read_api`, `write_repository`, **`api`**.
-- Application ID ve Secret değerlerini Railway servis değişkenlerine kaydet;
+- Application ID ve Secret değerlerini sunucunun ortam değişkenlerine kaydet;
   Slack mesajına veya repoya ekleme.
 
 ```text
@@ -35,8 +36,8 @@ ve [PKCE/token yenileme belgesi](https://docs.gitlab.com/api/oauth2/).
 
 ## Kullanım
 
-1. Slack’te `@Nudgy GitLab hesabımı bağla` yaz.
-2. Özel bağlantıyı aç, GitLab’da izin ver, Nudgy’de projeleri seç ve kaydet.
+1. `/dashboard` üzerinden giriş yap; yönetici ortak GitLab projelerini seçip entegrasyonu açar.
+2. Üyeler **Hesaplarım** üzerinden kendi GitLab hesaplarına izin verir; ortak projeleri değiştiremez.
 3. `@Nudgy GitLab projelerimi listele` ile seçimini kontrol et.
 4. Projenin tam yolunu ve istenen değişikliği yaz. Alt gruplar desteklenir:
    `team/mobile/ios-app`.
@@ -45,7 +46,7 @@ ve [PKCE/token yenileme belgesi](https://docs.gitlab.com/api/oauth2/).
    Otomatik test çalıştırılmaz. MR açma ayrıca istenebilir; merge için kaynak/hedef dalı veya MR adresini belirten açık
    bir komut gerekir. Ayrıntılar: [PR/MR işlemleri](change-requests.md).
 
-Yeni proje eklemek veya seçimi değiştirmek için yeni bir bağlantı iste.
+Yeni proje eklemek veya ortak seçimi değiştirmek için yönetici panelde **Alanları yönet** bölümünü kullanır.
 Başarısız/iptal edilen bağlantı mevcut çalışan bağlantıyı değiştirmez.
 Proje seçimi OAuth izninden sonra 10 dakika geçerlidir; inceleme ZIP bağlantısı
 24 saat geçerlidir. Yayınlanmış dalın süresi dolmaz.

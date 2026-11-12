@@ -1,10 +1,10 @@
-# Repository editing on Railway
+# Repository editing
 
 Nudgy can connect a Slack user's GitHub account, list permitted repositories,
-clone repositories into separate temporary Git workspaces on the existing Railway
-service, and edit source files through bounded tools. Disabled unless
+clone repositories into separate temporary Git workspaces on the application
+server, and edit source files through bounded tools. Disabled unless
 `NUDGY_CODING_ENABLED=true`. Prepared source is encrypted in PostgreSQL so it
-survives Railway restarts. Automatic tests and repository scripts are not run.
+survives server restarts. Automatic tests and repository scripts are not run.
 PR/MR creation and explicit merging use [separate tools](change-requests.md).
 Completing a coding task automatically publishes the prepared code
 to a new `codex/nudgy-<task-id>` branch for the user to clone and test. GitLab.com uses the same editing/publishing workflow through a separate OAuth connection and project selection; see [GitLab setup](gitlab.md).
@@ -43,27 +43,18 @@ change, and removed permissions stop authorizing new tasks.
 
 ## User flow and access
 
-1. After Slack installation, Nudgy automatically sends each user a separate
-   GitHub invitation when the GitHub integration is configured. Existing installations
-   are discovered at startup too. The signed link is valid for 20 minutes after
-   delivery and goes only to that user's DM. Asking Nudgy to connect GitHub is
-   still available to replace expired links, but is not needed for discovery.
-2. Open the private link. The Nudgy page opens GitHub's installation/repository
-   selection screen in the same tab. Choose the account and repositories and save.
-   GitHub redirects to `/github/setup`, then Nudgy starts PKCE authorization.
-   The page has one action: select repositories on GitHub. It does not offer a
-   separate existing-selection button. GitHub may show installation settings
-   for accounts that already installed the App; saving a repository selection
-   update returns through the same setup callback. The old POST continuation
-   remains supported for already-open pages, but is not offered in the new UI.
-   Installation and OAuth use separate single-use 10-minute states and HttpOnly
-   browser cookies. The returned installation ID is never trusted: verify App ID,
-   account ownership (or organization access), permissions, and at least one
-   selected writable repository before saving the connection. A declined,
-   expired, pending organization approval, or unverified installation never
-   replaces an existing connection or produces a success page.
-   The confirmation page shows the verified GitHub login and returns to Slack;
-   connecting does not list repos to Slack, prepare tasks, or modify code.
+1. Install Nudgy in Slack and open `/dashboard`. The installer becomes the
+   workspace manager. In **Integrations**, the manager connects their GitHub
+   account, installs their configured GitHub App and selects shared repositories.
+   The provider's setup redirect starts the separate PKCE authorization step.
+   Installation and OAuth states are short-lived, single-use and browser-bound;
+   the returned installation and user permissions are verified server-side.
+2. Members open **My accounts** and authorize their own GitHub account. They do
+   not install a separate App or choose the workspace's shared scope. Access is
+   the intersection of the enabled workspace scope, current App installation
+   permissions and the acting user's live access. See
+   [workspace setup](workspace-panel.md) for the current flow. Old signed links
+   remain supported for compatibility; new invitations direct users to the panel.
 3. Ask for repositories. Access requires the App's installation permissions and
    the user's current GitHub write permissions. Suspended installations, archived
    and disabled repositories are excluded. Installation inventory is only a
@@ -117,9 +108,8 @@ Local greeting responses still bypass model calls.
 
 Credentials and PKCE verifiers are encrypted in PostgreSQL. Refresh runs under
 a row lock; OAuth state is hashed. Identity comes from verified Slack events,
-never model arguments. Repeated events return the original task. Authenticated
-admin `DELETE /api/v1/coding/github/connection` removes local credentials and
-cancels pending edits and drafts; users can revoke authorization in GitHub settings too.
+never model arguments. Repeated events return the original task. Users manage their connection in **My accounts** and can revoke authorization
+in GitHub settings. The old `/api/v1` operator routes are not exposed by the server.
 
 Slack–GitHub association is automatic and per user within each workspace:
 the signed private invitation identifies a persisted Slack user row; that row

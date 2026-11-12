@@ -4,5 +4,15 @@
 .DS_Store
 bin/
 tmp/
+.local/
+coverage.out
+*.test
+*.log
+*.pem
+*.key
+*.p12
+*.pfx
+*.dump
+*.sql.gz
 # Managed Sites project has its own Git history.
 /sites/nudgy-tanitim/

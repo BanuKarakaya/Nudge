@@ -1,6 +1,19 @@
-.git
-.env
-.DS_Store
-tmp
-bin
-*.log
+# Only source required to compile the server belongs in the build context.
+**
+!go.mod
+!go.sum
+!cmd/
+!cmd/**
+!internal/
+!internal/**
+!migrations/
+!migrations/**
+!LICENSE
+!THIRD_PARTY_NOTICES.md
+!LICENSES/
+!LICENSES/**
+**/.DS_Store
+**/.env
+**/.env.*
+**/*.pem
+**/*.key

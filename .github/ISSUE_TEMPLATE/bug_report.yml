@@ -1,0 +1,24 @@
+name: Bug report / Hata bildirimi
+description: Report a reproducible bug with sanitized details.
+body:
+  - type: markdown
+    attributes:
+      value: "For vulnerabilities, follow SECURITY.md. Do not include secrets, private messages or production data. Turkish and English are welcome."
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include expected behavior and what happened instead.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Commit/version and environment
+      placeholder: Commit SHA, OS, Go/Docker version
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs or screenshots

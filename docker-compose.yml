@@ -1,16 +1,46 @@
 services:
   postgres:
     image: postgres:17-alpine
-    container_name: nudge-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: nudge
       POSTGRES_PASSWORD: nudge
       POSTGRES_DB: nudge
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - nudge-postgres-data:/var/lib/postgresql/data
+      - ./migrations:/nudgy-migrations:ro
+      - ./scripts/init-db.sh:/docker-entrypoint-initdb.d/10-nudgy.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nudge -d nudge"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  app:
+    profiles: [app]
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://nudge:nudge@postgres:5432/nudge?sslmode=disable
+      PORT: "8080"
+      NUDGY_CODEX_STATE_DIR: /var/lib/nudgy/codex
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - nudge-codex-data:/var/lib/nudgy/codex
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health/db').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
 volumes:
   nudge-postgres-data:
+  nudge-codex-data:
