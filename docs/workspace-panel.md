@@ -6,7 +6,7 @@ entegrasyonları kurar; ekip üyeleri yalnızca kendi sağlayıcı hesaplarını
 Bireysel kullanıcı hem yönetici hem üyedir.
 
 Yönetici ve çalışan ayrı paneller kullanmaz. Menü oturumdaki role göre açılır:
-Genel bakış, Hesaplarım, İşlemlerim ve kendi Kullanım verileri herkes içindir; AI ayarları, Entegrasyonlar ve Çalışma
+Genel bakış, Kurulum, Hesaplarım, İşlemlerim ve kendi Kullanım verileri herkes içindir; AI ayarları, Entegrasyonlar ve Çalışma
 alanı yalnızca yöneticidir. Bireysel kullanıcı kendi çalışma alanının yöneticisidir.
 Eski genel analiz ekranı ve `/api/dashboard*` API’leri kapalıdır. Global anahtar ve
 `X-User-ID` ile kullanıcı seçmeye izin veren `/api/v1/*` yolları da HTTP 410 döner.

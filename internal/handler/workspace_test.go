@@ -71,6 +71,7 @@ func workspaceFixture(t *testing.T) (*WorkspaceHandler, *workspaceMemory, *http.
 	key, _ := secure.NewLinkSigner(base64.StdEncoding.EncodeToString(make([]byte, 32)))
 	s := &workspaceMemory{members: map[int64]workspace.Member{1: {UserID: 1, Team: "T", Name: "Company", Manager: true}, 2: {UserID: 2, Team: "T", Name: "Company"}, 3: {UserID: 3, Team: "OTHER", Name: "Personal", Manager: true}}, scopes: map[string]workspace.Scope{}, sessions: map[string]int64{}, used: map[string]bool{}}
 	h := NewWorkspaceHandler(s, key, "https://nudgy.test", nil, nil)
+	h.WithAnalytics(&customerAnalytics{})
 	h.providers = []workspaceProvider{{Kind: "github", Name: "GitHub", Connected: func(context.Context, int64) (bool, error) { return true, nil }, Disconnect: func(_ context.Context, id int64) error { s.disconnected = id; return nil }, Resources: func(_ context.Context, m workspace.Member) ([]workspace.Resource, error) {
 		if !m.Manager {
 			return nil, errors.New("not manager")

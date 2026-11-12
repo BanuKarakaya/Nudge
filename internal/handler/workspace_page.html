@@ -15,6 +15,7 @@
       <p class="nav-label">Çalışma alanın</p>
       <a class="nav-item {{if eq .Section "overview"}}active{{end}}" href="/dashboard" aria-label="Genel bakış"><span class="nav-icon" aria-hidden="true">◩</span><span class="nav-text">Genel bakış</span></a>
       {{if .Member.UserID}}<a class="nav-item {{if eq .Section "operations"}}active{{end}}" href="/dashboard/operations" aria-label="İşlemlerim"><span class="nav-icon" aria-hidden="true">☷</span><span class="nav-text">İşlemlerim</span></a><a class="nav-item {{if eq .Section "usage"}}active{{end}}" href="/dashboard/usage" aria-label="Kullanım"><span class="nav-icon" aria-hidden="true">◷</span><span class="nav-text">Kullanım</span></a>{{end}}
+      {{if .Member.UserID}}<a class="nav-item {{if eq .Section "setup"}}active{{end}}" href="/dashboard/setup" aria-label="Kurulum"><span class="nav-icon" aria-hidden="true">⚙</span><span class="nav-text">Kurulum</span></a>{{end}}
       {{if .Member.Manager}}
       <a class="nav-item {{if eq .Section "ai"}}active{{end}}" href="/dashboard/ai" aria-label="AI ayarları"><span class="nav-icon" aria-hidden="true">✳</span><span class="nav-text">AI ayarları</span></a>
       <a class="nav-item {{if eq .Section "integrations"}}active{{end}}" href="/dashboard/integrations" aria-label="Entegrasyonlar"><span class="nav-icon" aria-hidden="true">⌁</span><span class="nav-text">Entegrasyonlar</span></a>
@@ -23,7 +24,7 @@
       {{if .Member.Manager}}<a class="nav-item {{if eq .Section "team"}}active{{end}}" href="/dashboard/team" aria-label="Çalışma alanı"><span class="nav-icon" aria-hidden="true">☷</span><span class="nav-text">Çalışma alanı</span></a>{{end}}
     </nav>
     <div class="sidebar-foot">
-      <div class="system-status"><span class="pulse" aria-hidden="true"></span><div><strong>Kurulum burada</strong><small>Günlük işler Slack’te</small></div></div>
+      <div class="system-status"><span class="pulse" aria-hidden="true"></span><div><strong>Çalışma alanın burada</strong><small>Günlük işler Slack’te</small></div></div>
       <div class="user-mini"><span class="avatar" aria-hidden="true">N</span><span><strong>{{if .Member.Manager}}Çalışma alanı yöneticisi{{else if .Member.UserID}}Çalışma alanı üyesi{{else}}Nudgy paneli{{end}}</strong><small>{{if .Member.UserID}}Kişisel hesap oturumu{{else}}Slack hesabınla devam et{{end}}</small></span></div>
     </div>
   </aside>
@@ -46,17 +47,17 @@
 <div class="page-heading"><div><div class="eyebrow"><span class="eyebrow-line"></span> NUDGY WORKSPACE</div><h1>{{.Title}}</h1><p>{{.Description}}</p></div></div>
 {{if .Member.OwnerMissing}}<div class="notice error" role="status">Çalışma alanının yöneticisi henüz doğrulanmamış. Kurulumu yöneten kişi <a href="/slack/install">Slack kurulumunu yeniden yetkilendirerek</a> yönetimi açabilir. Kişisel bağlantılar korunur.</div>{{end}}
 {{if .Message}}<div class="notice" role="status">{{.Message}}</div>{{end}}
-{{if or (eq .Section "operations") (eq .Section "usage")}}{{template "workspace-analytics" .}}
-{{else if eq .Section "overview"}}
+{{if or (eq .Section "overview") (eq .Section "operations") (eq .Section "usage")}}{{template "workspace-analytics" .}}
+{{else if eq .Section "setup"}}
 <section class="nudgy-note"><div class="mascot-large" aria-hidden="true"><img src="/dashboard/nudgy-mascot.webp" alt=""></div><div><span class="note-kicker">SANA AİT ÇALIŞMA ALANI</span><h2>Senin modellerin. Ekibinin hesapları.</h2><p>{{if .Member.Manager}}AI anahtarını ve modellerini seç, ekibinin kullanacağı servisleri aç. Tek başına çalışıyorsan tüm adımları kendin tamamlayabilirsin.{{else}}AI ayarlarını ve ortak entegrasyonları yöneticin hazırlar. Sen kendi servis hesaplarını doğrulayarak başlayabilirsin.{{end}}</p></div></section>
 <div class="workspace-metrics">
 <article class="panel summary-card"><span class="label">AI durumu</span><h2>{{if .AI.Ready}}Hazır{{else}}Kurulum gerekli{{end}}</h2><p>{{if .AI.Ready}}{{.AI.Model}}{{else}}API anahtarı ve model seçimi bekleniyor.{{end}}</p></article>
-<article class="panel summary-card"><span class="label">Etkin entegrasyon</span><h2>{{.ActiveIntegrations}} / 4</h2><p>Çalışma alanında kullanıma açılan servisler.</p></article>
+<article class="panel summary-card"><span class="label">Etkin entegrasyon</span><h2>{{.ActiveIntegrations}}</h2><p>Çalışma alanında kullanıma açılan servisler.</p></article>
 <article class="panel summary-card"><span class="label">Kişisel hesapların</span><h2>{{.VerifiedAccounts}}</h2><p>Sana ait doğrulanmış servis bağlantıları.</p></article>
 </div>
-<section class="panel setup-list"><div class="panel-head"><div><h2>Başlangıç adımları</h2><p>Kurulumu burada tamamla, işlerine Slack’ten devam et.</p></div></div>
-{{if .Member.Manager}}<a href="/dashboard/ai"><span class="step-number">01</span><span><strong>AI hesabını hazırla</strong><small>Kendi API anahtarın ve seçtiğin modeller.</small></span><span aria-hidden="true">→</span></a><a href="/dashboard/integrations"><span class="step-number">02</span><span><strong>Entegrasyonları kur</strong><small>Repo, proje ve panoların ortak erişimini belirle.</small></span><span aria-hidden="true">→</span></a>{{end}}
-<a href="/dashboard/accounts"><span class="step-number">◎</span><span><strong>Kendi hesaplarını doğrula</strong><small>Commit ve görev işlemleri senin kimliğinle yapılsın.</small></span><span aria-hidden="true">→</span></a>
+<section class="panel setup-list"><div class="panel-head"><div><h2>Kurulum adımları</h2><p>{{if .AI.Ready}}AI ayarların hazır. Yalnızca kullanmak istediğin servisleri bağlaman yeterli.{{else if .Member.Manager}}Önce AI ayarlarını tamamla; servis bağlantılarını ihtiyacına göre ekle.{{else}}AI ayarlarını yöneticin tamamlar. Sen kullanacağın servislerde kendi hesabını doğrulayabilirsin.{{end}}</p></div></div>
+{{if .Member.Manager}}<a href="/dashboard/ai"><span class="step-number">01</span><span><strong>{{if .AI.Ready}}AI ayarların hazır{{else}}AI hesabını hazırla{{end}}</strong><small>Kendi API anahtarın ve seçtiğin modeller. Ayarlarını buradan değiştirebilirsin.</small></span><span aria-hidden="true">→</span></a><a href="/dashboard/integrations"><span class="step-number">02</span><span><strong>Entegrasyonlarını yönet</strong><small>İsteğe bağlı · Kullanacağın repo, proje ve panoların ortak erişimini belirle.</small></span><span aria-hidden="true">→</span></a>{{end}}
+<a href="/dashboard/accounts"><span class="step-number">◎</span><span><strong>Kişisel hesaplarını yönet</strong><small>Kullanacağın servislerde hesabını doğrula; işlemler senin kimliğinle yapılsın.</small></span><span aria-hidden="true">→</span></a>
 </section>
 <section class="panel verification-guide"><h2>Gizlilik, çalışma alanının içinde.</h2><p>Bu panel yalnızca kendi çalışma alanını gösterir. Yöneticilik, çalışanların özel konuşmalarını veya kişisel erişim anahtarlarını görme hakkı vermez. API anahtarı olmadan ortak bir Nudgy hesabından AI kullanımı yapılmaz.</p></section>
 {{else if eq .Section "ai"}}

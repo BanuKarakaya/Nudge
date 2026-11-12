@@ -92,7 +92,8 @@ func (h *WorkspaceHandler) RegisterTracker(s *tracker.Service) {
 	}})
 }
 func (h *WorkspaceHandler) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /dashboard", h.home)
+	mux.HandleFunc("GET /dashboard", h.analyticsPage)
+	mux.HandleFunc("GET /dashboard/setup", h.home)
 	mux.HandleFunc("GET /dashboard/integrations", h.home)
 	mux.HandleFunc("GET /dashboard/accounts", h.home)
 	mux.HandleFunc("GET /dashboard/operations", h.analyticsPage)
@@ -256,6 +257,7 @@ type workspacePage struct {
 	Range, Scope, Status, Model, Previous, Next         string
 	PageNumber                                          int
 	MaxDailyTokens                                      int64
+	SetupNeeded                                         bool
 	ErrorRate                                           float64
 	ActiveIntegrations, VerifiedAccounts                int
 }
@@ -286,7 +288,7 @@ func (h *WorkspaceHandler) home(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	section := "overview"
+	section := "setup"
 	if r.URL.Path == "/dashboard/integrations" {
 		section = "integrations"
 		if !m.Manager {
@@ -299,9 +301,9 @@ func (h *WorkspaceHandler) home(w http.ResponseWriter, r *http.Request) {
 	}
 	data := workspacePage{Member: m, CSRF: csrf, Section: section}
 	switch section {
-	case "overview":
-		data.Title = "Genel bakış"
-		data.Description = "Çalışma alanın, AI ayarların ve hesapların tek yerde."
+	case "setup":
+		data.Title = "Kurulum"
+		data.Description = "AI ayarlarını ve ihtiyaç duyduğun bağlantıları buradan yönet."
 	case "integrations":
 		data.Title = "Entegrasyonlar"
 		data.Description = "Ekibin kullanacağı servisleri ve ortak alanları belirle."

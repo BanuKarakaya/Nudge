@@ -9,7 +9,8 @@ panel bağlantıları da alternatif olarak çalışmaya devam eder.
 
 | Bölüm | Erişim |
 | --- | --- |
-| Genel bakış | Kendi çalışma alanının hazırlık durumu ve kendi bağlantı sayısı |
+| Genel bakış | Kendi istek/token toplamları, yanıt süresi, sorun oranı, günlük kullanım, model dağılımı ve son 5 işlem; yönetici ayrıca çalışma alanı toplamlarını seçebilir |
+| Kurulum | AI hazırlık durumu ve isteğe bağlı bağlantılar; yönetim adımları yalnızca yöneticiye görünür |
 | İşlemlerim | Kendi istekleri ve içerik içermeyen araç adımları; tarih/durum/model filtreleri, 25 kayıtlık sayfalar |
 | Kullanım | Kendi token ve model kullanımı; yönetici ayrıca yalnızca kendi çalışma alanının toplu sayaçlarını görebilir |
 | AI ayarları | Yalnızca yönetici; sağlayıcı, şifreli anahtar, model seçimi |
@@ -32,8 +33,9 @@ analiz JavaScript’i ve HTML’i artık erişilebilir dosya yolları değildir.
 AI anahtarı saklama, sağlayıcı doğrulama, model yönlendirme, gizlilik sınırı ve
 geçiş adımları için [çalışma alanı paneli](workspace-panel.md) belgesine bakın.
 
-İşlemler `/dashboard/operations`, kullanım `/dashboard/usage` adresindedir.
-Her iki sayfa da mevcut müşteri oturumunu kullanır; query parametreleri veya
+Genel bakış `/dashboard`, kurulum `/dashboard/setup`, işlemler `/dashboard/operations`, kullanım `/dashboard/usage` adresindedir.
+Kurulum adımları ana ekranda tekrarlanmaz. AI ayarı eksikse Genel bakış üzerinde küçük bir hatırlatma gösterilir; isteğe bağlı servislerin bağlı olmaması eksiklik sayılmaz.
+Analiz sayfaları mevcut müşteri oturumunu kullanır; query parametreleri veya
 operatör tokenı kullanıcı/çalışma alanı seçemez. Repository kimliği ve rolü
 veritabanından tekrar çözer. Kişisel kayıtlar team + Slack user ile eşleştirilir;
 varsa dahili user ID de aynı olmalıdır. Dahili ID’si olmayan eski kayıtlar bu

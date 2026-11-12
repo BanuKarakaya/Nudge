@@ -26,6 +26,11 @@ func (h *WorkspaceHandler) analyticsPage(w http.ResponseWriter, r *http.Request)
 	section := "usage"
 	title := "Kullanım"
 	description := "AI kullanımını, modellerini ve yanıt sürelerini takip et."
+	if r.URL.Path == "/dashboard" {
+		section = "overview"
+		title = "Genel bakış"
+		description = "Kullanımın, token tüketimin ve son işlemlerin bir arada."
+	}
 	if r.URL.Path == "/dashboard/operations" {
 		section = "operations"
 		title = "İşlemlerim"
@@ -53,8 +58,8 @@ func (h *WorkspaceHandler) analyticsPage(w http.ResponseWriter, r *http.Request)
 		h.page(w, 400, data)
 		return
 	}
-	if data.Scope == "workspace" && (!m.Manager || section != "usage") {
-		data.Error = "Çalışma alanı toplamları yalnızca yöneticinin Kullanım ekranında gösterilir."
+	if data.Scope == "workspace" && (!m.Manager || section == "operations") {
+		data.Error = "Çalışma alanı toplamları yalnızca yöneticinin Genel bakış ve Kullanım ekranlarında gösterilir."
 		h.page(w, 403, data)
 		return
 	}
@@ -71,7 +76,7 @@ func (h *WorkspaceHandler) analyticsPage(w http.ResponseWriter, r *http.Request)
 		h.page(w, 400, data)
 		return
 	}
-	if section == "usage" {
+	if section != "operations" {
 		offset = 0
 		data.Status = ""
 	}
@@ -87,7 +92,20 @@ func (h *WorkspaceHandler) analyticsPage(w http.ResponseWriter, r *http.Request)
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	data.Stats, err = h.analytics.WorkspaceDashboard(ctx, m.UserID, data.Scope == "workspace", repository.DashboardFilters{From: from, To: to, Model: data.Model, Status: data.Status, Limit: 25, Offset: offset})
+	limit := 25
+	if section == "overview" {
+		limit = 5
+		if h.ai != nil {
+			data.AI, err = h.ai.AISettings(ctx, m.UserID)
+			if err != nil {
+				data.Error = "AI ayarları şu an okunamıyor. Yenileyerek tekrar dene."
+				h.page(w, 503, data)
+				return
+			}
+			data.SetupNeeded = !data.AI.Ready()
+		}
+	}
+	data.Stats, err = h.analytics.WorkspaceDashboard(ctx, m.UserID, data.Scope == "workspace", repository.DashboardFilters{From: from, To: to, Model: data.Model, Status: data.Status, Limit: limit, Offset: offset})
 	if err != nil {
 		data.Error = "Kayıtlar şu an alınamıyor. Yenileyerek tekrar dene."
 		h.page(w, 503, data)

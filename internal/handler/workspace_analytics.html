@@ -1,18 +1,19 @@
 {{define "workspace-analytics"}}
-<form class="panel activity-filters" method="get" action="/dashboard/{{if eq .Section "usage"}}usage{{else}}operations{{end}}">
+{{if and (eq .Section "overview") .SetupNeeded (not .Member.OwnerMissing)}}<div class="notice setup-reminder" role="status">{{if .Member.Manager}}Nudgy’yi kullanmaya başlamak için AI anahtarını ve modelini seç. <a href="/dashboard/setup">Kurulumu tamamla →</a>{{else}}Çalışma alanının AI ayarları henüz hazır değil. Yöneticin API anahtarını ve modelini seçtiğinde kullanmaya başlayabilirsin.{{end}}</div>{{end}}
+<form class="panel activity-filters" method="get" action="/dashboard{{if eq .Section "usage"}}/usage{{else if eq .Section "operations"}}/operations{{end}}">
 <label>Dönem<select name="range"><option value="24h" {{if eq .Range "24h"}}selected{{end}}>Son 24 saat</option><option value="7d" {{if eq .Range "7d"}}selected{{end}}>Son 7 gün</option><option value="30d" {{if eq .Range "30d"}}selected{{end}}>Son 30 gün</option><option value="90d" {{if eq .Range "90d"}}selected{{end}}>Son 90 gün</option><option value="all" {{if eq .Range "all"}}selected{{end}}>Tüm zamanlar</option></select></label>
-{{if and .Member.Manager (eq .Section "usage")}}<label>Kapsam<select name="scope"><option value="personal" {{if eq .Scope "personal"}}selected{{end}}>Kendi kullanımım</option><option value="workspace" {{if eq .Scope "workspace"}}selected{{end}}>Çalışma alanı toplamı</option></select></label>{{end}}
+{{if and .Member.Manager (ne .Section "operations")}}<label>Kapsam<select name="scope"><option value="personal" {{if eq .Scope "personal"}}selected{{end}}>Kendi kullanımım</option><option value="workspace" {{if eq .Scope "workspace"}}selected{{end}}>Çalışma alanı toplamı</option></select></label>{{end}}
 {{if eq .Section "operations"}}<label>Durum<select name="status"><option value="">Tüm durumlar</option><option value="success" {{if eq .Status "success"}}selected{{end}}>Başarılı</option><option value="issues" {{if eq .Status "issues"}}selected{{end}}>Sorun yaşananlar</option><option value="processing" {{if eq .Status "processing"}}selected{{end}}>İşleniyor</option></select></label>{{end}}
 <label>Model<input type="search" name="model" maxlength="200" value="{{.Model}}" placeholder="Model adına göre ara"></label><button type="submit" class="primary">Uygula / Yenile</button>
 </form>
-<div class="activity-scope">{{if eq .Scope "workspace"}}<strong>{{.Member.Name}} · Çalışma alanı toplamı</strong><span>Yalnızca toplu kullanım; çalışanların işlem ve konuşma ayrıntıları gösterilmez.</span>{{else}}<strong>Kendi {{if eq .Section "usage"}}kullanımın{{else}}işlemlerin{{end}}</strong><span>Bu çalışma alanında kendi Slack hesabınla yaptığın istekler.</span>{{end}}</div>
+<div class="activity-scope">{{if eq .Scope "workspace"}}<strong>{{.Member.Name}} · Çalışma alanı toplamı</strong><span>Yalnızca toplu kullanım; çalışanların işlem ve konuşma ayrıntıları gösterilmez.</span>{{else}}<strong>Kendi {{if ne .Section "operations"}}kullanımın{{else}}işlemlerin{{end}}</strong><span>Bu çalışma alanında kendi Slack hesabınla yaptığın istekler.</span>{{end}}</div>
 <div class="activity-metrics">
 <article class="panel summary-card"><span class="label">Toplam istek</span><h2>{{count .Stats.TotalMessages}}</h2><p>{{count .Stats.SuccessfulMessages}} başarıyla tamamlandı</p></article>
 <article class="panel summary-card"><span class="label">Toplam token</span><h2>{{count .Stats.TotalTokens}}</h2><p>Girdi {{count .Stats.PromptTokens}} · Çıktı {{count .Stats.CompletionTokens}}</p></article>
 <article class="panel summary-card"><span class="label">Ortalama yanıt</span><h2>{{if .Stats.TotalMessages}}{{millis .Stats.AverageLatencyMS}}{{else}}—{{end}}</h2><p>Uçtan uca işlem süresi</p></article>
 <article class="panel summary-card"><span class="label">Sorun oranı</span><h2>{{if .Stats.TotalMessages}}%{{printf "%.1f" .ErrorRate}}{{else}}—{{end}}</h2><p>{{count .Stats.ErrorCount}} başarısız veya kısmen tamamlanan</p></article>
 </div>
-{{if eq .Section "usage"}}
+{{if ne .Section "operations"}}
 <div class="activity-charts">
 <section class="panel settings-panel"><div class="panel-head"><div><h2>Günlük token kullanımı</h2><p>Günler Türkiye saatine göre gösterilir.</p></div></div>
 <div class="daily-usage">{{range .Stats.Daily}}<div class="daily-row"><span>{{.Date}}</span><meter min="0" max="{{$.MaxDailyTokens}}" value="{{.Tokens}}" aria-label="{{.Date}} token kullanımı">{{count .Tokens}}</meter><strong>{{count .Tokens}}</strong><small>{{count .Messages}} istek</small></div>{{else}}<p class="activity-empty">Bu dönemde kullanım kaydı yok. Slack’te Nudgy ile çalışmaya başladığında burada görünecek.</p>{{end}}</div></section>
@@ -20,12 +21,13 @@
 <div class="model-usage">{{range .Stats.Models}}<article><strong>{{if .Model}}{{.Model}}{{else}}Model bilgisi yok{{end}}</strong><span>{{if .Provider}}{{.Provider}}{{else}}Sağlayıcı bildirilmedi{{end}}</span><div><b>{{count .Tokens}} token</b><span>{{count .Messages}} istek · {{millis .AverageLatency}}</span></div></article>{{else}}<p class="activity-empty">Henüz model kullanımı bulunmuyor.</p>{{end}}</div></section>
 </div>
 <p class="footnote">Tokenlar sağlayıcının Nudgy’ye bildirdiği kullanımdır; bu ekran fatura veya bakiye göstermez. Token bilgisi bildirilmeyen istekler toplam isteğe dahil olabilir. Bir istekte birden fazla model kullanılmışsa birlikte listelenir.</p>
-{{else}}
-<section class="panel activity-history"><div class="panel-head"><div><h2>İşlem geçmişi</h2><p>Her kayıt bir Nudgy isteği; ayrıntılarda o isteğin gerçekleşen araç adımları yer alır.</p></div></div>
+{{end}}
+{{if or (eq .Section "operations") (and (eq .Section "overview") (eq .Scope "personal"))}}
+<section class="panel activity-history"><div class="panel-head"><div><h2>{{if eq .Section "overview"}}Son işlemlerim{{else}}İşlem geçmişi{{end}}</h2><p>Her kayıt bir Nudgy isteği; ayrıntılarda o isteğin gerçekleşen araç adımları yer alır.</p></div></div>
 {{range .Stats.Recent}}<details class="activity-record"><summary><div><strong>{{activityLabel .Action}}</strong><time>{{activityTime .CreatedAt}}</time></div><span class="activity-badge {{.Status}}">{{activityStatus .Status}}</span><span class="activity-model">{{if .Model}}{{.Model}}{{else}}Model bildirilmedi{{end}}</span><span>{{millis .LatencyMS}}</span><span>{{count .TotalTokens}} token</span></summary>
 <div class="activity-detail"><p>Girdi: {{count .PromptTokens}} · Çıktı: {{count .CompletionTokens}} · Sağlayıcı: {{if .Provider}}{{.Provider}}{{else}}Bildirilmedi{{end}}</p>
 {{if .Operations}}<ol>{{range .Operations}}<li><strong>{{activityLabel .Tool}}</strong><span class="activity-badge {{.Status}}">{{activityStatus .Status}}</span><span>{{millis .DurationMS}}{{if .Model}} · {{.Model}}{{end}}</span></li>{{end}}</ol>{{else}}<p>Bu istek için araç adımı kaydı yok. Yalnızca yanıt verilmiş veya eski kayıtta adımlar tutulmamış olabilir.</p>{{end}}</div></details>{{else}}<p class="activity-empty">Bu filtrelerle işlem bulunamadı. Dönemi genişletebilir veya Slack’te Nudgy ile yeni bir işlem yapabilirsin.</p>{{end}}
-<div class="activity-pagination">{{if .Previous}}<a class="button" href="{{.Previous}}">← Önceki</a>{{end}}<span>Sayfa {{.PageNumber}} · {{count .Stats.TotalMessages}} kayıt</span>{{if .Next}}<a class="button" href="{{.Next}}">Sonraki →</a>{{end}}</div></section>
+{{if eq .Section "overview"}}<div class="activity-pagination"><a class="button" href="/dashboard/operations?range={{.Range}}&amp;model={{.Model}}">Tüm işlemlerimi gör →</a><a class="button" href="/dashboard/usage?range={{.Range}}&amp;model={{.Model}}">Kullanım ayrıntıları →</a></div>{{else}}<div class="activity-pagination">{{if .Previous}}<a class="button" href="{{.Previous}}">← Önceki</a>{{end}}<span>Sayfa {{.PageNumber}} · {{count .Stats.TotalMessages}} kayıt</span>{{if .Next}}<a class="button" href="{{.Next}}">Sonraki →</a>{{end}}</div>{{end}}</section>
 <p class="footnote">Tarihler Türkiye saatindedir. Bu geçmiş işlem türü, sonuç, model, süre ve araç adımlarını gösterir; konuşma metinleri, kod değişiklikleri ve kişisel anahtarlar gösterilmez.</p>
 {{end}}
 {{end}}
