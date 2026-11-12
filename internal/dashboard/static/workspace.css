@@ -168,3 +168,17 @@
 .workspace-page .enable small{display:block;margin-top:7px;color:#71676c;font-size:11px;line-height:1.7}
 .workspace-page .resource-heading{margin:26px 0 8px;font-size:18px;line-height:1.4;color:var(--text)}
 .workspace-page .resource-help{margin:0 0 14px;color:var(--muted);font-size:12px;line-height:1.7}
+
+/* Saved credentials stay visible; replacement forms open only on request. */
+.workspace-page .credential-status{display:flex;align-items:flex-start;gap:14px;padding:20px;margin-bottom:20px;border:1px solid #dce5d7;border-radius:10px;background:#f5f8f2;color:#416039}
+.workspace-page .credential-check{display:grid;place-items:center;flex:none;width:28px;height:28px;border-radius:50%;background:#e3eddb;font-weight:700}
+.workspace-page .credential-status h3{margin:2px 0 10px;font-size:16px;color:#416039}
+.workspace-page .credential-status p{margin:6px 0 0;font-size:12px;line-height:1.7;color:#53644e;overflow-wrap:anywhere}
+.workspace-page .credential-editor>summary{display:inline-flex;align-items:center;gap:10px;padding:10px 13px;border:1px solid #e6dfe2;border-radius:7px;color:#603b48;background:#fff;font-size:12px;font-weight:600;cursor:pointer;list-style:none}
+.workspace-page .credential-editor>summary::-webkit-details-marker{display:none}
+.workspace-page .credential-editor>summary:after{content:'＋'}
+.workspace-page .credential-editor[open]>summary:after{content:'−'}
+.workspace-page .credential-editor>summary:hover{background:#f7f4f5;border-color:#c8b5bd}
+.workspace-page .credential-editor>summary:focus-visible{outline:3px solid #b38293;outline-offset:3px}
+.workspace-page .credential-editor-body{margin-top:20px;padding-top:20px;border-top:1px solid #eeeaec}
+@media(max-width:720px){.workspace-page .credential-status{padding:15px;gap:10px}.workspace-page .credential-status h3{font-size:15px}}
