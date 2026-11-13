@@ -5,8 +5,10 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN --mount=type=tmpfs,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=linux go build -o /nudge-server ./cmd/server
+# Railway's builder does not support tmpfs mounts. Clean in the same layer so
+# the compiler cache is not retained in the image or build-stage snapshot.
+RUN CGO_ENABLED=0 GOOS=linux go build -o /nudge-server ./cmd/server \
+    && go clean -cache
 
 FROM node:22-alpine AS runtime
 

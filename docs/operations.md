@@ -125,7 +125,8 @@ vulnerability/secret scans and scans the built container with
 The runtime uses Node 22 on Alpine and the pinned musl Codex binary. npm,
 Corepack and Yarn are removed after CLI installation; update dependencies by
 rebuilding the image. Node remains available for the CLI launcher. The Go build
-cache uses a temporary memory mount and is not retained in a build layer.
+cache is cleaned in the same build step, so it is not retained in a layer.
+The Dockerfile does not require tmpfs mounts, which Railway's builder rejects.
 
 The nightly eval workflow repeats deterministic injection/approval/merge/routing
 and native-protocol tests three times, with zero paid inference. Its per-case

@@ -64,7 +64,8 @@ PID 1 olarak tini ve SIGTERM sonrası çıkış kodu 0 doğrulandı.
 İlk Trivy 0.76.0 taraması 121 HIGH/CRITICAL paket-zafiyet eşleşmesi raporladı:
 110 Debian, 10 npm ve 1 go-jose bulgusu. go-jose 4.1.6'ya yükseltildi;
 runtime Node 22/Alpine tabanına geçirildi, kurulumdan sonra gerekmeyen npm,
-Corepack ve Yarn kaldırıldı. Go derleme önbelleği geçici bellek mount'unda tutuluyor.
+Corepack ve Yarn kaldırıldı. Go derleme önbelleği aynı derleme adımında temizleniyor;
+Railway builder'ın desteklemediği `tmpfs` mount gereksinimi kaldırıldı.
 Yeni runtime içinde root olmayan kullanıcıyla gerçek Codex 0.164.0 araç çağrısı,
 model devri ve eksik rollout kurtarma testleri; Slack imza/OIDC ve oturum testleri geçti.
 
