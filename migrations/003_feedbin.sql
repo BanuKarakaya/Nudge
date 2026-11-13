@@ -1,6 +1,6 @@
 -- +goose Up
 
-CREATE TABLE feedbin_connections (
+CREATE TABLE IF NOT EXISTS feedbin_connections (
     user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     email TEXT NOT NULL,
     password TEXT NOT NULL,

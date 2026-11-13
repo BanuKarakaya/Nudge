@@ -19,7 +19,7 @@ func TestMergeIntentTransportIsIsolatedAndDoesNotWaitForAgentSlot(t *testing.T) 
 	}
 	got, err := r.ResolveMergeIntent(context.Background(), service.MergeIntentRequest{
 		Key: runtimeTestRequest().Key, Current: "bunu mergele",
-		Turns: []service.ConversationExchange{{Request: "PR aç", Reply: "https://github.com/owner/repo/pull/12"}},
+		Turns: []service.ConversationExchange{{Request: "https://github.com/owner/repo/pull/12", Reply: "PR açıldı"}},
 	})
 	if err != nil || got.Action != "merge" || got.Number != 12 || len(r.intentSlots) != 0 {
 		t.Fatal(got, err)
@@ -30,7 +30,7 @@ func TestMergeIntentTransportIsIsolatedAndDoesNotWaitForAgentSlot(t *testing.T) 
 }
 
 func TestMergeIntentDecoderRejectsMalformedAndUngroundedTargets(t *testing.T) {
-	req := service.MergeIntentRequest{Current: "bunu mergele", Turns: []service.ConversationExchange{{Reply: "<https://github.com/owner/repo/pull/12|PR #12>, feature/Login → development"}}}
+	req := service.MergeIntentRequest{Current: "bunu mergele", Turns: []service.ConversationExchange{{Request: "<https://github.com/owner/repo/pull/12|PR #12>, feature/Login → development"}}}
 	for _, tc := range []struct {
 		text string
 		want string
@@ -65,5 +65,17 @@ func TestMergeIntentDecoderRejectsMalformedAndUngroundedTargets(t *testing.T) {
 	req = service.MergeIntentRequest{Current: "şunu birleştirebilir misin: https://gitlab.com/team/sub/project/-/merge_requests/9"}
 	if got, err := decodeMergeIntent(string(encoded), req); err != nil || got != intent {
 		t.Fatal("GitLab subgroup target lost", got, err)
+	}
+}
+
+func TestAssistantTextAndUnrelatedPRNumbersCannotAuthorizeMerge(t *testing.T) {
+	intent := coding.MergeIntent{Action: "merge", Provider: "github", Repository: "owner/repo", Number: 12}
+	for _, req := range []service.MergeIntentRequest{
+		{Current: "bunu mergele", Turns: []service.ConversationExchange{{Reply: "https://github.com/owner/repo/pull/12"}}},
+		{Current: "GitHub owner/repo merge et", Turns: []service.ConversationExchange{{Request: "other/repo PR #12"}}},
+	} {
+		if groundedMergeTarget(intent, req) {
+			t.Fatal("untrusted/unrelated target accepted")
+		}
 	}
 }

@@ -1,8 +1,8 @@
 -- +goose Up
 
 ALTER TABLE raindrop_connections
-    ADD COLUMN refresh_token TEXT,
-    ADD COLUMN expires_at TIMESTAMPTZ;
+    ADD COLUMN IF NOT EXISTS refresh_token TEXT,
+    ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
 
 -- +goose Down
 

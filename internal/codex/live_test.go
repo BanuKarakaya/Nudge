@@ -54,7 +54,7 @@ func TestLiveOpenRouterHarness(t *testing.T) {
 	var catalogCompatible bool
 	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer local-test-proxy" {
-			http.Error(w, "unauthorized", 401)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		var input []byte
@@ -62,7 +62,7 @@ func TestLiveOpenRouterHarness(t *testing.T) {
 			var readErr error
 			input, readErr = io.ReadAll(io.LimitReader(r.Body, (32<<10)+1))
 			if readErr != nil || len(input) > 32<<10 {
-				http.Error(w, "input cap", 413)
+				http.Error(w, "input cap", http.StatusRequestEntityTooLarge)
 				return
 			}
 			var body map[string]any
@@ -73,7 +73,7 @@ func TestLiveOpenRouterHarness(t *testing.T) {
 			mu.Lock()
 			if requests >= 8 {
 				mu.Unlock()
-				http.Error(w, "test request budget exhausted", 429)
+				http.Error(w, "test request budget exhausted", http.StatusTooManyRequests)
 				return
 			}
 			requests++
@@ -105,7 +105,7 @@ func TestLiveOpenRouterHarness(t *testing.T) {
 		started := time.Now()
 		resp, err := client.Do(upstream)
 		if err != nil {
-			http.Error(w, "upstream request failed", 502)
+			http.Error(w, "upstream request failed", http.StatusBadGateway)
 			return
 		}
 		defer resp.Body.Close()
@@ -118,7 +118,7 @@ func TestLiveOpenRouterHarness(t *testing.T) {
 		if r.Method == "GET" {
 			body, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 			if err != nil {
-				http.Error(w, "catalog read failed", 502)
+				http.Error(w, "catalog read failed", http.StatusBadGateway)
 				return
 			}
 			var catalog struct {

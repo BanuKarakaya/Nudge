@@ -26,6 +26,8 @@ import (
 )
 
 type SlackEventHandler struct {
+	toolModules       []service.ToolModule
+	actions           actionStore
 	workspace         *WorkspaceHandler
 	signingSecret     string
 	installations     repository.InstallationRepository
@@ -75,12 +77,18 @@ func (h *SlackEventHandler) RegisterRoutes(mux *http.ServeMux) {
 }
 
 type slackEventEnvelope struct {
-	Type      string `json:"type"`
-	Challenge string `json:"challenge"`
-	TeamID    string `json:"team_id"`
-	EventID   string `json:"event_id"`
-	Event     struct {
-		Type     string `json:"type"`
+	ApprovalID string `json:"nudgy_approval_id,omitempty"`
+	Type       string `json:"type"`
+	Challenge  string `json:"challenge"`
+	TeamID     string `json:"team_id"`
+	EventID    string `json:"event_id"`
+	EventTime  int64  `json:"event_time"`
+	Event      struct {
+		Type   string `json:"type"`
+		Tokens struct {
+			Bot   []string `json:"bot"`
+			OAuth []string `json:"oauth"`
+		} `json:"tokens"`
 		User     string `json:"user"`
 		Text     string `json:"text"`
 		Channel  string `json:"channel"`
@@ -104,8 +112,25 @@ func (h *SlackEventHandler) handle(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "invalid Slack signature")
 		return
 	}
+	// Internal action jobs can only be created by the signature-verified interaction handler.
+	envelope.ApprovalID = ""
 	if envelope.Type == "url_verification" {
 		writeJSON(w, http.StatusOK, map[string]string{"challenge": envelope.Challenge})
+		return
+	}
+	if envelope.Event.Type == "app_uninstalled" || (envelope.Event.Type == "tokens_revoked" && len(envelope.Event.Tokens.Bot) > 0) {
+		if envelope.TeamID == "" {
+			writeError(w, 400, "missing workspace")
+			return
+		}
+		lifecycle, ok := h.installations.(interface {
+			Deactivate(context.Context, string, int64) error
+		})
+		if !ok || lifecycle.Deactivate(r.Context(), envelope.TeamID, envelope.EventTime) != nil {
+			writeError(w, 503, "workspace cleanup unavailable")
+			return
+		}
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 	if envelope.Event.Type != "app_mention" {
@@ -314,6 +339,15 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 			if location == nil {
 				location = time.UTC
 			}
+			if h.workspace != nil {
+				if settings, ok := h.workspace.store.(preferencesStore); ok {
+					if zone, _, e := settings.Preferences(ctx, userID); e == nil {
+						if tz, e := time.LoadLocation(zone); e == nil {
+							location = tz
+						}
+					}
+				}
+			}
 			now := time.Now().In(location)
 			threadContext := h.threadContext(ctx, installation.BotToken, event)
 			input := fmt.Sprintf("Current time: %s\nTimezone: %s%s\n\nSlack message:\n%s", now.Format(time.RFC3339), location.String(), threadContext, analyticsRecord.RequestText)
@@ -342,6 +376,14 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 			}
 			for _, integration := range h.trackers {
 				runTools = integration.Tools(runTools, worktracker.Identity{UserID: userID, Team: event.TeamID}, trackerRequestID)
+			}
+			var registryErr error
+			runTools, registryErr = h.moduleTools(runTools, identity)
+			if registryErr != nil {
+				return registryErr
+			}
+			if h.actions != nil {
+				runTools = service.WithActionPolicy(runTools, h.actions, identity, h.notifyAction, h.prepareAction)
 			}
 			if resolver, ok := h.runtime.(service.MergeIntentResolver); ok {
 				runTools = service.WithMergeIntentTools(runTools, resolver, key, identity, history)

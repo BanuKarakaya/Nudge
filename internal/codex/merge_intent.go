@@ -24,10 +24,14 @@ When the current message specifies a source/target branch direction, use branch 
 // ResolveMergeIntent starts a fresh, tool-free thread with no native-agent or
 // repository context. Its own slot pool avoids deadlock when called inside Run.
 func (r *Runtime) ResolveMergeIntent(ctx context.Context, req service.MergeIntentRequest) (coding.MergeIntent, error) {
+	history := make([]service.ConversationExchange, 0, len(req.Turns))
+	for _, turn := range req.Turns {
+		history = append(history, service.ConversationExchange{Request: turn.Request})
+	}
 	data, err := json.Marshal(struct {
 		Current string                         `json:"current_user_message"`
 		History []service.ConversationExchange `json:"delivered_conversation"`
-	}{req.Current, req.Turns})
+	}{req.Current, history})
 	if err != nil || strings.TrimSpace(req.Current) == "" {
 		return coding.MergeIntent{}, coding.ErrMergeIntentUnavailable
 	}
@@ -67,7 +71,7 @@ func decodeMergeIntent(text string, req service.MergeIntentRequest) (coding.Merg
 func groundedMergeTarget(i coding.MergeIntent, req service.MergeIntentRequest) bool {
 	text := req.Current
 	for _, turn := range req.Turns {
-		text += "\n" + turn.Request + "\n" + turn.Reply
+		text += "\n" + turn.Request
 	}
 	if !strings.Contains(strings.ToLower(text), i.Provider) || !(containsMergeIdentifier(text, i.Repository) || strings.Contains(text, "https://"+i.Provider+".com/"+i.Repository+"/")) {
 		return false
@@ -81,7 +85,15 @@ func groundedMergeTarget(i coding.MergeIntent, req service.MergeIntentRequest) b
 		if containsMergeIdentifier(text, url) {
 			return true
 		}
-		return regexp.MustCompile(`(?i)(?:\bPR\s*#?\s*|\bMR\s*[!#]?\s*|[#!])` + strconv.Itoa(i.Number) + `\b`).MatchString(text)
+		// A bare PR number elsewhere in the conversation cannot authorize a
+		// different repository. Require repo and number in the same user message.
+		pattern := regexp.MustCompile(`(?i)(?:\bPR\s*#?\s*|\bMR\s*[!#]?\s*|[#!])` + strconv.Itoa(i.Number) + `\b`)
+		for _, message := range append([]service.ConversationExchange{{Request: req.Current}}, req.Turns...) {
+			if containsMergeIdentifier(message.Request, i.Repository) && pattern.MatchString(message.Request) {
+				return true
+			}
+		}
+		return false
 	}
 	return containsMergeIdentifier(text, i.SourceBranch) && containsMergeIdentifier(text, i.TargetBranch)
 }

@@ -19,6 +19,7 @@ services:
       retries: 12
 
   app:
+    init: true
     profiles: [app]
     build: .
     restart: unless-stopped

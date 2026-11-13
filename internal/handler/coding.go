@@ -46,6 +46,9 @@ func (h *CodingHandler) RegisterRoutes(public, admin *http.ServeMux) {
 	public.HandleFunc("POST /github/setup", h.setup)
 	public.HandleFunc("GET /github/oauth/callback", h.callback)
 	public.HandleFunc("GET /github/review", h.review)
+	if admin == nil {
+		return
+	}
 	// The admin router must already be wrapped by RequireAPIToken.
 	admin.HandleFunc("GET /api/v1/coding/github/connections", func(w http.ResponseWriter, r *http.Request) {
 		privatePageHeaders(w)
@@ -100,6 +103,9 @@ func (h *CodingHandler) install(w http.ResponseWriter, r *http.Request) {
 		renderGitHubConnectionPage(w, http.StatusUnauthorized, githubPageData{Title: "Yeni bir bağlantı alalım.", Description: "Bu bağlantı geçersiz veya süresi dolmuş. Slack’te Nudgy’den GitHub hesabını bağlamak için yeni bir bağlantı iste."})
 		return
 	}
+	if !beginProviderSession(w, r, h.workspace, userID, "github") {
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 	if h.workspace != nil {
@@ -129,6 +135,9 @@ func (h *CodingHandler) install(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *CodingHandler) setup(w http.ResponseWriter, r *http.Request) {
+	if !checkProviderSession(w, r, h.workspace, "github") {
+		return
+	}
 	privatePageHeaders(w)
 	// GitHub can omit state after an existing installation is updated. The
 	// private, HttpOnly browser cookie still binds this one-use setup session;
@@ -181,6 +190,9 @@ func (h *CodingHandler) setup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *CodingHandler) callback(w http.ResponseWriter, r *http.Request) {
+	if !checkProviderSession(w, r, h.workspace, "github") {
+		return
+	}
 	privatePageHeaders(w)
 	state := r.URL.Query().Get("state")
 	if !consumeOAuthCookie(w, r, "nudgy_github_oauth", state, "/github/oauth/callback") {

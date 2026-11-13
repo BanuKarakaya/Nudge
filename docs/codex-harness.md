@@ -129,8 +129,7 @@ Stable partial-answer items are joined in order, deduplicated by native item ID.
 The thinking reaction is managed by the Slack transport, before waiting/generation
 and removed after delivery or on handled failure. On generation failure,
 the native thread pointer is invalidated so a later run bootstraps only delivered
-history. Delivery retries use the saved response checkpoint. Old native files remain for recovery; there is no automated retention
-policy. If `thread/resume` rejects a missing rollout (`-32600`, known
+history. Delivery retries use the saved response checkpoint. Native conversation directories are user-scoped and cleaned after `NUDGY_RETENTION_DAYS` of inactivity. Personal deletion also removes them. If `thread/resume` rejects a missing rollout (`-32600`, known
 `no rollout found for thread id` response), the adapter starts one replacement
 thread in the same request, with the configured model and current tools. It
 bootstraps only the delivered transcript from Postgres and resets native token
@@ -233,3 +232,11 @@ accept an authorization boolean, alternate user, or replacement request text.
 Native tool versions change to rebuild existing threads with the new schemas
 while preserving delivered history. GitLab OAuth now requests `api`; existing
 connections without that scope can still edit but must reconnect for MR tools.
+
+## Tool-specific routing
+
+Workspace AI settings can map exact tool names to allowed provider model IDs.
+The host interrupts before the first matching tool executes, resumes the same
+conversation with the selected model, and permits that call to be retried there.
+Routing happens at most once per request; it does not bypass the approval wrapper.
+See [operations](operations.md) for configuration and evaluation limitations.

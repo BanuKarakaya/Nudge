@@ -40,7 +40,12 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '22'
+      - name: Install pinned native harness for offline capability tests
+        run: |
+          npm install --prefix "$RUNNER_TEMP/nudgy-native" --ignore-scripts --no-audit --no-fund @openai/codex@0.164.0
+          echo "NUDGY_TEST_CODEX_BINARY=$RUNNER_TEMP/nudgy-native/node_modules/.bin/codex" >> "$GITHUB_ENV"
       - run: go mod verify
+      - run: make lint
       - run: make check
       - run: make build
       - name: Initialize empty database and check server startup
@@ -89,6 +94,10 @@ jobs:
           persist-credentials: false
       - run: python3 scripts/setup-env.py
       - run: docker compose --profile app up -d --build --wait
+      - name: Scan built image for high and critical vulnerabilities
+        run: |
+          docker image save "$(docker compose images -q app)" -o "$RUNNER_TEMP/nudgy-image.tar"
+          docker run --rm -v "$RUNNER_TEMP:/scan:ro" aquasec/trivy:0.76.0 image --input /scan/nudgy-image.tar --scanners vuln --severity HIGH,CRITICAL --exit-code 1
       - name: Check container startup
         run: curl --fail --retry 15 --retry-connrefused --retry-delay 1 http://localhost:8080/health/db
       - name: Stop disposable CI containers

@@ -40,7 +40,10 @@ type DailyReminder struct {
 
 func (r *DailyReminder) WithOnboarding(s interface {
 	EnqueueWorkspace(context.Context, int64) error
-}) *DailyReminder { r.onboarding = s; return r }
+}) *DailyReminder {
+	r.onboarding = s
+	return r
+}
 
 func NewDailyReminder(seedUserID int64, publicURL string, timezone *time.Location,
 	installations repository.InstallationRepository, connections repository.RaindropConnectionRepository,

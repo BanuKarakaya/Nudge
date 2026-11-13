@@ -130,7 +130,7 @@ func TestCodingStorePostgres(t *testing.T) {
 	if err := db.QueryRow(ctx, `SELECT credentials FROM coding_connections WHERE user_id=1`).Scan(&encrypted); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(encrypted, "testsecret") || !strings.HasPrefix(encrypted, "v1:") {
+	if strings.Contains(encrypted, "testsecret") || !strings.HasPrefix(encrypted, "v2:") {
 		t.Fatal("credentials not encrypted")
 	}
 	// Concurrent refresh contenders must see the committed replacement token.

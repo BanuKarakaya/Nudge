@@ -39,7 +39,9 @@ func gitLabFixture(t *testing.T) (*Service, *memoryStore, *memoryEdits, *recordi
 				t.Fatal("missing user-scoped access")
 			}
 			return response("[" + glProject + `,{"id":11,"path_with_namespace":"team/other","default_branch":"main","permissions":{"group_access":{"access_level":40}}},{"id":12,"path_with_namespace":"team/readonly","default_branch":"main","permissions":{"project_access":{"access_level":20}}}]`), nil
-		case "/api/v4/projects/10":
+		case "/api/v4/projects/team/other":
+			return response(`{"id":11,"path_with_namespace":"team/other","default_branch":"main","permissions":{"group_access":{"access_level":40}}}`), nil
+		case "/api/v4/projects/10", "/api/v4/projects/team/subgroup/app":
 			return response(fmt.Sprintf(`{"id":10,"path_with_namespace":"team/subgroup/app","default_branch":"main","permissions":{"group_access":{"access_level":%d}}}`, role)), nil
 		default:
 			t.Fatal("unexpected path", r.URL.Path)

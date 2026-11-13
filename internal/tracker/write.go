@@ -138,7 +138,7 @@ func (s *Service) mutate(ctx context.Context, id Identity, request, resource, op
 		if current.Identity != id || current.Account.ID != c.Account.ID || current.Provider != s.Kind() || !canWrite(s.Kind(), current.Credentials) {
 			return ErrDenied
 		}
-		selected := false
+		selected := s.workspace != nil // resource() already checked live workspace scope.
 		for _, v := range current.Selected {
 			if v == resource {
 				selected = true

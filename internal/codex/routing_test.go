@@ -160,3 +160,16 @@ func TestProviderURLValidation(t *testing.T) {
 		t.Fatal("same model handoff accepted")
 	}
 }
+
+func TestHostToolRouteStopsExecutionBeforeHandoff(t *testing.T) {
+	tool := eventPacket(t, "item/tool/call", map[string]any{"threadId": "thread-1", "turnId": "turn-1", "callId": "route-1", "tool": "rss_inventory", "arguments": json.RawMessage(`{}`)})
+	tool.ID = json.RawMessage(`"tool-route"`)
+	result, err, replies, _ := routingPackets(t, Config{Model: "basic", ToolModels: map[string]string{"rss_inventory": "specialist"}}, tool, packet{ID: json.RawMessage("1"), Result: json.RawMessage(`{}`)}, completedPacket(t, "thread-1", "turn-1", "interrupted"))
+	var route routedHandoff
+	if !errors.As(err, &route) || route.model != "specialist" || result.Text != "" {
+		t.Fatalf("route not applied: %v", err)
+	}
+	if len(replies) != 2 || !strings.Contains(string(replies[0].Result), "has not executed") {
+		t.Fatal("tool ran before handoff", replies)
+	}
+}

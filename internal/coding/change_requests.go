@@ -82,20 +82,8 @@ func (s *Service) changeAccess(ctx context.Context, i Identity, name string) (Ch
 	if err = s.requireChangeScope(ctx, i); err != nil {
 		return nil, Repository{}, Account{}, "", err
 	}
-	repos, err := s.provider.Repositories(ctx, token)
-	if err != nil {
-		return nil, Repository{}, Account{}, "", err
-	}
-	repos, err = s.filterSelected(ctx, i.UserID, repos)
-	if err != nil {
-		return nil, Repository{}, Account{}, "", err
-	}
-	for _, r := range repos {
-		if r.Valid() && r.Kind() == s.Kind() && r.FullName == name {
-			return p, r, account, token, nil
-		}
-	}
-	return nil, Repository{}, Account{}, "", ErrDenied
+	r, err := s.lookupRepository(ctx, i, account, token, name)
+	return p, r, account, token, err
 }
 
 func (s *Service) CreateChangeRequest(ctx context.Context, i Identity, id, title, body string, targets ...string) (ChangeRequest, error) {
@@ -218,6 +206,9 @@ func (s *Service) MergeChangeRequest(ctx context.Context, i Identity, name strin
 	}
 	current, err := p.GetChange(ctx, token, r, number)
 	if err != nil {
+		return ChangeRequest{}, err
+	}
+	if err := checkApprovedRevision(ctx, current.HeadSHA, current.SourceBranch, current.TargetBranch); err != nil {
 		return ChangeRequest{}, err
 	}
 	if current.State == "merged" {

@@ -174,7 +174,7 @@ func (p gitLabProject) repository() (Repository, bool) {
 func (g GitLab) Repositories(ctx context.Context, token string) ([]Repository, error) {
 	result := []Repository{}
 	seen := map[int64]bool{}
-	for page := 1; page <= 20; page++ {
+	for page := 1; page <= 1000; page++ {
 		var projects []gitLabProject
 		if err := g.request(ctx, fmt.Sprintf("https://gitlab.com/api/v4/projects?membership=true&min_access_level=30&archived=false&order_by=id&sort=asc&per_page=100&page=%d", page), token, nil, &projects); err != nil {
 			return nil, err
@@ -204,4 +204,19 @@ func (g GitLab) CheckRepository(ctx context.Context, token string, account Accou
 		return ErrDenied
 	}
 	return nil
+}
+
+func (g GitLab) RepositoryByName(ctx context.Context, token string, account Account, name string) (Repository, error) {
+	if !ValidGitLabRepository(name) || account.ID <= 0 {
+		return Repository{}, ErrDenied
+	}
+	var p gitLabProject
+	if err := g.request(ctx, "https://gitlab.com/api/v4/projects/"+url.PathEscape(name), token, nil, &p); err != nil {
+		return Repository{}, err
+	}
+	r, ok := p.repository()
+	if !ok || r.FullName != name {
+		return Repository{}, ErrDenied
+	}
+	return r, nil
 }

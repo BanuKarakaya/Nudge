@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"nudge/internal/repository"
 	"nudge/internal/service"
 )
 
@@ -321,16 +320,6 @@ func TestQueuedSlackRequestTimesOutWithoutChangingActiveConversation(t *testing.
 	if len(sender.events) != 0 {
 		t.Fatal("unexpected queued request work")
 	}
-}
-
-type completionAnalytics struct {
-	repository.AnalyticsRepository
-	done chan struct{}
-}
-
-func (a completionAnalytics) RecordInteraction(context.Context, repository.InteractionRecord) error {
-	close(a.done)
-	return nil
 }
 
 func TestSignedSlackEventAcknowledgesBeforeAgentCompletes(t *testing.T) {

@@ -67,8 +67,8 @@ func TestRepositoryAccessVerifiesTokenSubjectBeforeListing(t *testing.T) {
 			if !errors.Is(err, tc.want) || len(access.Repositories) != 0 || access.Account.ID != 0 || p.repoCalls != 0 {
 				t.Fatalf("identity failure requested/exposed repositories: access=%+v err=%v calls=%d", access, err, p.repoCalls)
 			}
-			if store.connection.Credentials != before {
-				t.Fatal("committed unverified refreshed credentials")
+			if !tc.refresh && store.connection.Credentials != before {
+				t.Fatal("credentials changed without refresh")
 			}
 		})
 	}
@@ -132,5 +132,19 @@ func TestGitHubRenameKeepsImmutableIdentity(t *testing.T) {
 	a, err := s.Account(context.Background(), i)
 	if err != nil || a.ID != 55 || a.Login != "renamed" {
 		t.Fatalf("rename: %+v %v", a, err)
+	}
+}
+
+func TestRefreshSurvivesSubsequentIdentityRequestFailure(t *testing.T) {
+	s, store, base, i := fixture(t)
+	store.connection.Credentials.Expires = time.Now().Add(-time.Hour)
+	store.connection.Credentials.Refresh = "ghr_old"
+	store.connection.Credentials.RefreshExpires = time.Now().Add(time.Hour)
+	s.provider = &identityProvider{Provider: base, userErr: ErrUnavailable}
+	if _, err := s.Account(context.Background(), i); err == nil {
+		t.Fatal("provider failure hidden")
+	}
+	if store.connection.Credentials.Access != "ghu_new" {
+		t.Fatal("rotated token was rolled back")
 	}
 }

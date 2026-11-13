@@ -124,7 +124,7 @@ func TestSlackSignInStateAndMembership(t *testing.T) {
 					session = c
 				}
 			}
-			if session == nil || !session.Secure || !session.HttpOnly || session.Path != "/dashboard" {
+			if session == nil || !session.Secure || !session.HttpOnly || session.Path != "/" {
 				t.Fatal("missing session")
 			}
 			page := httptest.NewRecorder()

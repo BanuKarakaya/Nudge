@@ -148,7 +148,7 @@ func TestTenantRuntimeScheduledAndSearchCredentials(t *testing.T) {
 }
 func TestTenantMergeResolverUsesWorkspaceAndRejectsMissingKey(t *testing.T) {
 	r, f := tenantRuntimeFixture(t, "merge-intent")
-	req := service.MergeIntentRequest{UserID: 1, Key: runtimeTestRequest().Key, Current: "bunu mergele", Turns: []service.ConversationExchange{{Reply: "https://github.com/owner/repo/pull/12"}}}
+	req := service.MergeIntentRequest{UserID: 1, Key: runtimeTestRequest().Key, Current: "bunu mergele", Turns: []service.ConversationExchange{{Request: "https://github.com/owner/repo/pull/12"}}}
 	// Resolver must not deadlock behind its own parent agent slot.
 	for i := 0; i < cap(r.slots); i++ {
 		r.slots <- struct{}{}

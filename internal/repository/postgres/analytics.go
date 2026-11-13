@@ -23,7 +23,7 @@ type AnalyticsRepository struct {
 }
 
 func NewAnalyticsRepository(ctx context.Context, db *pgxpool.Pool) (*AnalyticsRepository, error) {
-	if _, err := db.Exec(ctx, migrations.AnalyticsSchema); err != nil {
+	if err := migrations.Apply(ctx, db); err != nil {
 		return nil, err
 	}
 	return &AnalyticsRepository{db: db}, nil

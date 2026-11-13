@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -22,18 +23,18 @@ type CodingStore struct {
 var _ coding.Store = (*CodingStore)(nil)
 
 func NewCodingStore(ctx context.Context, db *pgxpool.Pool, cipher secure.Cipher) (*CodingStore, error) {
-	if _, err := db.Exec(ctx, migrations.CodingSchema+"\n"+migrations.MergeIntentSchema); err != nil {
+	if err := migrations.Apply(ctx, db); err != nil {
 		return nil, err
 	}
 	return &CodingStore{db: db, cipher: cipher}, nil
 }
 
-func (s *CodingStore) encode(c coding.Credentials) (string, error) {
+func (s *CodingStore) encode(c coding.Credentials, user int64) (string, error) {
 	raw, err := json.Marshal(c)
 	if err != nil {
 		return "", err
 	}
-	return s.cipher.Encrypt(string(raw))
+	return s.cipher.EncryptFor(string(raw), s.table("coding_connections")+":"+strconv.FormatInt(user, 10))
 }
 
 func (s *CodingStore) ConnectionBindings(ctx context.Context) ([]coding.ConnectionBinding, error) {
@@ -57,12 +58,12 @@ func (s *CodingStore) ConnectionBindings(ctx context.Context) ([]coding.Connecti
 }
 
 func (s *CodingStore) SaveConnection(ctx context.Context, c coding.Connection) error {
-	value, err := s.encode(c.Credentials)
+	value, err := s.encode(c.Credentials, c.UserID)
 	if err != nil {
 		return err
 	}
 	result, err := s.db.Exec(ctx, `INSERT INTO `+s.table("coding_connections")+`(user_id,`+s.accountColumn()+`,login,credentials)
-SELECT u.id,$2,$3,$4 FROM users u JOIN slack_installations i ON i.team_id=u.team_id WHERE u.id=$1 AND u.team_id=$5
+SELECT u.id,$2,$3,$4 FROM users u JOIN slack_installations i ON i.team_id=u.team_id AND i.bot_token<>'' WHERE u.id=$1 AND u.team_id=$5
 ON CONFLICT(user_id) DO UPDATE SET `+s.accountColumn()+`=EXCLUDED.`+s.accountColumn()+`,login=EXCLUDED.login,credentials=EXCLUDED.credentials,updated_at=NOW()`, c.UserID, c.GitHubUserID, c.Login, value, c.Team)
 	if err == nil && result.RowsAffected() != 1 {
 		return coding.ErrDenied
@@ -75,7 +76,7 @@ ON CONFLICT(user_id) DO UPDATE SET `+s.accountColumn()+`=EXCLUDED.`+s.accountCol
 // different user row and therefore a separate GitHub connection and OAuth state.
 func (s *CodingStore) SlackTeam(ctx context.Context, userID int64) (string, error) {
 	var team string
-	err := s.db.QueryRow(ctx, `SELECT u.team_id FROM users u JOIN slack_installations i ON i.team_id=u.team_id WHERE u.id=$1`, userID).Scan(&team)
+	err := s.db.QueryRow(ctx, `SELECT u.team_id FROM users u JOIN slack_installations i ON i.team_id=u.team_id AND i.bot_token<>'' WHERE u.id=$1`, userID).Scan(&team)
 	return team, err
 }
 
@@ -87,16 +88,16 @@ func (s *CodingStore) WithConnection(ctx context.Context, userID int64, fn func(
 	defer tx.Rollback(ctx)
 	var c coding.Connection
 	var encrypted string
-	err = tx.QueryRow(ctx, `SELECT c.user_id,u.team_id,c.`+s.accountColumn()+`,c.login,c.credentials FROM `+s.table("coding_connections")+` c JOIN users u ON u.id=c.user_id JOIN slack_installations i ON i.team_id=u.team_id WHERE c.user_id=$1 FOR UPDATE OF c`, userID).Scan(&c.UserID, &c.Team, &c.GitHubUserID, &c.Login, &encrypted)
+	err = tx.QueryRow(ctx, `SELECT c.user_id,u.team_id,c.`+s.accountColumn()+`,c.login,c.credentials FROM `+s.table("coding_connections")+` c JOIN users u ON u.id=c.user_id JOIN slack_installations i ON i.team_id=u.team_id AND i.bot_token<>'' WHERE c.user_id=$1 FOR UPDATE OF c`, userID).Scan(&c.UserID, &c.Team, &c.GitHubUserID, &c.Login, &encrypted)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return coding.ErrConnect
 	}
 	if err != nil {
 		return err
 	}
-	raw, err := s.cipher.Decrypt(encrypted)
+	raw, err := s.cipher.DecryptFor(encrypted, s.table("coding_connections")+":"+strconv.FormatInt(userID, 10))
 	if err != nil {
-		return err
+		return coding.ErrConnect
 	}
 	if err := json.Unmarshal([]byte(raw), &c.Credentials); err != nil {
 		return err
@@ -106,7 +107,7 @@ func (s *CodingStore) WithConnection(ctx context.Context, userID int64, fn func(
 		return err
 	}
 	if before != c.Credentials {
-		value, err := s.encode(c.Credentials)
+		value, err := s.encode(c.Credentials, c.UserID)
 		if err != nil {
 			return err
 		}
@@ -147,7 +148,7 @@ func (s *CodingStore) PutOAuthState(ctx context.Context, hash string, state codi
 		}
 		plain = string(raw)
 	}
-	verifier, err := s.cipher.Encrypt(plain)
+	verifier, err := s.cipher.EncryptFor(plain, s.table("coding_oauth_states")+":"+hash)
 	if err != nil {
 		return err
 	}
@@ -172,7 +173,7 @@ func (s *CodingStore) ConsumeOAuthState(ctx context.Context, hash string) (codin
 	if err != nil {
 		return state, coding.ErrConnect
 	}
-	state.Verifier, err = s.cipher.Decrypt(encrypted)
+	state.Verifier, err = s.cipher.DecryptFor(encrypted, s.table("coding_oauth_states")+":"+hash)
 	if err == nil && s.provider == "gitlab" {
 		var decoded coding.OAuthState
 		err = json.Unmarshal([]byte(state.Verifier), &decoded)
@@ -224,7 +225,7 @@ func (s *CodingStore) CancelDraft(ctx context.Context, i coding.Identity, id str
 }
 
 func NewGitLabStore(ctx context.Context, db *pgxpool.Pool, cipher secure.Cipher) (*CodingStore, error) {
-	if _, err := db.Exec(ctx, migrations.GitLabSchema+"\n"+migrations.MergeIntentSchema); err != nil {
+	if err := migrations.Apply(ctx, db); err != nil {
 		return nil, err
 	}
 	return &CodingStore{db: db, cipher: cipher, provider: "gitlab"}, nil

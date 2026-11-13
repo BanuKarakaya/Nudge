@@ -3,7 +3,6 @@ package postgres
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -17,13 +16,7 @@ import (
 func testWorkspaceAnalytics(t *testing.T, db *pgxpool.Pool, repo *AnalyticsRepository) {
 	t.Helper()
 	ctx := context.Background()
-	initial, err := os.ReadFile("../../../migrations/001_init.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = db.Exec(ctx, strings.Split(string(initial), "-- +goose Down")[0]); err != nil {
-		t.Fatal(err)
-	}
+	var err error
 	if _, err = NewWorkspaceStore(ctx, db); err != nil {
 		t.Fatal(err)
 	}

@@ -50,7 +50,7 @@ func testWorkspaceAIStore(t *testing.T, db *pgxpool.Pool, members *WorkspaceStor
 	if e = db.QueryRow(ctx, `SELECT credentials FROM workspace_ai_settings WHERE updated_by=$1`, owner).Scan(&encrypted); e != nil {
 		t.Fatal(e)
 	}
-	if !strings.HasPrefix(encrypted, "v1:") || strings.Contains(encrypted, c.APIKey) || strings.Contains(encrypted, c.SearchAPIKey) {
+	if !strings.HasPrefix(encrypted, "v2:") || strings.Contains(encrypted, c.APIKey) || strings.Contains(encrypted, c.SearchAPIKey) {
 		t.Fatal("plaintext secrets stored")
 	}
 	// A forged ciphertext transplant cannot make the other team spend this key.

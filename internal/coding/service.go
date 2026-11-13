@@ -226,19 +226,8 @@ func (s *Service) verifiedConnection(ctx context.Context, identity Identity) (Ac
 			}
 			c.Credentials = next
 		}
-		if !s.validToken(c.Credentials.Access) {
-			return ErrConnect
-		}
-		id, login, err := s.provider.User(ctx, c.Credentials.Access)
-		if err != nil {
-			return err
-		}
-		if id != c.GitHubUserID || login == "" {
-			log.Printf("coding_event=identity_mismatch provider=%s user_id=%d expected_account_id=%d actual_account_id=%d", s.Kind(), identity.UserID, c.GitHubUserID, id)
-			return ErrConnect
-		}
-		account = Account{ID: id, Login: login}
 		token = c.Credentials.Access
+		account = Account{ID: c.GitHubUserID, Login: c.Login}
 		return nil
 	})
 	if err != nil {
@@ -247,6 +236,19 @@ func (s *Service) verifiedConnection(ctx context.Context, identity Identity) (Ac
 		}
 		return Account{}, "", ErrUnavailable
 	}
+	// Commit a rotated refresh token before unrelated provider requests.
+	if !s.validToken(token) {
+		return Account{}, "", ErrConnect
+	}
+	id, login, err := s.provider.User(ctx, token)
+	if err != nil {
+		return Account{}, "", err
+	}
+	if id != account.ID || login == "" {
+		log.Printf("coding_event=identity_mismatch provider=%s user_id=%d", s.Kind(), identity.UserID)
+		return Account{}, "", ErrConnect
+	}
+	account.Login = login
 	return account, token, nil
 }
 
@@ -329,4 +331,35 @@ func (s *Service) Task(ctx context.Context, identity Identity, id string, cancel
 		return Task{}, ErrUnavailable
 	}
 	return task, err
+}
+
+// Lookup avoids enumerating every collaborator permission for a named operation.
+// Workspace selection is rechecked independently of the provider's live rights.
+func (s *Service) lookupRepository(ctx context.Context, i Identity, account Account, token, name string) (Repository, error) {
+	var repos []Repository
+	if lookup, ok := s.provider.(interface {
+		RepositoryByName(context.Context, string, Account, string) (Repository, error)
+	}); ok {
+		r, err := lookup.RepositoryByName(ctx, token, account, name)
+		if err != nil {
+			return Repository{}, err
+		}
+		repos = []Repository{r}
+	} else {
+		var err error
+		repos, err = s.provider.Repositories(ctx, token)
+		if err != nil {
+			return Repository{}, err
+		}
+	}
+	repos, err := s.filterSelected(ctx, i.UserID, repos)
+	if err != nil {
+		return Repository{}, err
+	}
+	for _, r := range repos {
+		if r.Valid() && r.Kind() == s.Kind() && strings.EqualFold(r.FullName, name) {
+			return r, nil
+		}
+	}
+	return Repository{}, ErrDenied
 }

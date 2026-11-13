@@ -161,3 +161,23 @@ func ExpiresAt(expiresIn int64) *time.Time {
 	value := time.Now().UTC().Add(time.Duration(expiresIn) * time.Second)
 	return &value
 }
+
+func (c OAuthClient) Refresh(ctx context.Context, token string) (TokenResponse, error) {
+	payload, _ := json.Marshal(map[string]string{"grant_type": "refresh_token", "refresh_token": token, "client_id": c.ClientID, "client_secret": c.ClientSecret})
+	resp, err := c.do(ctx, http.MethodPost, accessTokenURL, strings.NewReader(string(payload)), "application/json", "")
+	if err != nil {
+		return TokenResponse{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return TokenResponse{}, fmt.Errorf("Raindrop refresh returned HTTP %d", resp.StatusCode)
+	}
+	var result TokenResponse
+	if err = json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result); err != nil || result.AccessToken == "" {
+		return TokenResponse{}, fmt.Errorf("invalid Raindrop refresh response")
+	}
+	if result.RefreshToken == "" {
+		result.RefreshToken = token
+	}
+	return result, nil
+}

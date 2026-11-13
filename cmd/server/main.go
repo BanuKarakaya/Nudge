@@ -5,6 +5,7 @@ import (
 	"errors"
 	"github.com/jackc/pgx/v5"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -23,9 +24,11 @@ import (
 	"nudge/internal/service"
 	"nudge/internal/slack"
 	"nudge/internal/workspace"
+	"nudge/migrations"
 )
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 	appCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	port := os.Getenv("PORT")
@@ -41,15 +44,18 @@ func main() {
 		log.Fatal(err)
 	}
 	defer db.Close()
+	migrateCtx, migrateCancel := context.WithTimeout(appCtx, time.Minute)
+	err = migrations.Apply(migrateCtx, db)
+	migrateCancel()
+	if err != nil {
+		log.Fatalf("database migration: %v", err)
+	}
 
 	links, err := secure.NewLinkSigner(os.Getenv("NUDGE_LINK_SIGNING_KEY"))
 	if err != nil {
 		log.Fatalf("account link signing is not configured: %v", err)
 	}
 	mux := http.NewServeMux()
-	privateMux := http.NewServeMux()
-	// Legacy operator handlers remain unmounted. A global token plus a chosen
-	// user ID must not grant access to customer data or actions.
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
@@ -65,8 +71,6 @@ func main() {
 
 	bookmarkRepository := postgres.NewBookmarkRepository(db)
 	bookmarkService := service.NewBookmarkService(bookmarkRepository)
-	bookmarkHandler := handler.NewBookmarkHandler(bookmarkService)
-	bookmarkHandler.RegisterRoutes(privateMux)
 
 	workspaceCtx, workspaceCancel := context.WithTimeout(appCtx, 15*time.Second)
 	workspaceStore, err := postgres.NewWorkspaceStore(workspaceCtx, db)
@@ -74,7 +78,14 @@ func main() {
 	if err != nil {
 		log.Fatalf("initialize workspace portal: %v", err)
 	}
-	installationRepository := postgres.NewInstallationRepository(db)
+	feedbinCipher, err := secure.NewCipherFromBase64(os.Getenv("FEEDBIN_ENCRYPTION_KEY"))
+	if err != nil {
+		log.Fatalf("Feedbin encryption is not configured: %v", err)
+	}
+	installationRepository := postgres.NewInstallationRepository(db, feedbinCipher)
+	if err := installationRepository.MigrateTokens(appCtx); err != nil {
+		log.Fatal("Slack token migration failed")
+	}
 	workspacePortal := handler.NewWorkspaceHandler(workspaceStore, links, os.Getenv("NUDGE_PUBLIC_URL"), installationRepository, slack.APIClient{HTTPClient: &http.Client{Timeout: 15 * time.Second}})
 	if err := workspacePortal.Validate(); err != nil {
 		log.Fatal(err)
@@ -89,18 +100,6 @@ func main() {
 	slackHandler.RegisterRoutes(mux)
 
 	slackAPIClient := slack.APIClient{HTTPClient: &http.Client{Timeout: 15 * time.Second}}
-	slackMessageService := service.NewSlackMessagingService(installationRepository, slackAPIClient)
-	slackMessageHandler := handler.NewSlackMessageHandler(slackMessageService)
-	slackMessageHandler.RegisterRoutes(privateMux)
-
-	slackBookmarkService := service.NewSlackBookmarkMessagingService(
-		installationRepository,
-		bookmarkService,
-		slackAPIClient,
-	)
-	slackBookmarkHandler := handler.NewSlackBookmarkHandler(slackBookmarkService)
-	slackBookmarkHandler.RegisterRoutes(privateMux)
-
 	slackInteractionHandler := handler.NewSlackInteractionHandler(
 		os.Getenv("SLACK_SIGNING_SECRET"),
 		bookmarkService,
@@ -108,7 +107,10 @@ func main() {
 	)
 	slackInteractionHandler.RegisterRoutes(mux)
 
-	raindropRepository := postgres.NewRaindropConnectionRepository(db)
+	raindropRepository := postgres.NewRaindropConnectionRepository(db, feedbinCipher)
+	if err := raindropRepository.MigrateTokens(appCtx); err != nil {
+		log.Fatal("Raindrop token migration failed")
+	}
 	raindropOAuth := raindrop.OAuthClient{
 		ClientID:     os.Getenv("RAINDROP_CLIENT_ID"),
 		ClientSecret: os.Getenv("RAINDROP_CLIENT_SECRET"),
@@ -117,6 +119,8 @@ func main() {
 	}
 	raindropService := service.NewRaindropService(raindropRepository, raindropOAuth)
 	raindropHandler := handler.NewRaindropHandler(raindropOAuth, raindropService, links)
+	raindropHandler.WithWorkspacePortal(workspacePortal)
+	raindropHandler.WithStateStore(installationRepository)
 	raindropHandler.RegisterRoutes(mux)
 
 	raindropSyncService := service.NewRaindropSyncService(
@@ -124,17 +128,12 @@ func main() {
 		bookmarkRepository,
 		raindropOAuth,
 	)
-	raindropSyncHandler := handler.NewRaindropSyncHandler(raindropSyncService)
-	raindropSyncHandler.RegisterRoutes(privateMux)
-	feedbinCipher, err := secure.NewCipherFromBase64(os.Getenv("FEEDBIN_ENCRYPTION_KEY"))
-	if err != nil {
-		log.Fatalf("Feedbin encryption is not configured: %v", err)
-	}
 	feedbinRepository := postgres.NewFeedbinConnectionRepository(db, feedbinCipher)
 	feedbinService := service.NewFeedbinService(feedbinRepository, feedbin.Client{
 		HTTPClient: &http.Client{Timeout: 15 * time.Second},
 	})
 	feedbinHandler := handler.NewFeedbinHandler(feedbinService, links)
+	feedbinHandler.WithWorkspacePortal(workspacePortal)
 	feedbinHandler.RegisterRoutes(mux)
 	feedbinDigestService := service.NewFeedbinDigestService(feedbinRepository, feedbin.Client{
 		HTTPClient: &http.Client{Timeout: 15 * time.Second},
@@ -160,25 +159,15 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	workspacePortal.WithNativeData(runtime)
 	log.Printf("workspace-owned AI credentials enabled; global model and search credentials are not used")
 	var webAssistant service.WebAssistant
-	_, feedbinTimezone := reminderConfig()
-	digestGenerator := service.NewAgentDigest(runtime, feedbinDigestService, feedbinTimezone)
-	feedbinDigestHandler := handler.NewFeedbinDigestHandler(
-		installationRepository,
-		digestGenerator,
-		slackAPIClient,
-		feedbinTimezone,
-		os.Getenv("NUDGE_TEST_TOKEN"),
-	)
-	feedbinDigestHandler.RegisterRoutes(privateMux)
 	onboardingService := service.NewOnboardingService(
 		installationRepository,
 		slackAPIClient,
 		os.Getenv("NUDGE_PUBLIC_URL"),
 		links,
 	)
-	onboardingHandler := handler.NewOnboardingHandler(onboardingService, os.Getenv("NUDGE_TEST_TOKEN"))
 	onboardingService.Register(service.ConnectionInvitation{Purpose: "feedbin", Name: "Feedbin", Description: "RSS aboneliklerini, okunmamış yazılarını ve özetlerini Nudgy ile takip etmek için bağlayabilirsin.", Connected: func(ctx context.Context, id int64) (bool, error) {
 		_, err := feedbinRepository.GetByUserID(ctx, id)
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -197,7 +186,6 @@ func main() {
 	}
 	onboardingService.WithWorkspacePortal()
 	slackHandler.WithOnboarding(onboardingService)
-	onboardingHandler.RegisterRoutes(privateMux)
 	_, appTimezone := reminderConfig()
 	conversationCtx, conversationCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	conversationRepository, err := postgres.NewConversationRepository(conversationCtx, db)
@@ -228,10 +216,10 @@ func main() {
 		appTimezone,
 		analyticsRepository,
 	)
-	if err := configureCoding(db, mux, privateMux, slackEventHandler, slackInteractionHandler, installationRepository, slackAPIClient, links, onboardingService, branchRules, workspacePortal); err != nil {
+	if err := configureCoding(db, mux, nil, slackEventHandler, slackInteractionHandler, installationRepository, slackAPIClient, links, onboardingService, branchRules, workspacePortal); err != nil {
 		log.Fatalf("repository task configuration: %v", err)
 	}
-	if err := configureTrackers(db, mux, privateMux, slackEventHandler, installationRepository, slackAPIClient, links, onboardingService, workspacePortal); err != nil {
+	if err := configureTrackers(db, mux, nil, slackEventHandler, installationRepository, slackAPIClient, links, onboardingService, workspacePortal); err != nil {
 		log.Fatalf("Jira/Trello configuration: %v", err)
 	}
 	jobCtx, jobCancel := context.WithTimeout(appCtx, 15*time.Second)
@@ -242,6 +230,9 @@ func main() {
 	}
 	slackEventHandler.WithWorkspacePortal(workspacePortal)
 	slackEventHandler.WithJobQueue(jobRepository)
+	actionStore := postgres.NewActionStore(db, aiCipher)
+	slackEventHandler.WithActions(actionStore, slackInteractionHandler)
+	workspacePortal.WithActions(actionStore, slackEventHandler)
 	slackEventHandler.RegisterRoutes(mux)
 
 	notificationCtx, notificationCancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -251,48 +242,39 @@ func main() {
 		log.Fatalf("initialize notification deliveries: %v", err)
 	}
 	onboardingService.WithQueue(notificationRepository)
+	mux.Handle("GET /metrics", handler.RequireAPIToken(os.Getenv("NUDGY_METRICS_TOKEN"), postgres.Metrics(db)))
+	retentionDays := 90
+	if v, e := strconv.Atoi(os.Getenv("NUDGY_RETENTION_DAYS")); e == nil && v > 0 && v <= 3650 {
+		retentionDays = v
+	}
+	go postgres.RunMaintenance(appCtx, db, retentionDays)
+	go runtime.RunStateMaintenance(appCtx, retentionDays)
 	worker := scheduler.DeliveryWorker{Notifications: notificationRepository, Installations: installationRepository, Client: slackAPIClient, Onboarding: onboardingService}
 	jobWorker := scheduler.SlackJobWorker{Jobs: jobRepository, Process: slackEventHandler.ProcessJob}
 	jobsDone := make(chan struct{})
 	go func() { defer close(jobsDone); jobWorker.Run(appCtx) }()
-	go worker.Run(appCtx)
+	deliveryDone := make(chan struct{})
+	go func() { defer close(deliveryDone); worker.Run(appCtx) }()
 	go scheduler.RunOnboarding(appCtx, installationRepository, onboardingService)
 	log.Print("connection invitations enabled after Slack installation and on startup; per-user delivery deduplication active")
-	if reminderUserID, reminderTimezone := reminderConfig(); reminderUserID > 0 {
-		dailyReminder := scheduler.NewDailyReminder(
-			reminderUserID,
-			os.Getenv("NUDGE_PUBLIC_URL"),
-			reminderTimezone,
-			installationRepository,
-			raindropRepository,
-			feedbinRepository,
-			raindropSyncService,
-			bookmarkService,
-			links,
-			notificationRepository,
-			slackAPIClient,
-		)
-		dailyReminder.WithOnboarding(onboardingService)
-		go dailyReminder.Run(appCtx)
-		feedbinReminder := scheduler.NewFeedbinReminder(
-			reminderUserID,
-			reminderTimezone,
-			installationRepository,
-			feedbinRepository,
-			service.NewFeedbinTitles(feedbinDigestService),
-			notificationRepository,
-			slackAPIClient,
-		)
-		go feedbinReminder.Run(appCtx)
-		log.Printf("onboarding reconciliation at 13:45, Raindrop reminder at 22:00 (%s)", reminderTimezone)
-		log.Printf("Feedbin title/link reminder enabled at 23:00 (%s), no AI generation", reminderTimezone)
-	} else {
-		log.Printf("daily reminder disabled: set NUDGE_REMINDER_USER_ID")
+	legacyUser, legacyZone := reminderConfig()
+	if err := installationRepository.AdoptLegacyReminder(appCtx, legacyUser, legacyZone.String()); err != nil {
+		log.Fatal("legacy reminder migration failed")
 	}
+	go scheduler.RunWorkspaceSchedules(appCtx, installationRepository, func(ctx context.Context, w scheduler.WorkspaceSchedule, kind string, due time.Time) error {
+		zone, err := time.LoadLocation(w.Timezone)
+		if err != nil {
+			return err
+		}
+		if kind == "feedbin" {
+			return scheduler.NewFeedbinReminder(w.User, zone, installationRepository, feedbinRepository, service.NewFeedbinTitles(feedbinDigestService), notificationRepository, slackAPIClient).RunOnce(ctx, due)
+		}
+		return scheduler.NewDailyReminder(w.User, os.Getenv("NUDGE_PUBLIC_URL"), zone, installationRepository, raindropRepository, feedbinRepository, raindropSyncService, bookmarkService, links, notificationRepository, slackAPIClient).RunOnce(ctx, due)
+	})
 
 	addr := ":" + port
 	log.Printf("Nudgy server listening on %s", addr)
-	server := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	server := &http.Server{Addr: addr, Handler: handler.HTTPMiddleware(mux), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 120 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20}
 	serverDone := make(chan error, 1)
 	go func() { serverDone <- server.ListenAndServe() }()
 	select {
@@ -307,6 +289,11 @@ func main() {
 	defer shutdownCancel()
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Printf("HTTP shutdown: %v", err)
+	}
+	select {
+	case <-deliveryDone:
+	case <-shutdownCtx.Done():
+		log.Print("Notification delivery still stopping; lease recovery will resume it")
 	}
 	select {
 	case <-jobsDone:

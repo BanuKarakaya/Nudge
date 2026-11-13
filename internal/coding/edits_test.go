@@ -343,3 +343,30 @@ func TestFinishAndPublishRejectsForeignScopeAndRevokedAccess(t *testing.T) {
 		})
 	}
 }
+
+type failedCloneGit struct{ recordingGit }
+
+func (*failedCloneGit) Clone(context.Context, string, Repository) (Snapshot, error) {
+	return Snapshot{}, errors.New("clone failed")
+}
+func TestCloneFailureBecomesTerminalAndAutomationFilesAreBlocked(t *testing.T) {
+	s, _, _, i := fixture(t)
+	edits := &memoryEdits{}
+	_ = s.EnableEditing(edits, &failedCloneGit{})
+	if _, err := s.BeginEdit(context.Background(), i, "owner/repo"); err == nil {
+		t.Fatal("clone error hidden")
+	}
+	for _, e := range edits.items {
+		if e.Task.Status != "failed" {
+			t.Fatal("clone remained active", e.Task.Status)
+		}
+	}
+	for _, name := range []string{".gitlab-ci.yml", ".github/actions/build/action.yml", "Makefile", "scripts/build.py", "ci/test.js", "tools/test.sh"} {
+		if !protectedAutomationPath(name) {
+			t.Fatal("automation writable", name)
+		}
+	}
+	if protectedAutomationPath("src/main.go") {
+		t.Fatal("ordinary source blocked")
+	}
+}

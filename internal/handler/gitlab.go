@@ -50,6 +50,9 @@ func (h *CodingHandler) registerGitLab(public, admin *http.ServeMux) {
 	public.HandleFunc("GET /gitlab/oauth/callback", h.gitLabCallback)
 	public.HandleFunc("POST /gitlab/select", h.gitLabSelect)
 	public.HandleFunc("GET /gitlab/review", h.review)
+	if admin == nil {
+		return
+	}
 	admin.HandleFunc("GET /api/v1/coding/gitlab/connection", func(w http.ResponseWriter, r *http.Request) {
 		privatePageHeaders(w)
 		id, err := userIDFromHeader(r)
@@ -91,6 +94,9 @@ func (h *CodingHandler) gitLabInstall(w http.ResponseWriter, r *http.Request) {
 		h.gitLabError(w, 401)
 		return
 	}
+	if !beginProviderSession(w, r, h.workspace, id, "gitlab") {
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 	state, redirect, err := h.service.BeginGitLab(ctx, id)
@@ -102,6 +108,9 @@ func (h *CodingHandler) gitLabInstall(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, redirect, http.StatusFound)
 }
 func (h *CodingHandler) gitLabCallback(w http.ResponseWriter, r *http.Request) {
+	if !checkProviderSession(w, r, h.workspace, "gitlab") {
+		return
+	}
 	privatePageHeaders(w)
 	state := r.URL.Query().Get("state")
 	if !consumeOAuthCookie(w, r, "nudgy_gitlab_oauth", state, "/gitlab/oauth/callback") || r.URL.Query().Get("error") != "" {
@@ -127,6 +136,9 @@ func (h *CodingHandler) gitLabCallback(w http.ResponseWriter, r *http.Request) {
 	renderGitLabPage(w, 200, gitLabPageData{Selecting: true, Title: "Hangi projelerde çalışalım?", Description: "Nudgy’ye açmak istediğin GitLab projelerini seç. Yalnızca yazma yetkin olan projeler gösterilir.", Login: account.Login, State: next, Repositories: repos})
 }
 func (h *CodingHandler) gitLabSelect(w http.ResponseWriter, r *http.Request) {
+	if !checkProviderSession(w, r, h.workspace, "gitlab") {
+		return
+	}
 	privatePageHeaders(w)
 	origin := r.Header.Get("Origin")
 	if r.Header.Get("Sec-Fetch-Site") == "cross-site" || (origin != "" && origin != "null" && origin != h.publicURL) {

@@ -14,7 +14,7 @@ CoreOS NOTICE. Distribute these files alongside a compiled server.
 | Module | Version | License |
 | --- | --- | --- |
 | `github.com/coreos/go-oidc/v3` | v3.17.0 | Apache-2.0; includes NOTICE |
-| `github.com/go-jose/go-jose/v4` | v4.1.4 | Apache-2.0 |
+| `github.com/go-jose/go-jose/v4` | v4.1.6 | Apache-2.0 |
 | `github.com/jackc/pgx/v5` | v5.9.2 | MIT |
 | `github.com/jackc/pgpassfile` | v1.0.0 | MIT |
 | `github.com/jackc/pgservicefile` | v0.0.0-20240606120523-5a60cdf6a761 | MIT |
@@ -35,7 +35,7 @@ own module licenses still apply when redistributing those tools.
   `@openai/codex@0.164.0` by the Dockerfile. Its upstream license is
   [Apache-2.0](https://github.com/openai/codex/blob/main/LICENSE). Preserve the
   package's own license and bundled third-party notices when redistributing it.
-- The runtime uses the Node.js Debian image, Git and OS packages. Their license
+- The runtime uses the Node.js Alpine image, Git and OS packages. Their license
   files remain in their upstream package locations (including `/usr/share/doc`).
 - PostgreSQL runs in a separate container and retains its
   [PostgreSQL license](https://www.postgresql.org/about/licence/).

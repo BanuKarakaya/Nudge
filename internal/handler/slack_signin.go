@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"net/http"
-	"time"
 
 	"nudge/internal/slack"
 )
@@ -29,14 +28,17 @@ func (h *SlackHandler) signIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	state := "signin." + raw
-	h.states.add(state, 10*time.Minute)
+	if err := h.saveState(r.Context(), state); err != nil {
+		writeError(w, 503, "OAuth state unavailable")
+		return
+	}
 	setOAuthCookie(w, r, "nudgy_slack_signin", state, "/slack/oauth/callback")
 	http.Redirect(w, r, h.oauth.SignInURL(state, workspaceHash("slack-signin:"+state)), http.StatusFound)
 }
 
 func (h *SlackHandler) signInCallback(w http.ResponseWriter, r *http.Request) {
 	state := r.URL.Query().Get("state")
-	if !consumeOAuthCookie(w, r, "nudgy_slack_signin", state, "/slack/oauth/callback") || !h.states.consume(state) {
+	if !consumeOAuthCookie(w, r, "nudgy_slack_signin", state, "/slack/oauth/callback") || !h.consumeState(r.Context(), state) {
 		h.signInError(w, 400, "Giriş isteğin geçersiz veya süresi dolmuş. Slack ile yeniden giriş yap.")
 		return
 	}

@@ -74,6 +74,9 @@ func (h *SlackEventHandler) ProcessJob(ctx context.Context, job repository.Slack
 		}
 		return err
 	}
+	if event.ApprovalID != "" {
+		return h.processActionJob(ctx, event, job)
+	}
 	return h.processSlackEvent(ctx, event, &job)
 }
 

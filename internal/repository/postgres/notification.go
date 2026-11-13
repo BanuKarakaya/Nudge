@@ -20,7 +20,7 @@ var _ repository.NotificationRepository = (*NotificationRepository)(nil)
 type NotificationRepository struct{ db *pgxpool.Pool }
 
 func NewNotificationRepository(ctx context.Context, db *pgxpool.Pool) (*NotificationRepository, error) {
-	if _, err := db.Exec(ctx, migrations.NotificationSchema); err != nil {
+	if err := migrations.Apply(ctx, db); err != nil {
 		return nil, err
 	}
 	return &NotificationRepository{db: db}, nil
@@ -31,7 +31,7 @@ func (r *NotificationRepository) Exists(ctx context.Context, userID int64, kind,
 	return exists, err
 }
 func (r *NotificationRepository) Enqueue(ctx context.Context, userID int64, kind, period string, message repository.NotificationMessage) error {
-	invitation := message.Connection == "github" || message.Connection == "gitlab" || message.Connection == "feedbin" || message.Connection == "raindrop"
+	invitation := message.Connection == "workspace" || message.Connection == "jira" || message.Connection == "trello" || message.Connection == "github" || message.Connection == "gitlab" || message.Connection == "feedbin" || message.Connection == "raindrop"
 	special := invitation || message.WorkspaceOnboarding
 	if userID <= 0 || kind == "" || period == "" ||
 		(message.Connection != "" && !invitation) || (invitation && message.WorkspaceOnboarding) ||
@@ -109,6 +109,9 @@ func (r *NotificationRepository) ClaimNext(ctx context.Context) (repository.Noti
 	}
 	token := hex.EncodeToString(key[:])
 	var payload []byte
+	if _, err := r.db.Exec(ctx, `UPDATE notifications SET delivery_status='failed',lease_until=NULL,claim_token=NULL WHERE attempts>=8 AND (delivery_status='pending' OR (delivery_status='sending' AND lease_until<=NOW()))`); err != nil {
+		return d, err
+	}
 	// Lease tokens prevent a stale worker from updating another worker's claim.
 	err := r.db.QueryRow(ctx, `WITH candidate AS (
  SELECT id FROM notifications WHERE
@@ -133,7 +136,7 @@ func (r *NotificationRepository) Complete(ctx context.Context, d repository.Noti
 	return err
 }
 func (r *NotificationRepository) Retry(ctx context.Context, d repository.NotificationDelivery, delay time.Duration) error {
-	result, err := r.db.Exec(ctx, `UPDATE notifications SET delivery_status='pending', available_at=NOW()+($3 * INTERVAL '1 second'), lease_until=NULL, claim_token=NULL
+	result, err := r.db.Exec(ctx, `UPDATE notifications SET delivery_status=CASE WHEN attempts>=8 THEN 'failed' ELSE 'pending' END, available_at=NOW()+($3 * INTERVAL '1 second'), lease_until=NULL, claim_token=NULL
  WHERE id=$1 AND claim_token=$2 AND delivery_status='sending'`, d.ID, d.ClaimToken, delay.Seconds())
 	if err == nil && result.RowsAffected() != 1 {
 		return errors.New("notification lease lost")

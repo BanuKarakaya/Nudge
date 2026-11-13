@@ -39,6 +39,7 @@ func (h *WorkspaceHandler) aiPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data := workspacePage{Member: m, CSRF: csrf, Section: "ai", Title: "AI ayarları", Description: "Kendi API anahtarını kullan, çalışma alanının modellerini sen seç."}
+	data.RoutingTools = h.routingTools()
 	var err error
 	data.AI, err = h.ai.AISettings(r.Context(), m.UserID)
 	if err != nil {
@@ -104,6 +105,7 @@ func (h *WorkspaceHandler) saveAI(w http.ResponseWriter, r *http.Request) {
 		c.APIKey = key
 		c.Model = ""
 		c.ComplexModel = ""
+		c.ToolModels = nil
 	case "models":
 		if c.APIKey == "" {
 			fail(400, "Önce API anahtarını ekle.")
@@ -125,10 +127,50 @@ func (h *WorkspaceHandler) saveAI(w http.ResponseWriter, r *http.Request) {
 		}
 		c.Model = model
 		c.ComplexModel = complex
+	case "route":
+		tool, model := r.PostForm.Get("tool"), r.PostForm.Get("route_model")
+		known := false
+		for _, name := range h.routingTools() {
+			if name == tool {
+				known = true
+				break
+			}
+		}
+		if !known {
+			fail(400, "Listeden geçerli bir araç seç.")
+			return
+		}
+		if model != "" {
+			models, e := h.catalog.Models(ctx, c.Provider, c.APIKey)
+			if e != nil {
+				fail(400, "Model listesi alınamadı.")
+				return
+			}
+			allowed := false
+			for _, m := range models {
+				if m.ID == model {
+					allowed = true
+					break
+				}
+			}
+			if !allowed {
+				fail(400, "Listeden geçerli bir model seç.")
+				return
+			}
+		}
+		if c.ToolModels == nil {
+			c.ToolModels = map[string]string{}
+		}
+		if model == "" {
+			delete(c.ToolModels, tool)
+		} else {
+			c.ToolModels[tool] = model
+		}
 	case "remove":
 		c.Provider = ""
 		c.APIKey = ""
 		c.Model = ""
+		c.ToolModels = nil
 		c.ComplexModel = "" // Search settings are separately removable.
 	case "search":
 		key, model := strings.TrimSpace(r.PostForm.Get("search_api_key")), strings.TrimSpace(r.PostForm.Get("search_model"))

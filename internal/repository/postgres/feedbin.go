@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -22,7 +23,7 @@ func NewFeedbinConnectionRepository(db *pgxpool.Pool, passwordCipher secure.Ciph
 }
 
 func (r *FeedbinConnectionRepository) Save(ctx context.Context, connection domain.FeedbinConnection) error {
-	encryptedPassword, err := r.cipher.Encrypt(connection.Password)
+	encryptedPassword, err := r.cipher.EncryptFor(connection.Password, "feedbin:"+strconv.FormatInt(connection.UserID, 10))
 	if err != nil {
 		return err
 	}
@@ -60,6 +61,6 @@ func (r *FeedbinConnectionRepository) GetByUserID(ctx context.Context, userID in
 	if err != nil {
 		return connection, err
 	}
-	connection.Password, err = r.cipher.Decrypt(connection.Password)
+	connection.Password, err = r.cipher.DecryptFor(connection.Password, "feedbin:"+strconv.FormatInt(userID, 10))
 	return connection, err
 }

@@ -68,11 +68,10 @@ The job payload/checkpoint contains conversation content, like existing history 
 analytics. It must be treated as private application data. It is never exposed by a
 public queue endpoint. Bot tokens, OAuth tokens, and generated bearer links are not
 stored in these records. Completed job identities are retained for deduplication;
-there is no automatic retention cleanup in this change.
+terminal records are cleaned after `NUDGY_RETENTION_DAYS` (90 by default). Retries stop at eight attempts and terminal failures unblock the conversation.
 
 The queue coordinates claims across instances, but this does not provision shared
-Codex state or make separate filesystem volumes interchangeable. Keep the existing
-single-replica deployment until runtime storage has been configured for scaling.
+Codex state or make separate filesystem volumes interchangeable. OAuth and queue state are database-backed. Per-replica native volumes recover missing rollouts from delivered database history; see [operations](operations.md).
 The dashboard continues to show finalized interactions; this change does not add a
 live queue UI. Pending work can be inspected without message content using:
 

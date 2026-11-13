@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -20,20 +21,20 @@ type TrackerStore struct {
 var _ tracker.Store = (*TrackerStore)(nil)
 
 func NewTrackerStore(ctx context.Context, db *pgxpool.Pool, cipher secure.Cipher) (*TrackerStore, error) {
-	if _, err := db.Exec(ctx, migrations.TrackerSchema); err != nil {
+	if err := migrations.Apply(ctx, db); err != nil {
 		return nil, err
 	}
 	return &TrackerStore{db, cipher}, nil
 }
-func (s *TrackerStore) encode(value any) (string, error) {
+func (s *TrackerStore) encode(value any, binding string) (string, error) {
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return "", err
 	}
-	return s.cipher.Encrypt(string(raw))
+	return s.cipher.EncryptFor(string(raw), binding)
 }
-func (s *TrackerStore) decode(value string, out any) error {
-	raw, err := s.cipher.Decrypt(value)
+func (s *TrackerStore) decode(value string, out any, binding string) error {
+	raw, err := s.cipher.DecryptFor(value, binding)
 	if err != nil {
 		return err
 	}
@@ -41,11 +42,11 @@ func (s *TrackerStore) decode(value string, out any) error {
 }
 func (s *TrackerStore) SlackTeam(ctx context.Context, id int64) (string, error) {
 	var team string
-	err := s.db.QueryRow(ctx, `SELECT u.team_id FROM users u JOIN slack_installations i ON i.team_id=u.team_id WHERE u.id=$1`, id).Scan(&team)
+	err := s.db.QueryRow(ctx, `SELECT u.team_id FROM users u JOIN slack_installations i ON i.team_id=u.team_id AND i.bot_token<>'' WHERE u.id=$1`, id).Scan(&team)
 	return team, err
 }
 func (s *TrackerStore) PutState(ctx context.Context, provider, hash string, state tracker.State) error {
-	value, err := s.encode(state)
+	value, err := s.encode(state, "tracker-state:"+provider+":"+hash)
 	if err != nil {
 		return err
 	}
@@ -65,7 +66,7 @@ func (s *TrackerStore) ConsumeState(ctx context.Context, provider, hash string) 
 	if err != nil {
 		return state, err
 	}
-	err = s.decode(raw, &state)
+	err = s.decode(raw, &state, "tracker-state:"+provider+":"+hash)
 	return state, err
 }
 func (s *TrackerStore) Save(ctx context.Context, c tracker.Connection) error {
@@ -81,7 +82,7 @@ func (s *TrackerStore) Save(ctx context.Context, c tracker.Connection) error {
 	}
 	if err == nil {
 		var old tracker.Connection
-		if err = s.decode(previous, &old); err != nil {
+		if err = s.decode(previous, &old, "tracker:"+c.Provider+":"+strconv.FormatInt(c.UserID, 10)); err != nil {
 			return err
 		}
 		// Reauthorization of the same account must not erase replay protection.
@@ -89,12 +90,12 @@ func (s *TrackerStore) Save(ctx context.Context, c tracker.Connection) error {
 			c.Mutations = old.Mutations
 		}
 	}
-	raw, err := s.encode(c)
+	raw, err := s.encode(c, "tracker:"+c.Provider+":"+strconv.FormatInt(c.UserID, 10))
 	if err != nil {
 		return err
 	}
 	result, err := tx.Exec(ctx, `INSERT INTO tracker_connections(provider,user_id,encrypted)
-SELECT $1,u.id,$3 FROM users u JOIN slack_installations i ON i.team_id=u.team_id WHERE u.id=$2 AND u.team_id=$4
+SELECT $1,u.id,$3 FROM users u JOIN slack_installations i ON i.team_id=u.team_id AND i.bot_token<>'' WHERE u.id=$2 AND u.team_id=$4
 ON CONFLICT(provider,user_id) DO UPDATE SET encrypted=EXCLUDED.encrypted,updated_at=NOW()`, c.Provider, c.UserID, raw, c.Team)
 	if err != nil {
 		return err
@@ -119,7 +120,7 @@ func (s *TrackerStore) WithConnection(ctx context.Context, provider string, user
 	if err != nil {
 		return err
 	}
-	if err = s.decode(raw, &c); err != nil {
+	if err = s.decode(raw, &c, "tracker:"+provider+":"+strconv.FormatInt(user, 10)); err != nil {
 		return err
 	}
 	if c.Provider != provider || c.UserID != user {
@@ -131,7 +132,7 @@ func (s *TrackerStore) WithConnection(ctx context.Context, provider string, user
 	}
 	after, _ := json.Marshal(c)
 	if string(before) != string(after) {
-		raw, err = s.encode(c)
+		raw, err = s.encode(c, "tracker:"+c.Provider+":"+strconv.FormatInt(c.UserID, 10))
 		if err != nil {
 			return err
 		}

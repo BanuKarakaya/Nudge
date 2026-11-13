@@ -13,14 +13,15 @@ import (
 // Edit is encrypted at rest. It contains no access tokens or server paths.
 // Only EditInfo is passed to the model; file content is read explicitly.
 type Edit struct {
-	ChangeRequest *ChangeRequest `json:"change_request,omitempty"`
-	Task          Task           `json:"task"`
-	AccountID     int64          `json:"account_id"`
-	Snapshot      Snapshot       `json:"snapshot"`
-	Review        Review         `json:"review"`
-	Digest        string         `json:"digest"`
-	FinishedEvent string         `json:"finished_event"`
-	Commit        string         `json:"commit"`
+	BeforeFiles   []RepositoryFile `json:"before_files,omitempty"`
+	ChangeRequest *ChangeRequest   `json:"change_request,omitempty"`
+	Task          Task             `json:"task"`
+	AccountID     int64            `json:"account_id"`
+	Snapshot      Snapshot         `json:"snapshot"`
+	Review        Review           `json:"review"`
+	Digest        string           `json:"digest"`
+	FinishedEvent string           `json:"finished_event"`
+	Commit        string           `json:"commit"`
 }
 
 type EditInfo struct {
@@ -37,7 +38,7 @@ type EditInfo struct {
 type EditStore interface {
 	CreateEdit(context.Context, Edit) (Edit, error)
 	GetEdit(context.Context, int64, string) (Edit, error)
-	// Row lock serializes mutations and publishing, including across replicas.
+	// A fenced lease serializes mutations and publishing across replicas.
 	WithEdit(context.Context, int64, string, func(*Edit) error) error
 }
 
@@ -145,23 +146,9 @@ func (s *Service) BeginEdit(ctx context.Context, i Identity, name string) (EditI
 	if err != nil {
 		return EditInfo{}, err
 	}
-	repos, err := s.provider.Repositories(ctx, token)
+	repo, err := s.lookupRepository(ctx, i, account, token, name)
 	if err != nil {
 		return EditInfo{}, err
-	}
-	repos, err = s.filterSelected(ctx, i.UserID, repos)
-	if err != nil {
-		return EditInfo{}, err
-	}
-	var repo Repository
-	for _, candidate := range repos {
-		if candidate.Valid() && candidate.Kind() == s.Kind() && strings.EqualFold(candidate.FullName, name) {
-			repo = candidate
-			break
-		}
-	}
-	if repo.ID <= 0 {
-		return EditInfo{}, ErrDenied
 	}
 	id, err := RandomID()
 	if err != nil {
@@ -198,6 +185,9 @@ func (s *Service) BeginEdit(ctx context.Context, i Identity, name string) (EditI
 		return EditInfo{}, ErrDenied
 	}
 	err = s.edits.WithEdit(ctx, i.UserID, e.Task.ID, func(saved *Edit) error {
+		if saved.Task.Status == "failed" {
+			return errors.New("klonlama başarısız; yeni bir mesajla yeniden görev başlat")
+		}
 		if saved.Task.Status == "cloning" {
 			snapshot, err := s.git.Clone(ctx, token, repo)
 			if err != nil {
@@ -221,6 +211,17 @@ func (s *Service) BeginEdit(ctx context.Context, i Identity, name string) (EditI
 		e = *saved
 		return nil
 	})
+	if err != nil {
+		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		_ = s.edits.WithEdit(cleanup, i.UserID, e.Task.ID, func(saved *Edit) error {
+			if saved.Task.Status == "cloning" {
+				saved.Task.Status = "failed"
+				saved.Snapshot.Files = nil
+			}
+			return nil
+		})
+	}
 	return editInfo(e, true), err
 }
 
@@ -288,7 +289,7 @@ func (s *Service) ReadEditFile(ctx context.Context, i Identity, id, name string,
 	if err != nil {
 		return "", err
 	}
-	if e.Task.Status == "cancelled" || e.Task.Status == "cloning" {
+	if e.Task.Status == "cancelled" || e.Task.Status == "cloning" || e.Task.Status == "failed" {
 		return "", ErrNotFound
 	}
 	f, ok := currentFile(e, name)
@@ -315,8 +316,8 @@ func (s *Service) WriteEditFile(ctx context.Context, i Identity, id, name, conte
 		return EditInfo{}, ErrArguments
 	}
 	// Workflows require additional GitHub permissions, intentionally not requested.
-	if strings.HasPrefix(strings.ToLower(name), ".github/workflows/") {
-		return EditInfo{}, errors.New("GitHub Actions dosyalarını değiştirme yetkisi bu bağlantıda etkin değil")
+	if protectedAutomationPath(name) {
+		return EditInfo{}, errors.New("CI ve otomasyon dosyaları bu araçtan değiştirilemez; depo üzerinden incelemeli değişiklik yap")
 	}
 	var result EditInfo
 	err := s.edits.WithEdit(ctx, i.UserID, id, func(e *Edit) error {
@@ -473,6 +474,15 @@ func (s *Service) pushEdit(ctx context.Context, i Identity, id string, approved 
 		}
 		e.Commit = commit
 		e.Task.Status = "pushed"
+		for _, f := range e.Snapshot.Files {
+			for _, change := range e.Review.Changes {
+				if f.Path == change.Path {
+					e.BeforeFiles = append(e.BeforeFiles, f)
+					break
+				}
+			}
+		}
+		e.Snapshot.Files = nil
 		result = editInfo(*e, false)
 		return nil
 	})

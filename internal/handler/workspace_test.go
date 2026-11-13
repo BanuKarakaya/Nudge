@@ -203,7 +203,7 @@ func TestWorkspaceMagicLinkOneUseCookieBindingAndLogout(t *testing.T) {
 			session = c
 		}
 	}
-	if session == nil || !session.HttpOnly || !session.Secure || session.Path != "/dashboard" {
+	if session == nil || !session.HttpOnly || !session.Secure || session.Path != "/" {
 		t.Fatal("insecure session cookie")
 	}
 	if login(cookie).Code != 401 {
@@ -239,13 +239,18 @@ func TestWorkspaceGitHubMemberOAuthSkipsInstallation(t *testing.T) {
 	h.RegisterRoutes(public, http.NewServeMux())
 	link, _ := links.URL(h.publicURL, 1, "github", time.Now())
 	start := httptest.NewRecorder()
-	public.ServeHTTP(start, httptest.NewRequest("GET", link+"&setup=1", nil))
+	req := httptest.NewRequest("GET", link+"&setup=1", nil)
+	session := testProviderSession(members, req, 1)
+	public.ServeHTTP(start, req)
 	if start.Code != 302 || !strings.Contains(start.Header().Get("Location"), "/login/oauth/authorize") {
 		t.Fatal("member sent to installation", start.Code, start.Body)
 	}
 	redirect, _ := url.Parse(start.Header().Get("Location"))
 	r := httptest.NewRequest("GET", h.publicURL+"/github/oauth/callback?state="+redirect.Query().Get("state")+"&code=code", nil)
-	r.AddCookie(start.Result().Cookies()[0])
+	r.AddCookie(session)
+	for _, c := range start.Result().Cookies() {
+		r.AddCookie(c)
+	}
 	result := httptest.NewRecorder()
 	public.ServeHTTP(result, r)
 	if result.Code != 303 || result.Header().Get("Location") != "/dashboard/accounts?done=verified" || store.saved.UserID != 1 || store.saved.Login != "developer" {
@@ -267,13 +272,18 @@ func TestWorkspaceTrackersReturnToPanelWithoutSelection(t *testing.T) {
 			h.RegisterRoutes(public, http.NewServeMux())
 			link, _ := h.links.URL(h.publicURL, 1, kind, time.Now())
 			start := httptest.NewRecorder()
-			public.ServeHTTP(start, httptest.NewRequest("GET", link, nil))
+			req := httptest.NewRequest("GET", link, nil)
+			session := testProviderSession(members, req, 1)
+			public.ServeHTTP(start, req)
 			if start.Code != 302 {
 				t.Fatal("OAuth not started", start.Code)
 			}
 			redirect, _ := url.Parse(start.Header().Get("Location"))
 			r := httptest.NewRequest("GET", h.publicURL+"/"+kind+"/oauth/callback?state="+redirect.Query().Get("state")+"&code=code", nil)
-			r.AddCookie(start.Result().Cookies()[0])
+			r.AddCookie(session)
+			for _, c := range start.Result().Cookies() {
+				r.AddCookie(c)
+			}
 			w := httptest.NewRecorder()
 			public.ServeHTTP(w, r)
 			if w.Code != 303 || w.Header().Get("Location") != "/dashboard/accounts?done=verified" || store.saved.UserID != 1 || len(store.saved.Selected) != 0 {
@@ -312,4 +322,12 @@ func TestWorkspaceOriginAndExpiredLogin(t *testing.T) {
 	if w.Code != 403 || s.disconnected != 0 {
 		t.Fatal("cross-origin mutation")
 	}
+}
+
+func testProviderSession(s *workspaceMemory, r *http.Request, user int64) *http.Cookie {
+	raw := strings.Repeat(strconv.FormatInt(user, 10), 64)
+	s.sessions[workspaceHash(raw)] = user
+	c := &http.Cookie{Name: workspaceCookie, Value: raw}
+	r.AddCookie(c)
+	return c
 }

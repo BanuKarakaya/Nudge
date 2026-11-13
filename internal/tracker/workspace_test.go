@@ -84,3 +84,32 @@ func TestWorkspaceTrackerRechecksDisabledDuringOAuth(t *testing.T) {
 		t.Fatal("failed OAuth changed credentials")
 	}
 }
+
+func TestWorkspaceWritesUseSharedScopeWithoutPersonalSelection(t *testing.T) {
+	for _, kind := range []string{"jira", "trello"} {
+		t.Run(kind, func(t *testing.T) {
+			s, store, base := connectFixture(t, kind)
+			p := &writeFake{fakeProvider: base}
+			s.provider = p
+			c := store.connections[kind]
+			c.Selected = nil
+			c.Credentials.Scopes = "write:jira-work write:board:trello"
+			store.connections[kind] = c
+			policy := &testWorkspacePolicy{scope: workspace.Scope{Enabled: true, Resources: []workspace.Resource{{ID: "selected"}}}}
+			s.WithWorkspacePolicy(policy)
+			_, err := s.Create(context.Background(), Identity{1, "T"}, "allowed", "selected", CreateInput{Title: "Task"})
+			if err != nil || p.creates.Load() != 1 {
+				t.Fatalf("workspace write: %v", err)
+			}
+			for _, scope := range []workspace.Scope{{Enabled: false, Resources: policy.scope.Resources}, {Enabled: true, Resources: []workspace.Resource{{ID: "other"}}}} {
+				policy.scope = scope
+				if _, err := s.Move(context.Background(), Identity{1, "T"}, "denied", "selected", MoveInput{}); !errors.Is(err, ErrDenied) {
+					t.Fatalf("scope bypass: %v", err)
+				}
+			}
+			if p.moves.Load() != 0 {
+				t.Fatal("unauthorized provider write")
+			}
+		})
+	}
+}

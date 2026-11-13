@@ -69,6 +69,9 @@ func (h *TrackerHandler) RegisterRoutes(public, admin *http.ServeMux) {
 	public.HandleFunc("GET "+base+"/install", h.install)
 	public.HandleFunc("GET "+base+"/oauth/callback", h.callback)
 	public.HandleFunc("POST "+base+"/select", h.selectResources)
+	if admin == nil {
+		return
+	}
 	admin.HandleFunc("GET /api/v1/integrations"+base+"/connection", func(w http.ResponseWriter, r *http.Request) {
 		privatePageHeaders(w)
 		id, err := userIDFromHeader(r)
@@ -110,6 +113,9 @@ func (h *TrackerHandler) install(w http.ResponseWriter, r *http.Request) {
 		h.failure(w, 401)
 		return
 	}
+	if !beginProviderSession(w, r, h.workspace, id, h.service.Kind()) {
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 	state, redirect, err := h.service.Begin(ctx, id)
@@ -121,6 +127,9 @@ func (h *TrackerHandler) install(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, redirect, http.StatusFound)
 }
 func (h *TrackerHandler) callback(w http.ResponseWriter, r *http.Request) {
+	if !checkProviderSession(w, r, h.workspace, h.service.Kind()) {
+		return
+	}
 	state := r.URL.Query().Get("state")
 	if !consumeOAuthCookie(w, r, "nudgy_"+h.service.Kind()+"_oauth", state, "/"+h.service.Kind()+"/oauth/callback") || r.URL.Query().Get("error") != "" {
 		h.failure(w, 400)
@@ -141,6 +150,9 @@ func (h *TrackerHandler) callback(w http.ResponseWriter, r *http.Request) {
 	h.page(w, 200, trackerPageData{Selecting: true, Title: "Nudgy hangi alanlarda çalışsın?", Description: "Nudgy’nin erişebileceği alanları seç. Seçimini kaydettiğinde bağlantın tamamlanır.", State: next, Account: access.Account.Name, Resources: access.Resources})
 }
 func (h *TrackerHandler) selectResources(w http.ResponseWriter, r *http.Request) {
+	if !checkProviderSession(w, r, h.workspace, h.service.Kind()) {
+		return
+	}
 	if r.Header.Get("Sec-Fetch-Site") == "cross-site" || (r.Header.Get("Origin") != "" && r.Header.Get("Origin") != h.publicURL) {
 		h.page(w, http.StatusForbidden, trackerPageData{Title: "Bağlantı formu doğrulanamadı.", Description: "Form gönderimi güvenlik kontrolünden geçemedi. Slack’te Nudgy’den yeni bir bağlantı iste ve izin verme ile seçim adımlarını aynı tarayıcıda tamamla."})
 		return

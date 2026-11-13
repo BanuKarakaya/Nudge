@@ -87,7 +87,7 @@ startup if the signing or encryption key is invalid. The Go server does not
 load `.env` automatically; the process manager must supply these variables.
 
 Account links now include a signed, user-specific, service-specific capability
-valid for eight days for Feedbin/Raindrop and 20 minutes for GitHub. Bare `?user_id=...` links from older messages no longer
+valid for 20 minutes for every provider. Production flows additionally require the link owner’s live panel session and consume the link once. Bare `?user_id=...` links from older messages no longer
 work. The Feedbin form carries the capability into its POST request; changing
 the user ID or using a Raindrop token is rejected. Treat these links as private
 bearer credentials and do not log their query strings in a reverse proxy.
@@ -101,7 +101,7 @@ integration: Feedbin, Raindrop (when OAuth is configured), and GitHub (when codi
 is enabled). GitHub association follows each persisted Slack user's workspace
 automatically; repository access is checked against GitHub permissions without
 a Railway repository allowlist. Connected accounts are skipped at delivery.
-GitLab is not advertised. No model calls, initial mention or reminder-user ID
+Workspace invitations link to the shared panel; enabled GitLab/Jira/Trello connections are available there. No model calls, initial mention or reminder-user ID
 are needed.
 
 Startup reconciliation covers existing installations and retries enqueue errors

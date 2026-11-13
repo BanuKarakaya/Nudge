@@ -52,7 +52,7 @@ func (h *CodingHandler) sendEditReview(ctx context.Context, identity coding.Iden
 		message = "Kod değişiklikleri kaydedildi; GitLab’a henüz gönderilemedi: " + info.Task.Repository.FullName + "\nGönderimi tekrar denemek için aynı Slack konuşmasında görevi tamamlamamı iste. Otomatik test çalıştırılmadı.\nİsteğe bağlı özel inceleme bağlantısı (24 saat geçerli):\n" + link
 	}
 	if info.Task.Status == "pushed" {
-		message = "Değişiklikler " + h.service.DisplayName() + " üzerinde test için hazır: " + info.Task.Repository.FullName + "\nDal: " + info.Branch + "\n" + info.Task.Repository.BranchURL(info.Branch) + "\nBu dalı clone/fetch ederek kendi bilgisayarında test edebilirsin. Otomatik test çalıştırılmadı. Ana dala birleştirilmedi.\nİstersen değişiklikleri özel sayfadan inceleyebilir veya ZIP indirebilirsin:\n" + link + "\nİnceleme bağlantısı 24 saat geçerli; paylaşma."
+		message = "Değişiklikler " + h.service.DisplayName() + " üzerinde test için hazır: " + info.Task.Repository.FullName + "\nDal: " + info.Branch + "\n" + info.Task.Repository.BranchURL(info.Branch) + "\nBu dalı clone/fetch ederek kendi bilgisayarında test edebilirsin. Otomatik test çalıştırılmadı. Ana dala birleştirilmedi.\nİstersen değişiklikleri özel sayfadan inceleyebilirsin:\n" + link + "\nİnceleme bağlantısı 24 saat geçerli; paylaşma."
 	}
 	if err := h.client.PostMessage(ctx, installation.BotToken, channel, message); err != nil {
 		return errors.New("kod kaydedildi; özel inceleme mesajı gönderilemedi, bitirme işlemini tekrar dene")
@@ -93,6 +93,10 @@ func (h *CodingHandler) review(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if q.Get("download") == "zip" {
+		if e.Task.Status == "pushed" && len(e.Snapshot.Files) == 0 {
+			http.Redirect(w, r, e.Task.Repository.BranchURL(e.Review.Branch), http.StatusSeeOther)
+			return
+		}
 		data, err := reviewArchive(e)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "archive unavailable")
@@ -106,7 +110,7 @@ func (h *CodingHandler) review(w http.ResponseWriter, r *http.Request) {
 	q.Set("download", "zip")
 	data := reviewPageView{AutoPublish: h.service.Kind() == "gitlab", Provider: h.service.DisplayName(), Edit: e, Download: "/" + h.service.Kind() + "/review?" + q.Encode(), XcodeProject: xcodeProject(e), Pushed: e.Task.Status == "pushed"}
 	before := make(map[string][]byte)
-	for _, f := range e.Snapshot.Files {
+	for _, f := range append(e.Snapshot.Files, e.BeforeFiles...) {
 		before[f.Path] = f.Content
 	}
 	for _, change := range e.Review.Changes {

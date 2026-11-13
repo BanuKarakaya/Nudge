@@ -15,7 +15,7 @@ import (
 type ConversationRepository struct{ db *pgxpool.Pool }
 
 func NewConversationRepository(ctx context.Context, db *pgxpool.Pool) (*ConversationRepository, error) {
-	if _, err := db.Exec(ctx, migrations.ConversationSchema); err != nil {
+	if err := migrations.Apply(ctx, db); err != nil {
 		return nil, err
 	}
 	return &ConversationRepository{db: db}, nil

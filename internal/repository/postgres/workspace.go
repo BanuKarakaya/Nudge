@@ -13,7 +13,7 @@ import (
 type WorkspaceStore struct{ db *pgxpool.Pool }
 
 func NewWorkspaceStore(ctx context.Context, db *pgxpool.Pool) (*WorkspaceStore, error) {
-	_, err := db.Exec(ctx, migrations.WorkspaceSchema)
+	err := migrations.Apply(ctx, db)
 	if err != nil {
 		return nil, err
 	}
@@ -21,7 +21,7 @@ func NewWorkspaceStore(ctx context.Context, db *pgxpool.Pool) (*WorkspaceStore, 
 }
 func (s *WorkspaceStore) Member(ctx context.Context, user int64) (workspace.Member, error) {
 	var m workspace.Member
-	err := s.db.QueryRow(ctx, `SELECT u.id,u.team_id,i.team_name,u.slack_user_id,COALESCE(i.installer_slack_user_id=u.slack_user_id,FALSE),COALESCE(i.installer_slack_user_id,'')='' FROM users u JOIN slack_installations i ON i.team_id=u.team_id WHERE u.id=$1`, user).Scan(&m.UserID, &m.Team, &m.Name, &m.SlackUser, &m.Manager, &m.OwnerMissing)
+	err := s.db.QueryRow(ctx, `SELECT u.id,u.team_id,i.team_name,u.slack_user_id,COALESCE(i.installer_slack_user_id=u.slack_user_id,FALSE),COALESCE(i.installer_slack_user_id,'')='' FROM users u JOIN slack_installations i ON i.team_id=u.team_id AND i.bot_token<>'' WHERE u.id=$1`, user).Scan(&m.UserID, &m.Team, &m.Name, &m.SlackUser, &m.Manager, &m.OwnerMissing)
 	return m, err
 }
 func (s *WorkspaceStore) Scope(ctx context.Context, user int64, kind string) (workspace.Scope, error) {
@@ -96,3 +96,8 @@ func (s *WorkspaceStore) DeleteSession(ctx context.Context, hash string) error {
 }
 
 var _ workspace.Store = (*WorkspaceStore)(nil)
+
+func (s *WorkspaceStore) UseConnectionLink(ctx context.Context, hash string) error {
+	_, err := s.db.Exec(ctx, `INSERT INTO workspace_used_links(token_hash,expires_at) VALUES($1,NOW()+INTERVAL '21 minutes')`, hash)
+	return err
+}

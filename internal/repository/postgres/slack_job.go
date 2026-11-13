@@ -18,7 +18,7 @@ import (
 type SlackJobRepository struct{ db *pgxpool.Pool }
 
 func NewSlackJobRepository(ctx context.Context, db *pgxpool.Pool) (*SlackJobRepository, error) {
-	if _, err := db.Exec(ctx, migrations.SlackJobSchema); err != nil {
+	if err := migrations.Apply(ctx, db); err != nil {
 		return nil, err
 	}
 	return &SlackJobRepository{db: db}, nil
@@ -38,6 +38,9 @@ func (r *SlackJobRepository) ClaimNext(ctx context.Context) (repository.SlackJob
 	var j repository.SlackJob
 	var token [16]byte
 	if _, err := rand.Read(token[:]); err != nil {
+		return j, err
+	}
+	if _, err := r.db.Exec(ctx, `UPDATE nudge_slack_jobs SET status='failed',lease_until=NULL,claim_token=NULL,finished_at=NOW(),updated_at=NOW() WHERE attempts>=8 AND (status='queued' OR (status='running' AND lease_until<=NOW()))`); err != nil {
 		return j, err
 	}
 	// Only the oldest unfinished request for a conversation is eligible, even
@@ -123,7 +126,7 @@ func (r *SlackJobRepository) Complete(ctx context.Context, j repository.SlackJob
 }
 
 func (r *SlackJobRepository) Retry(ctx context.Context, j repository.SlackJob, delay time.Duration) error {
-	return jobUpdated(r.db.Exec(ctx, `UPDATE nudge_slack_jobs SET status='queued',claim_token=NULL,
+	return jobUpdated(r.db.Exec(ctx, `UPDATE nudge_slack_jobs SET status=CASE WHEN attempts>=8 THEN 'failed' ELSE 'queued' END,finished_at=CASE WHEN attempts>=8 THEN NOW() ELSE NULL END,claim_token=NULL,
         lease_until=NULL,available_at=NOW()+($3*INTERVAL '1 second'),updated_at=NOW() WHERE `+ownedSlackJob,
 		j.ID, j.ClaimToken, delay.Seconds()))
 }

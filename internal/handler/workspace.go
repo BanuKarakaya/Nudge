@@ -36,6 +36,9 @@ type workspaceProvider struct {
 	Resources   func(context.Context, workspace.Member) ([]workspace.Resource, error)
 }
 type WorkspaceHandler struct {
+	nativeData    nativeDataCleaner
+	actions       actionStore
+	actionEvents  *SlackEventHandler
 	store         workspace.Store
 	links         secure.LinkSigner
 	base          string
@@ -101,6 +104,14 @@ func (h *WorkspaceHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dashboard/ai", h.aiPage)
 	mux.HandleFunc("POST /dashboard/ai", h.saveAI)
 	mux.HandleFunc("GET /dashboard/team", h.teamPage)
+	mux.HandleFunc("GET /dashboard/preferences", h.preferences)
+	mux.HandleFunc("POST /dashboard/preferences", h.preferences)
+	mux.HandleFunc("GET /dashboard/data", h.personalData)
+	mux.HandleFunc("GET /dashboard/data/export", h.personalData)
+	mux.HandleFunc("POST /dashboard/data/delete", h.personalData)
+	mux.HandleFunc("GET /dashboard/audit", h.personalData)
+	mux.HandleFunc("GET /dashboard/actions", h.actionPage)
+	mux.HandleFunc("POST /dashboard/actions", h.actionPage)
 	files := http.StripPrefix("/dashboard/", http.FileServer(http.FS(dashboard.Files())))
 	for _, name := range []string{"styles.css", "workspace.css", "nudgy-mascot.webp"} {
 		mux.Handle("GET /dashboard/"+name, files)
@@ -180,7 +191,8 @@ func (h *WorkspaceHandler) startSession(w http.ResponseWriter, r *http.Request, 
 	if c, e := r.Cookie(workspaceCookie); e == nil {
 		_ = h.store.DeleteSession(r.Context(), workspaceHash(c.Value))
 	}
-	http.SetCookie(w, &http.Cookie{Name: workspaceCookie, Value: raw, Path: "/dashboard", HttpOnly: true, Secure: strings.HasPrefix(h.base, "https://"), SameSite: http.SameSiteLaxMode, MaxAge: 43200})
+	http.SetCookie(w, &http.Cookie{Name: workspaceCookie, Path: "/dashboard", MaxAge: -1, HttpOnly: true, Secure: strings.HasPrefix(h.base, "https://"), SameSite: http.SameSiteLaxMode})
+	http.SetCookie(w, &http.Cookie{Name: workspaceCookie, Value: raw, Path: "/", HttpOnly: true, Secure: strings.HasPrefix(h.base, "https://"), SameSite: http.SameSiteLaxMode, MaxAge: 43200})
 	return nil
 }
 func (h *WorkspaceHandler) loginPage(w http.ResponseWriter, r *http.Request) {
@@ -221,7 +233,8 @@ func (h *WorkspaceHandler) logout(w http.ResponseWriter, r *http.Request) {
 		h.page(w, 503, workspacePage{Error: "Çıkış tamamlanamadı. Tekrar dene."})
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: workspaceCookie, Path: "/dashboard", HttpOnly: true, Secure: strings.HasPrefix(h.base, "https://"), SameSite: http.SameSiteLaxMode, MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: workspaceCookie, Path: "/dashboard", MaxAge: -1, HttpOnly: true, Secure: strings.HasPrefix(h.base, "https://"), SameSite: http.SameSiteLaxMode})
+	http.SetCookie(w, &http.Cookie{Name: workspaceCookie, Path: "/", HttpOnly: true, Secure: strings.HasPrefix(h.base, "https://"), SameSite: http.SameSiteLaxMode, MaxAge: -1})
 	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 }
 func (h *WorkspaceHandler) provider(kind string) (workspaceProvider, bool) {
@@ -243,6 +256,7 @@ type workspaceChoice struct {
 	Selected bool
 }
 type workspacePage struct {
+	RoutingTools                                        []string
 	Member                                              workspace.Member
 	CSRF, Error, Message, Token, Provider, ProviderName string
 	UserID                                              int64

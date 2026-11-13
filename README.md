@@ -20,9 +20,11 @@ listelerini takip eden ve ekip araçlarına bağlanan, kendi sunucunda
 There is no license key, paid edition gate or private application package needed
 to build this source. **Self-hosted does not mean offline:** Slack is required
 for the supported user workflow. AI turns currently use a workspace-owned
-OpenAI or OpenRouter API account through the pinned Codex app-server.
+OpenAI, OpenRouter, or an operator-configured Responses-compatible API through the pinned Codex app-server.
 Google-powered search and the other integrations are optional. These hosted
-services have their own terms, availability and charges. Local model servers,+self-hosted GitLab and non-Slack sign-in are not currently supported.
+services have their own terms, availability and charges. A compatible local model server can be configured; see [operations](docs/operations.md). Self-hosted GitLab and non-Slack sign-in are not supported.
+
+Review changes, upgrade behavior and remaining scope are tracked in [review remediation](docs/review-remediation.md), [operations](docs/operations.md) and the [threat model](docs/threat-model.md).
 
 ## Quick start (Docker)
 
@@ -45,8 +47,8 @@ interactivity. The installer becomes the workspace manager and configures their
 own AI key and models in **AI settings**. Optional integrations start disabled.
 
 The helper creates independent random keys and refuses to overwrite an existing
-`.env`. PostgreSQL initializes the three base migrations only on a **fresh** data
-volume; the server applies the remaining embedded, idempotent schemas on startup.
+`.env`. The server embeds all migrations and records version/checksum history on startup;
+existing base schemas are adopted. Fresh Compose volumes may also run the legacy bootstrap.
 Compose retains database and Codex state in named volumes. See the guide before
 upgrading an existing installation. Do not delete volumes to resolve a migration
 error: they contain application data.

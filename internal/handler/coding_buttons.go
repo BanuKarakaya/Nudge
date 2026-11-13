@@ -10,6 +10,7 @@ import (
 
 	"nudge/internal/coding"
 	"nudge/internal/service"
+	"nudge/internal/slack"
 )
 
 const codingPushAction = "coding_push"
@@ -49,6 +50,7 @@ func (h *CodingHandler) ToolsForReply(base service.AgentTools, i coding.Identity
 }
 
 func (h *SlackEventHandler) postReply(ctx context.Context, token, channel, thread, text string, reply *codingReply) error {
+	text = slack.SanitizeGeneratedText(text)
 	if reply == nil {
 		return h.client.PostMessageInThread(ctx, token, channel, thread, text)
 	}

@@ -42,7 +42,7 @@ func (g GitHub) VerifyInstallation(ctx context.Context, token string, installati
 	if !strings.HasPrefix(token, "ghu_") || installationID < 0 || user.ID <= 0 || !githubLogin.MatchString(user.Login) {
 		return ErrConnect
 	}
-	for page := 1; page <= 20; page++ {
+	for page := 1; page <= 1000; page++ {
 		var response struct {
 			Installations []struct {
 				ID      int64 `json:"id"`
@@ -201,7 +201,7 @@ func (g GitHub) CheckRepository(ctx context.Context, token string, user Account,
 		if id != repo.InstallationID {
 			continue
 		}
-		items, err := g.installationRepos(ctx, token, id)
+		items, err := g.installationReposMatching(ctx, token, id, repo.FullName)
 		if err != nil {
 			return err
 		}
@@ -223,7 +223,7 @@ func (g GitHub) CheckRepository(ctx context.Context, token string, user Account,
 
 func (g GitHub) writableInstallations(ctx context.Context, token string) ([]int64, error) {
 	var ids []int64
-	for page := 1; page <= 20; page++ {
+	for page := 1; page <= 1000; page++ {
 		var response struct {
 			Installations []struct {
 				ID          int64      `json:"id"`
@@ -277,8 +277,11 @@ func (g GitHub) repositoryPermission(ctx context.Context, token string, user Acc
 }
 
 func (g GitHub) installationRepos(ctx context.Context, token string, installationID int64) ([]Repository, error) {
+	return g.installationReposMatching(ctx, token, installationID, "")
+}
+func (g GitHub) installationReposMatching(ctx context.Context, token string, installationID int64, name string) ([]Repository, error) {
 	var repos []Repository
-	for page := 1; page <= 20; page++ {
+	for page := 1; page <= 1000; page++ {
 		var response struct {
 			Repositories []struct {
 				ID            int64  `json:"id"`
@@ -298,6 +301,14 @@ func (g GitHub) installationRepos(ctx context.Context, token string, installatio
 			if repo.Permissions.Push && !repo.Archived && !repo.Disabled && ValidRepository(repo.FullName) && repo.ID > 0 {
 				repos = append(repos, Repository{ID: repo.ID, FullName: repo.FullName, DefaultBranch: repo.DefaultBranch, InstallationID: installationID})
 			}
+		}
+		if name != "" {
+			for _, r := range repos {
+				if strings.EqualFold(r.FullName, name) {
+					return []Repository{r}, nil
+				}
+			}
+			repos = nil
 		}
 		if len(response.Repositories) < 100 {
 			return repos, nil
@@ -353,4 +364,34 @@ func (g GitHub) request(ctx context.Context, endpoint, token string, form url.Va
 		return ErrUnavailable
 	}
 	return nil
+}
+
+// RepositoryByName enumerates app membership but checks only the requested
+// repository's collaborator role; it stops paging as soon as that repo is found.
+func (g GitHub) RepositoryByName(ctx context.Context, token string, user Account, name string) (Repository, error) {
+	if !strings.HasPrefix(token, "ghu_") || !ValidRepository(name) || user.ID <= 0 || !githubLogin.MatchString(user.Login) {
+		return Repository{}, ErrDenied
+	}
+	ids, err := g.writableInstallations(ctx, token)
+	if err != nil {
+		return Repository{}, err
+	}
+	for _, id := range ids {
+		repos, err := g.installationReposMatching(ctx, token, id, name)
+		if err != nil {
+			return Repository{}, err
+		}
+		for _, r := range repos {
+			if strings.EqualFold(r.FullName, name) {
+				allowed, err := g.repositoryPermission(ctx, token, user, r)
+				if err != nil {
+					return Repository{}, err
+				}
+				if allowed {
+					return r, nil
+				}
+			}
+		}
+	}
+	return Repository{}, ErrDenied
 }

@@ -15,10 +15,12 @@ import (
 )
 
 type RaindropHandler struct {
-	oauth   raindrop.OAuthClient
-	service *service.RaindropService
-	states  *raindropStateStore
-	links   secure.LinkSigner
+	stateStore loginStateStore
+	workspace  *WorkspaceHandler
+	oauth      raindrop.OAuthClient
+	service    *service.RaindropService
+	states     *raindropStateStore
+	links      secure.LinkSigner
 }
 
 func NewRaindropHandler(oauthClient raindrop.OAuthClient, raindropService *service.RaindropService, links secure.LinkSigner) *RaindropHandler {
@@ -29,6 +31,8 @@ func NewRaindropHandler(oauthClient raindrop.OAuthClient, raindropService *servi
 		states:  &raindropStateStore{values: make(map[string]raindropState)},
 	}
 }
+
+func (h *RaindropHandler) WithWorkspacePortal(p *WorkspaceHandler) { h.workspace = p }
 
 func (h *RaindropHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /raindrop/install", h.install)
@@ -46,6 +50,9 @@ func (h *RaindropHandler) install(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "invalid or expired account link")
 		return
 	}
+	if !beginProviderSession(w, r, h.workspace, userID, "raindrop") {
+		return
+	}
 	if h.oauth.ClientID == "" || h.oauth.RedirectURL == "" {
 		writeError(w, http.StatusServiceUnavailable, "Raindrop OAuth is not configured")
 		return
@@ -56,18 +63,24 @@ func (h *RaindropHandler) install(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not create OAuth state")
 		return
 	}
-	h.states.add(state, userID, 10*time.Minute)
+	if err := h.saveState(r.Context(), state, userID); err != nil {
+		writeError(w, 503, "OAuth state unavailable")
+		return
+	}
 	setOAuthCookie(w, r, "nudge_raindrop_oauth", state, "/raindrop/oauth/callback")
 	http.Redirect(w, r, h.oauth.InstallURL(state), http.StatusFound)
 }
 
 func (h *RaindropHandler) callback(w http.ResponseWriter, r *http.Request) {
+	if !checkProviderSession(w, r, h.workspace, "raindrop") {
+		return
+	}
 	privatePageHeaders(w)
 	if !consumeOAuthCookie(w, r, "nudge_raindrop_oauth", r.URL.Query().Get("state"), "/raindrop/oauth/callback") {
 		writeError(w, http.StatusBadRequest, "OAuth browser session mismatch")
 		return
 	}
-	userID, ok := h.states.consume(r.URL.Query().Get("state"))
+	userID, ok := h.consumeState(r.Context(), r.URL.Query().Get("state"))
 	if !ok {
 		writeError(w, http.StatusBadRequest, "invalid or expired OAuth state")
 		return

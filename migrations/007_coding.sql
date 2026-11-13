@@ -43,3 +43,9 @@ CREATE TABLE IF NOT EXISTS coding_edits (
     UNIQUE(user_id, team_id, channel_id, event_id)
 );
 CREATE INDEX IF NOT EXISTS coding_edits_owner_idx ON coding_edits(user_id, team_id, created_at DESC);
+
+ALTER TABLE coding_edits DROP CONSTRAINT IF EXISTS coding_edits_status_check;
+ALTER TABLE coding_edits ADD CONSTRAINT coding_edits_status_check CHECK (status IN ('cloning','editing','awaiting_user_test','pushed','cancelled','failed'));
+ALTER TABLE coding_edits ADD COLUMN IF NOT EXISTS edit_claim TEXT;
+ALTER TABLE coding_edits ADD COLUMN IF NOT EXISTS edit_lease_until TIMESTAMPTZ;
+ALTER TABLE coding_edits ADD COLUMN IF NOT EXISTS metadata TEXT;

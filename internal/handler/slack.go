@@ -65,7 +65,10 @@ func (h *SlackHandler) install(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not create OAuth state")
 		return
 	}
-	h.states.add(state, 10*time.Minute)
+	if err := h.saveState(r.Context(), state); err != nil {
+		writeError(w, 503, "OAuth state unavailable")
+		return
+	}
 	setOAuthCookie(w, r, "nudge_slack_oauth", state, "/slack/oauth/callback")
 	http.Redirect(w, r, h.oauth.InstallURL(state), http.StatusFound)
 }
@@ -81,7 +84,7 @@ func (h *SlackHandler) callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	state := r.URL.Query().Get("state")
-	if !h.states.consume(state) {
+	if !h.consumeState(r.Context(), state) {
 		writeError(w, http.StatusBadRequest, "invalid or expired OAuth state")
 		return
 	}

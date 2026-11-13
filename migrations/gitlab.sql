@@ -43,3 +43,9 @@ CREATE TABLE IF NOT EXISTS gitlab_edits (
     UNIQUE(user_id, team_id, channel_id, event_id)
 );
 CREATE INDEX IF NOT EXISTS gitlab_edits_owner_idx ON gitlab_edits(user_id, team_id, created_at DESC);
+
+ALTER TABLE gitlab_edits DROP CONSTRAINT IF EXISTS gitlab_edits_status_check;
+ALTER TABLE gitlab_edits ADD CONSTRAINT gitlab_edits_status_check CHECK (status IN ('cloning','editing','awaiting_user_test','pushed','cancelled','failed'));
+ALTER TABLE gitlab_edits ADD COLUMN IF NOT EXISTS edit_claim TEXT;
+ALTER TABLE gitlab_edits ADD COLUMN IF NOT EXISTS edit_lease_until TIMESTAMPTZ;
+ALTER TABLE gitlab_edits ADD COLUMN IF NOT EXISTS metadata TEXT;

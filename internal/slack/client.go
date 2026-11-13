@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -47,9 +48,12 @@ type APIClient struct {
 }
 
 type usersListResponse struct {
-	OK      bool                 `json:"ok"`
-	Error   string               `json:"error"`
-	Members []domain.SlackMember `json:"members"`
+	OK       bool                 `json:"ok"`
+	Error    string               `json:"error"`
+	Members  []domain.SlackMember `json:"members"`
+	Metadata struct {
+		Next string `json:"next_cursor"`
+	} `json:"response_metadata"`
 }
 
 type conversationOpenResponse struct {
@@ -61,27 +65,42 @@ type conversationOpenResponse struct {
 }
 
 func (c APIClient) ListUsers(ctx context.Context, token string) ([]domain.SlackMember, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://slack.com/api/users.list?limit=200", nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := c.httpClient().Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	var result usersListResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 || !result.OK {
-		if result.Error == "" {
-			result.Error = resp.Status
+	var members []domain.SlackMember
+	cursor := ""
+	seen := map[string]bool{}
+	for {
+		u := "https://slack.com/api/users.list?limit=200"
+		if cursor != "" {
+			u += "&cursor=" + url.QueryEscape(cursor)
 		}
-		return nil, fmt.Errorf("Slack users.list failed: %s", result.Error)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := c.httpClient().Do(req)
+		if err != nil {
+			return nil, err
+		}
+		var result usersListResponse
+		err = json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&result)
+		resp.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode != http.StatusOK || !result.OK {
+			return nil, fmt.Errorf("Slack users.list failed: %s", result.Error)
+		}
+		members = append(members, result.Members...)
+		cursor = strings.TrimSpace(result.Metadata.Next)
+		if cursor == "" {
+			return members, nil
+		}
+		if seen[cursor] || len(seen) >= 1000 {
+			return nil, fmt.Errorf("Slack users.list pagination limit")
+		}
+		seen[cursor] = true
 	}
-	return result.Members, nil
 }
 
 func (c APIClient) OpenDirectMessage(ctx context.Context, token, slackUserID string) (string, error) {

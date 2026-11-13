@@ -2,6 +2,7 @@ package secure
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -26,6 +27,7 @@ func NewLinkSigner(encodedKey string) (LinkSigner, error) {
 }
 
 type linkClaims struct {
+	Nonce   string `json:"n,omitempty"`
 	UserID  int64  `json:"u"`
 	Purpose string `json:"p"`
 	Expires int64  `json:"e"`
@@ -38,7 +40,11 @@ func (s LinkSigner) Token(userID int64, purpose string, expires time.Time) (stri
 	if len(s.key) != 32 || userID <= 0 || (purpose != "workspace" && purpose != "feedbin" && purpose != "raindrop" && purpose != "github" && purpose != "gitlab" && purpose != "jira" && purpose != "trello" && !codingReviewPurpose.MatchString(purpose) && !codingPushPurpose.MatchString(purpose)) {
 		return "", errors.New("invalid account link configuration")
 	}
-	raw, _ := json.Marshal(linkClaims{userID, purpose, expires.Unix()})
+	nonce := make([]byte, 16)
+	if _, err := rand.Read(nonce); err != nil {
+		return "", err
+	}
+	raw, _ := json.Marshal(linkClaims{UserID: userID, Purpose: purpose, Expires: expires.Unix(), Nonce: base64.RawURLEncoding.EncodeToString(nonce)})
 	body := base64.RawURLEncoding.EncodeToString(raw)
 	mac := hmac.New(sha256.New, s.key)
 	mac.Write([]byte(body))
@@ -71,10 +77,7 @@ func (s LinkSigner) Verify(token string, userID int64, purpose string, now time.
 }
 
 func (s LinkSigner) URL(base string, userID int64, purpose string, now time.Time) (string, error) {
-	lifetime := 8 * 24 * time.Hour
-	if purpose == "workspace" || purpose == "github" || purpose == "gitlab" || purpose == "jira" || purpose == "trello" {
-		lifetime = 20 * time.Minute
-	}
+	lifetime := 20 * time.Minute
 	token, err := s.Token(userID, purpose, now.Add(lifetime))
 	if err != nil {
 		return "", err

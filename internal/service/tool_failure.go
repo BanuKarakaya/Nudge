@@ -11,6 +11,12 @@ import (
 // original error: provider/network/database diagnostics can contain secrets.
 func AgentToolFailure(err error) (code, message string) {
 	switch {
+	case errors.Is(err, ErrActionDisabled):
+		return "action_disabled", "Workspace yöneticisi bu yazma aracını kapatmış. İşlem yapılmadı; başka araçla aşmaya çalışma."
+	case errors.Is(err, coding.ErrConnect):
+		return "coding_connection_required", "GitHub/GitLab hesabını panelden bağla veya bağlantısını yenile. İlgili bağlantı aracını kullan; kullanıcıdan token isteme."
+	case errors.Is(err, coding.ErrDenied):
+		return "coding_access_denied", "Bu depo için güncel kullanıcı veya workspace erişimi doğrulanamadı. Paneldeki depo kapsamını ve sağlayıcı izinlerini kontrol et."
 	case errors.Is(err, tracker.ErrUserScope):
 		return "jira_user_scope_required", "Jira’da atanabilir kişileri aramak için read:jira-user izni gerekiyor. Uygulama ayarlarına bu izin eklendikten sonra jira_connect ile kullanıcıyı yeniden bağla. Mevcut okuma ve diğer yazma araçları çalışmaya devam eder; kişi kimliği uydurma."
 	case errors.Is(err, tracker.ErrOutcomeUnknown):

@@ -52,23 +52,13 @@ networking and replace development database credentials. Do not expose Postgres
 to the internet. The app runs as uid/gid 1000; the Codex volume must be writable
 by that user. There is no Docker socket mount and no public Codex process port.
 
-`scripts/init-db.sh` applies **only the Up sections** of migrations 001–003 in a
-single transaction. PostgreSQL's entrypoint runs it on new volumes. The server
-then applies the other schemas through the repository constructors. Never run
-the complete Goose SQL files directly through `psql`: they also contain Down
-sections that remove tables.
-
-For an existing database, back up first. Existing initialized Compose volumes
-do not rerun init scripts. An empty existing database can be initialized once:
-
-```sh
-docker compose exec -T postgres sh /docker-entrypoint-initdb.d/10-nudgy.sh
-```
-
-If tables already exist, do not rerun bootstrap; compare schema/migration history
-and apply only missing changes. Bootstrap fails transactionally on an existing
-base schema instead of resetting it. Do not mix an external migration manager
-with startup migrations without reconciling ownership/history first.
+The server embeds the full schema and applies versioned migrations under an
+advisory lock, including on an empty database. It records checksums in
+`nudge_schema_migrations` and adopts legacy initialized installations.
+The Compose bootstrap script remains compatible but is not required by the server.
+Do not run complete Goose SQL files with `psql`: they include Down sections.
+Back up first and read [operations](operations.md) before upgrading. Never modify
+already recorded migrations or delete their version records to bypass checksums.
 
 ## 3. Register your Slack app
 
@@ -79,12 +69,12 @@ HTTPS origin:
 | --- | --- |
 | OAuth redirect | `/slack/oauth/callback` |
 | Event subscriptions Request URL | `/slack/events` |
-| Bot event subscription | `app_mention` |
+| Event subscriptions | `app_mention`, `app_uninstalled`, `tokens_revoked` |
 | Interactivity Request URL | `/slack/interactions` |
 | Bot scopes | `app_mentions:read`, `chat:write`, `reactions:write`, `users:read`, `im:write`, `channels:history`, `groups:history`, `im:history`, `mpim:history` |
 
 These scopes match `internal/slack/oauth.go`. History scopes allow context from
-threads the bot can access. The server currently processes app mentions; enabling
+threads the bot can access. The server processes app mentions and installation lifecycle events; enabling
 additional message events does not add direct-message conversation support.
 The dashboard's separate Slack OpenID Connect sign-in requests `openid profile`
 and uses the same callback. Configure Sign in with Slack for your app as required

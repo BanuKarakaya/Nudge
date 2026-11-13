@@ -15,6 +15,7 @@ import (
 )
 
 type SlackInteractionHandler struct {
+	actions       *SlackEventHandler
 	signingSecret string
 	bookmarks     service.BookmarkService
 	installations repository.InstallationRepository
@@ -89,7 +90,20 @@ func (h *SlackInteractionHandler) handle(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "invalid Slack interaction payload")
 		return
 	}
+	if payload.Actions[0].ActionID == "nudgy_action_approve" {
+		if h.actions == nil {
+			writeError(w, 503, "approval unavailable")
+			return
+		}
+		h.actions.approveAction(w, r, payload)
+		return
+	}
 	if payload.Actions[0].ActionID == codingPushAction {
+		if h.actions != nil {
+			buttonAcknowledgement(w, "Bu eski onay kartı artık kullanılamıyor. Nudgy’den güncel inceleme ve onay kartını iste.")
+			return
+		}
+
 		if h.coding == nil {
 			writeError(w, http.StatusServiceUnavailable, "coding unavailable")
 			return

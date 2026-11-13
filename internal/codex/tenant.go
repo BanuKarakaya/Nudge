@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"nudge/internal/ai"
+	"nudge/internal/analytics"
 	"nudge/internal/coding"
 	"nudge/internal/service"
 	"nudge/internal/workspace"
@@ -33,6 +34,9 @@ func NewTenantRuntime(store workspace.AIStore, members tenantMembers, binary, st
 	if store == nil || members == nil || !filepath.IsAbs(stateDir) {
 		return nil, errors.New("workspace AI runtime configuration is invalid")
 	}
+	if err := removeLegacyState(stateDir); err != nil {
+		return nil, err
+	}
 	return &TenantRuntime{store: store, members: members, base: Config{Binary: binary, StateDir: stateDir}, slots: make(chan struct{}, 4), intentSlots: make(chan struct{}, 4)}, nil
 }
 func (t *TenantRuntime) configured(ctx context.Context, user int64, key service.ConversationKey) (*Runtime, workspace.AICredentials, error) {
@@ -52,6 +56,7 @@ func (t *TenantRuntime) configured(ctx context.Context, user int64, key service.
 		return nil, c, workspace.ErrAINotConfigured
 	}
 	cfg := t.base
+	cfg.ToolModels = c.ToolModels
 	cfg.Model = c.Model
 	cfg.ComplexModel = c.ComplexModel
 	if cfg.ComplexModel == cfg.Model {
@@ -63,7 +68,7 @@ func (t *TenantRuntime) configured(ctx context.Context, user int64, key service.
 	// Changing credentials/provider starts a separate native state directory. Only
 	// explicitly delivered, user-bound history is carried across that boundary.
 	sum := sha256.Sum256([]byte(m.Team + ":" + c.Revision))
-	cfg.StateDir = filepath.Join(cfg.StateDir, "workspaces", hex.EncodeToString(sum[:]))
+	cfg.StateDir = filepath.Join(cfg.StateDir, "workspaces", hex.EncodeToString(sum[:]), "users", nativeUserDir(user))
 	r, err := New(cfg)
 	if err != nil {
 		return nil, c, errors.New("workspace AI runtime could not start")
@@ -84,6 +89,30 @@ func (t *TenantRuntime) Run(ctx context.Context, req service.AgentRequest) (serv
 	r, c, err := t.configured(ctx, req.UserID, req.Key)
 	if err != nil {
 		return service.AgentResult{}, err
+	}
+	if budgets, ok := t.store.(interface {
+		BeginBudget(context.Context, int64) (string, error)
+		FinishBudget(context.Context, string, int) error
+	}); ok {
+		id, err := budgets.BeginBudget(ctx, req.UserID)
+		if err != nil {
+			return service.AgentResult{}, err
+		}
+		usage := analytics.UsageTrackerFromContext(ctx)
+		if usage == nil {
+			usage = analytics.NewUsageTracker()
+			ctx = analytics.WithUsageTracker(ctx, usage)
+		}
+		before := len(usage.Snapshot())
+		defer func() {
+			tokens := 0
+			for _, u := range usage.Snapshot()[before:] {
+				tokens += u.TotalTokens
+			}
+			finish, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+			_ = budgets.FinishBudget(finish, id, tokens)
+		}()
 	}
 	if req.History.AIRevision != c.Revision {
 		req.ThreadID = ""

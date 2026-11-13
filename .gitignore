@@ -16,3 +16,6 @@ coverage.out
 *.sql.gz
 # Managed Sites project has its own Git history.
 /sites/nudgy-tanitim/
+
+# Local release artifacts.
+dist/

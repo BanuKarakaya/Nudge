@@ -3,6 +3,7 @@ package handler
 import (
 	"html/template"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -12,13 +13,16 @@ import (
 )
 
 type FeedbinHandler struct {
-	service *service.FeedbinService
-	links   secure.LinkSigner
+	service   *service.FeedbinService
+	links     secure.LinkSigner
+	workspace *WorkspaceHandler
 }
 
 func NewFeedbinHandler(feedbinService *service.FeedbinService, links secure.LinkSigner) *FeedbinHandler {
 	return &FeedbinHandler{service: feedbinService, links: links}
 }
+
+func (h *FeedbinHandler) WithWorkspacePortal(p *WorkspaceHandler) { h.workspace = p }
 
 func (h *FeedbinHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /feedbin/install", h.install)
@@ -36,6 +40,10 @@ func (h *FeedbinHandler) install(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "invalid or expired account link")
 		return
 	}
+	if !beginProviderSession(w, r, h.workspace, userID, "feedbin") {
+		return
+	}
+	w.Header().Set("Referrer-Policy", "strict-origin")
 	connected, err := h.service.IsConnected(r.Context(), userID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "could not check Feedbin connection")
@@ -49,6 +57,21 @@ func (h *FeedbinHandler) install(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *FeedbinHandler) connect(w http.ResponseWriter, r *http.Request) {
+	if !checkProviderSession(w, r, h.workspace, "feedbin") {
+		return
+	}
+	origin := r.Header.Get("Origin")
+	if r.Header.Get("Sec-Fetch-Site") == "cross-site" {
+		writeError(w, 403, "invalid origin")
+		return
+	}
+	if origin != "" {
+		u, e := url.Parse(origin)
+		if e != nil || u.Host != r.Host || (u.Scheme != "https" && u.Scheme != "http") {
+			writeError(w, 403, "invalid origin")
+			return
+		}
+	}
 	privatePageHeaders(w)
 	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
 	if err := r.ParseForm(); err != nil {
@@ -63,6 +86,14 @@ func (h *FeedbinHandler) connect(w http.ResponseWriter, r *http.Request) {
 	if !h.links.Verify(r.PostFormValue("token"), userID, "feedbin", time.Now()) {
 		writeError(w, http.StatusUnauthorized, "invalid or expired account link")
 		return
+	}
+	if h.workspace != nil {
+		c, _ := r.Cookie(workspaceCookie)
+		owner, e := h.workspace.store.SessionUser(r.Context(), workspaceHash(c.Value))
+		if e != nil || owner != userID {
+			writeError(w, 403, "account owner mismatch")
+			return
+		}
 	}
 	email := strings.TrimSpace(r.PostFormValue("email"))
 	password := r.PostFormValue("password")

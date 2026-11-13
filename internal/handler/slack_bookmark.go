@@ -3,7 +3,6 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"nudge/internal/service"
@@ -43,8 +42,4 @@ func (h *SlackBookmarkHandler) send(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "bookmark message sent"})
-}
-
-func parseBookmarkID(value string) (int64, error) {
-	return strconv.ParseInt(value, 10, 64)
 }

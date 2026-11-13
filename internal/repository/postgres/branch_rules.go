@@ -10,7 +10,7 @@ import (
 type BranchRuleStore struct{ db *pgxpool.Pool }
 
 func NewBranchRuleStore(ctx context.Context, db *pgxpool.Pool) (*BranchRuleStore, error) {
-	if _, err := db.Exec(ctx, migrations.BranchRulesSchema); err != nil {
+	if err := migrations.Apply(ctx, db); err != nil {
 		return nil, err
 	}
 	return &BranchRuleStore{db: db}, nil

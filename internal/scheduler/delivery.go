@@ -33,7 +33,7 @@ func (w DeliveryWorker) Run(ctx context.Context) {
 		if err != nil {
 			log.Printf("notification delivery failed: %v", err)
 		}
-		if !delivered || err != nil {
+		if !delivered {
 			if !waitFor(ctx, 15*time.Second) {
 				return
 			}

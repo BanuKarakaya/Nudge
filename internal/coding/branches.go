@@ -211,6 +211,9 @@ func (s *Service) MergeBranches(ctx context.Context, i Identity, name, source, t
 		if err != nil {
 			return ChangeRequest{}, err
 		}
+		if err := checkApprovedRevision(ctx, branch.SHA, source, target); err != nil {
+			return ChangeRequest{}, err
+		}
 		current, err = ensureBranchChange(ctx, p, token, r, branch, target, "Merge "+source+" into "+target, "Kullanıcının açık dal birleştirme isteği.")
 		if err != nil {
 			return ChangeRequest{}, err
@@ -223,6 +226,9 @@ func (s *Service) MergeBranches(ctx context.Context, i Identity, name, source, t
 		if saved != pin {
 			return ChangeRequest{}, ErrChangeMoved
 		}
+	}
+	if err := checkApprovedRevision(ctx, current.HeadSHA, current.SourceBranch, current.TargetBranch); err != nil {
+		return ChangeRequest{}, err
 	}
 	// Providers may calculate mergeability asynchronously after PR/MR creation.
 	// A short synchronous recheck is bounded; nothing is scheduled for later.
