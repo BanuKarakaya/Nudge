@@ -10,7 +10,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o /nudge-server ./cmd/server \
     && go clean -cache
 
-FROM node:22-alpine AS runtime
+FROM node:25-alpine AS runtime
 
 WORKDIR /app
 ARG CODEX_VERSION=0.164.0
