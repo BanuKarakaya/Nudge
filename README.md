@@ -114,3 +114,7 @@ Nudgy mascot assets. Third-party components retain their licenses; see
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and `LICENSES/` before distributing
 binaries or images. The MIT license does not grant rights to third-party service
 names or trademarks.
+
+## Custom company integrations
+
+Connect internal applications and other MCP servers from **Dashboard → Integrations → Özel bağlantılar** without editing Nudgy. Managers discover and select tools; new MCP operations require Slack approval by default. This first version uses a shared service-account token, not each employee's external account. See the [MCP setup, permissions and example adapter](docs/mcp-connections.md).

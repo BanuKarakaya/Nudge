@@ -1,5 +1,9 @@
 # Compiled tool modules
 
+For dashboard-configured remote MCP connections without changing Nudgy code, see
+[MCP connections](mcp-connections.md). The compiled interface below remains useful
+for trusted in-process extensions.
+
 Register trusted modules before serving requests with `SlackEventHandler.WithToolModule`.
 Each module receives a server-authenticated `coding.Identity` and returns
 `[]service.RegisteredTool`. Tool names must start with `ext_`; built-ins and duplicate

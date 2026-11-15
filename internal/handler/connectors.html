@@ -1,0 +1,27 @@
+{{define "connectors"}}
+<a class="back" href="/dashboard/integrations">← Entegrasyonlara dön</a>
+<h1>Kendi uygulamanı bağla.</h1>
+<p class="intro">MCP desteği olan bir servisi ekle, araç listesini incele ve ekibinin kullanabileceği işlemleri seç. Nudgy kodunda değişiklik gerekmez.</p>
+{{if .Message}}<div class="notice" role="status">{{.Message}}</div>{{end}}
+<section class="panel settings-panel connector-panel"><h2>Yeni MCP bağlantısı</h2>
+<p>HTTPS üzerinden Streamable HTTP ve Bearer erişim anahtarı desteklenir. OAuth girişi, yerel komut çalıştırma ve OpenAPI dosyası içe aktarma bu sürümde bulunmuyor. En fazla 5 bağlantı ekleyebilirsin.</p>
+<form method="post" action="/dashboard/connectors"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="discover">
+<div class="form-grid"><label>Bağlantı adı<input name="name" maxlength="80" required placeholder="Şirket destek sistemi"></label>
+<label>MCP adresi<input name="endpoint" type="url" maxlength="2048" required placeholder="https://tools.sirket.com/mcp"></label>
+<label>Bu MCP sunucusuna özel erişim anahtarı<input name="token" type="password" maxlength="4096" autocomplete="new-password" required></label></div>
+<p class="footnote">Sınırlı yetkili bir servis hesabı kullan. Anahtar şifreli saklanır, tekrar gösterilmez. Özel ağ adreslerine erişim için Nudgy sunucusunun yöneticisi ilgili HTTPS adresine izin vermelidir.</p>
+<button class="primary" type="submit">Bağlan ve araçları getir</button></form></section>
+{{range .Connections}}<section class="panel settings-panel connector-panel">
+<h2>{{.Name}}</h2><p>{{.Endpoint}}</p><p>{{if .Enabled}}Ekibe açık{{else}}Kapalı · Araçları seçip etkinleştir{{end}}</p>
+<form method="post" action="/dashboard/connectors"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="action" value="select"><input type="hidden" name="id" value="{{.ID}}"><input type="hidden" name="revision" value="{{.Revision}}">
+<div class="choices">{{range .Tools}}<label class="choice"><input type="checkbox" name="tool" value="{{.Name}}" {{if .Selected}}checked{{end}}><span><strong>{{.Name}}</strong><small>{{.Description}}</small></span></label>{{else}}<p>Sunucu araç bildirmedi.</p>{{end}}</div>
+<p>En fazla 12 araç seç. Yeni araçlar otomatik açılmaz. Tüm işlemler başlangıçta Slack onayı ister; otomatik izinleri <a href="/dashboard/actions">araç izinlerinden</a> yönetebilirsin.</p>
+<label class="enable"><input type="checkbox" name="enabled" value="true" {{if .Enabled}}checked{{end}}><span>Bu bağlantıyı ekibe aç</span></label>
+<label class="enable"><input type="checkbox" name="shared_account" value="true"><span>Seçili araçların bu çalışma alanındaki tüm Nudgy kullanıcılarına ortak servis hesabının yetkileriyle açılacağını biliyorum. Bu bağlantı, kullanıcıların uygulamadaki kişisel yetkilerini otomatik doğrulamaz.</span></label>
+<button class="primary" type="submit">Seçimi kaydet</button></form>
+<details class="credential-editor"><summary>Adres, anahtar ve araç listesini yenile</summary><p>Yenileme bağlantıyı kapatır ve araç seçimlerini temizler. Listeyi yeniden inceleyip ekibe açmalısın. Adres değişiyorsa yeni anahtar gerekir.</p>
+<form method="post" action="/dashboard/connectors"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="action" value="discover"><input type="hidden" name="id" value="{{.ID}}"><input type="hidden" name="revision" value="{{.Revision}}">
+<div class="form-grid"><label>Ad<input name="name" value="{{.Name}}" maxlength="80" required></label><label>Adres<input name="endpoint" type="url" value="{{.Endpoint}}" maxlength="2048" required></label><label>Yeni anahtar<input name="token" type="password" maxlength="4096" autocomplete="new-password" placeholder="Aynı adres için boş bırakırsan mevcut anahtar korunur"></label></div><p class="field-help">Yeni listeyi ekibe açmadan önce yeniden incele.</p><button type="submit">Yenile ve kapat</button></form></details>
+<form method="post" action="/dashboard/connectors"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="{{.ID}}"><input type="hidden" name="revision" value="{{.Revision}}"><button class="quiet danger" type="submit">Bağlantıyı ve anahtarını sil</button></form>
+</section>{{end}}
+{{end}}

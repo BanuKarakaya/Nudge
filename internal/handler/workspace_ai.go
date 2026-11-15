@@ -39,7 +39,7 @@ func (h *WorkspaceHandler) aiPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data := workspacePage{Member: m, CSRF: csrf, Section: "ai", Title: "AI ayarları", Description: "Kendi API anahtarını kullan, çalışma alanının modellerini sen seç."}
-	data.RoutingTools = h.routingTools()
+	data.RoutingTools = h.routingTools(r.Context(), m)
 	var err error
 	data.AI, err = h.ai.AISettings(r.Context(), m.UserID)
 	if err != nil {
@@ -130,7 +130,7 @@ func (h *WorkspaceHandler) saveAI(w http.ResponseWriter, r *http.Request) {
 	case "route":
 		tool, model := r.PostForm.Get("tool"), r.PostForm.Get("route_model")
 		known := false
-		for _, name := range h.routingTools() {
+		for _, name := range h.routingTools(r.Context(), m) {
 			if name == tool {
 				known = true
 				break

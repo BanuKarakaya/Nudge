@@ -19,6 +19,7 @@ type ActionProposal struct {
 	Tool      string
 	Arguments json.RawMessage
 	Revision  string
+	Display   string // Host-produced target details shown in the immutable approval.
 	Status    string
 }
 type ActionStore interface {

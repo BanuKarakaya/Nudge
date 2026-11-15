@@ -18,6 +18,7 @@ import (
 
 	"nudge/internal/analytics"
 	"nudge/internal/coding"
+	"nudge/internal/connector"
 	"nudge/internal/repository"
 	"nudge/internal/service"
 	"nudge/internal/slack"
@@ -26,6 +27,7 @@ import (
 )
 
 type SlackEventHandler struct {
+	connectors        *connector.Service
 	toolModules       []service.ToolModule
 	actions           actionStore
 	workspace         *WorkspaceHandler
@@ -378,7 +380,7 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 				runTools = integration.Tools(runTools, worktracker.Identity{UserID: userID, Team: event.TeamID}, trackerRequestID)
 			}
 			var registryErr error
-			runTools, registryErr = h.moduleTools(runTools, identity)
+			runTools, registryErr = h.moduleTools(ctx, runTools, identity)
 			if registryErr != nil {
 				return registryErr
 			}

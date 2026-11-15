@@ -175,3 +175,10 @@ The landing page in `railway/nudgy-tanitim/public/` can be hosted separately.
 Its existing links and deployment metadata refer to the maintainer's demo;
 replace them with your own URLs if publishing a fork. Railway is optional and is
 not required for the Go application.
+
+## Internal application connections
+
+Managers can add remote MCP endpoints from the dashboard. Public HTTPS endpoints
+work by default; private network access requires an operator origin allowlist and
+actual network connectivity from the deployment. See [MCP connections](mcp-connections.md)
+for service-account permissions, supported authentication, setup and limitations.

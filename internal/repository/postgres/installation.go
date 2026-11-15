@@ -170,6 +170,7 @@ func (r *InstallationRepository) Deactivate(ctx context.Context, team string, ev
 	for _, query := range []string{
 		`DELETE FROM workspace_sessions WHERE user_id IN (SELECT id FROM users WHERE team_id=$1)`,
 		`UPDATE workspace_integrations SET enabled=FALSE WHERE team_id=$1`,
+		`DELETE FROM workspace_mcp_connections WHERE team_id=$1`,
 		`DELETE FROM notifications WHERE user_id IN (SELECT id FROM users WHERE team_id=$1) AND delivery_status IN ('pending','sending')`,
 		`UPDATE nudge_slack_jobs SET status='failed',claim_token=NULL,lease_until=NULL,finished_at=NOW() WHERE team_id=$1 AND status IN ('queued','running')`,
 	} {

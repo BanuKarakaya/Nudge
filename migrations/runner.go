@@ -13,7 +13,7 @@ import (
 //go:embed *.sql
 var Files embed.FS
 
-var ordered = []string{"001_init.sql", "002_raindrop_token_expiry.sql", "003_feedbin.sql", "004_conversations.sql", "005_analytics.sql", "006_notification_delivery.sql", "007_coding.sql", "008_slack_jobs.sql", "009_merge_intents.sql", "gitlab.sql", "trackers.sql", "branch_rules.sql", "workspace.sql", "workspace_ai.sql", "010_operations.sql"}
+var ordered = []string{"001_init.sql", "002_raindrop_token_expiry.sql", "003_feedbin.sql", "004_conversations.sql", "005_analytics.sql", "006_notification_delivery.sql", "007_coding.sql", "008_slack_jobs.sql", "009_merge_intents.sql", "gitlab.sql", "trackers.sql", "branch_rules.sql", "workspace.sql", "workspace_ai.sql", "010_operations.sql", "011_mcp_connections.sql"}
 
 // Apply upgrades an empty or legacy database atomically. Advisory locking also
 // serializes startup across replicas. Recorded files are immutable: subsequent

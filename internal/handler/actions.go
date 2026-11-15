@@ -44,10 +44,13 @@ func (h *SlackEventHandler) notifyAction(ctx context.Context, p service.ActionPr
 	_ = json.Unmarshal(p.Arguments, &args)
 	pretty, _ := json.MarshalIndent(args, "", "  ")
 	formatted.WriteString(p.Tool + "\n" + string(pretty))
+	if p.Display != "" {
+		formatted.WriteString("\n" + p.Display)
+	}
 	if p.Revision != "" {
 		formatted.WriteString("\nİncelenen sürüm: " + p.Revision)
 	}
-	blocks := []map[string]any{{"type": "section", "text": map[string]string{"type": "plain_text", "text": "Bu işlem dış sistemde değişiklik yapacak. Aşağıdaki hedef ve içeriği kontrol et. Onay 20 dakika geçerli; yalnızca isteğin sahibi onaylayabilir."}}}
+	blocks := []map[string]any{{"type": "section", "text": map[string]string{"type": "plain_text", "text": "Bu işlem bağlı uygulamadaki yetkilerle çalıştırılacak. Aşağıdaki hedef ve içeriği kontrol et. Onay 20 dakika geçerli; yalnızca isteğin sahibi onaylayabilir."}}}
 	text := []rune(formatted.String())
 	for len(text) > 0 {
 		n := min(len(text), 2800)
@@ -70,8 +73,8 @@ func (h *SlackEventHandler) notifyAction(ctx context.Context, p service.ActionPr
 		link := ch.publicURL + "/" + ch.service.Kind() + "/review?" + url.Values{"user_id": {strconv.FormatInt(p.Identity.UserID, 10)}, "task_id": {a.Task}, "digest": {p.Revision}, "token": {token}}.Encode()
 		blocks = append(blocks, map[string]any{"type": "actions", "elements": []map[string]any{{"type": "button", "text": map[string]string{"type": "plain_text", "text": "Dosya değişikliklerini incele"}, "url": link}}})
 	}
-	blocks = append(blocks, map[string]any{"type": "actions", "elements": []map[string]any{{"type": "button", "text": map[string]string{"type": "plain_text", "text": "Değişikliği onayla"}, "action_id": "nudgy_action_approve", "value": p.ID, "style": "primary"}}})
-	return client.PostMessageInThreadWithBlocks(ctx, installation.BotToken, p.Identity.Channel, p.Identity.Thread, "Onay bekleyen değişiklik: "+p.Tool, blocks)
+	blocks = append(blocks, map[string]any{"type": "actions", "elements": []map[string]any{{"type": "button", "text": map[string]string{"type": "plain_text", "text": "İşlemi onayla"}, "action_id": "nudgy_action_approve", "value": p.ID, "style": "primary"}}})
+	return client.PostMessageInThreadWithBlocks(ctx, installation.BotToken, p.Identity.Channel, p.Identity.Thread, "Onay bekleyen işlem: "+p.Tool, blocks)
 }
 func (h *SlackEventHandler) approveAction(w http.ResponseWriter, r *http.Request, p slackInteractionPayload) {
 	user, err := h.installations.GetUserIDBySlackUserID(r.Context(), p.Team.ID, p.User.ID)
@@ -141,7 +144,7 @@ func (h *SlackEventHandler) processActionJob(ctx context.Context, event slackEve
 			for _, integration := range h.trackers {
 				tools = integration.Tools(tools, tracker.Identity{UserID: user, Team: event.TeamID}, "approval:"+p.ID)
 			}
-			tools, err = h.moduleTools(tools, p.Identity)
+			tools, err = h.moduleTools(ctx, tools, p.Identity)
 			if err != nil {
 				return err
 			}
@@ -220,6 +223,14 @@ func (h *SlackEventHandler) processActionJob(ctx context.Context, event slackEve
 }
 
 func (h *SlackEventHandler) prepareAction(ctx context.Context, p service.ActionProposal) (service.ActionProposal, error) {
+	if strings.HasPrefix(p.Tool, "ext_mcp_") {
+		if h.connectors == nil {
+			return p, service.ErrActionDisabled
+		}
+		var err error
+		p.Display, err = h.connectors.ApprovalTarget(ctx, p.Identity, p.Tool)
+		return p, err
+	}
 	if strings.HasSuffix(p.Tool, "repository_change_request_merge") || strings.HasSuffix(p.Tool, "repository_branches_merge") {
 		var a struct {
 			Repository string `json:"repository"`

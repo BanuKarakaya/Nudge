@@ -29,3 +29,14 @@ send real API keys or private customer content with the report.
 
 Automated tests and scanning reduce risk but are not a penetration test or a
 guarantee that all vulnerabilities or secrets have been found.
+
+## Remote MCP connections
+
+Workspace managers can explicitly share selected MCP tools through a dedicated
+service-account Bearer token. This does not provide employee-level authorization
+in the external application. Connector tokens use encrypted, team/connection/revision-bound
+storage. New operations default to human approval, including tools advertised as
+read-only. Endpoint/credential/catalog changes invalidate old approval tool names.
+The HTTP client checks DNS addresses at dial time, disables redirects and proxies,
+and limits requests/results. Private networks require operator-approved origins.
+See [MCP security and deployment details](docs/mcp-connections.md).

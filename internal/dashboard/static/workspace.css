@@ -182,3 +182,11 @@
 .workspace-page .credential-editor>summary:focus-visible{outline:3px solid #b38293;outline-offset:3px}
 .workspace-page .credential-editor-body{margin-top:20px;padding-top:20px;border-top:1px solid #eeeaec}
 @media(max-width:720px){.workspace-page .credential-status{padding:15px;gap:10px}.workspace-page .credential-status h3{font-size:15px}}
+
+/* Workspace-approved MCP connections use the existing settings layout. */
+.workspace-page .connector-panel>h2{color:#38242c;font-size:18px;margin:0 0 12px}
+.workspace-page .connector-panel p{color:#71676c;font-size:12px;line-height:1.8;overflow-wrap:anywhere;margin:12px 0 18px}
+.workspace-page .connector-panel .choice small{display:block;margin-top:5px;color:#71676c}
+.workspace-page .connector-panel .enable{align-items:flex-start;line-height:1.7;margin:14px 0}
+.workspace-page .connector-panel details{margin:24px 0}
+.workspace-page .connector-panel .form-grid{margin:18px 0}

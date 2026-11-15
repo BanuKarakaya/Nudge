@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"nudge/internal/coding"
+	"nudge/internal/connector"
 	"nudge/internal/dashboard"
 	"nudge/internal/repository"
 	"nudge/internal/secure"
@@ -24,7 +25,7 @@ import (
 
 //go:embed workspace_page.html
 var workspaceHTML string
-var workspaceTemplate = template.Must(template.New("workspace").Funcs(template.FuncMap{"count": formatCount, "millis": formatMillis, "activityTime": formatActivityTime, "activityStatus": activityStatus, "activityLabel": activityLabel}).Parse(workspaceHTML + workspaceAnalyticsHTML))
+var workspaceTemplate = template.Must(template.New("workspace").Funcs(template.FuncMap{"count": formatCount, "millis": formatMillis, "activityTime": formatActivityTime, "activityStatus": activityStatus, "activityLabel": activityLabel}).Parse(workspaceHTML + workspaceAnalyticsHTML + connectorHTML))
 
 const workspaceCookie = "nudgy_workspace"
 
@@ -36,6 +37,7 @@ type workspaceProvider struct {
 	Resources   func(context.Context, workspace.Member) ([]workspace.Resource, error)
 }
 type WorkspaceHandler struct {
+	connectors    *connector.Service
 	nativeData    nativeDataCleaner
 	actions       actionStore
 	actionEvents  *SlackEventHandler
@@ -110,6 +112,8 @@ func (h *WorkspaceHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dashboard/data/export", h.personalData)
 	mux.HandleFunc("POST /dashboard/data/delete", h.personalData)
 	mux.HandleFunc("GET /dashboard/audit", h.personalData)
+	mux.HandleFunc("GET /dashboard/connectors", h.connectorPage)
+	mux.HandleFunc("POST /dashboard/connectors", h.connectorPage)
 	mux.HandleFunc("GET /dashboard/actions", h.actionPage)
 	mux.HandleFunc("POST /dashboard/actions", h.actionPage)
 	files := http.StripPrefix("/dashboard/", http.FileServer(http.FS(dashboard.Files())))
@@ -256,6 +260,7 @@ type workspaceChoice struct {
 	Selected bool
 }
 type workspacePage struct {
+	Connections                                         []connector.Connection
 	RoutingTools                                        []string
 	Member                                              workspace.Member
 	CSRF, Error, Message, Token, Provider, ProviderName string

@@ -89,6 +89,7 @@ func TestWorkspaceStorePostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	testWorkspaceAIStore(t, db, s, owner, member, other)
+	testConnectorStore(t, db, owner, member, other)
 	loginMember, err := installs.SignInUser(ctx, "legacy", "LOGIN-MEMBER")
 	if err != nil {
 		t.Fatal(err)

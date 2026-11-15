@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"nudge/internal/codex"
+	"nudge/internal/connector"
 	"nudge/internal/database"
 	"nudge/internal/feedbin"
 	"nudge/internal/handler"
@@ -233,6 +234,11 @@ func main() {
 	actionStore := postgres.NewActionStore(db, aiCipher)
 	slackEventHandler.WithActions(actionStore, slackInteractionHandler)
 	workspacePortal.WithActions(actionStore, slackEventHandler)
+	mcpRemote, err := connector.NewHTTPRemote(os.Getenv("NUDGY_MCP_PRIVATE_ORIGINS"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	workspacePortal.WithConnectors(&connector.Service{Store: postgres.NewConnectorStore(db, aiCipher), Members: workspaceStore, Remote: mcpRemote}, slackEventHandler)
 	slackEventHandler.RegisterRoutes(mux)
 
 	notificationCtx, notificationCancel := context.WithTimeout(context.Background(), 15*time.Second)
