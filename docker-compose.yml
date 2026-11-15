@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: nudge
       POSTGRES_DB: nudge
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${NUDGY_POSTGRES_PORT:-5432}:5432"
     volumes:
       - nudge-postgres-data:/var/lib/postgresql/data
       - ./migrations:/nudgy-migrations:ro
@@ -29,7 +29,7 @@ services:
       PORT: "8080"
       NUDGY_CODEX_STATE_DIR: /var/lib/nudgy/codex
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:${NUDGY_HTTP_PORT:-8080}:8080"
     volumes:
       - nudge-codex-data:/var/lib/nudgy/codex
     depends_on:

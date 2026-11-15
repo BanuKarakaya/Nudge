@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Fixed
+- Patched the runtime zlib package for CVE-2026-4738; corrected outdated token-encryption and OAuth-state documentation.
 - Workspace invitations and shared-scope Jira/Trello writes work in production wiring.
 - Provider authorization requires the link owner's live panel session throughout redirects.
 - Edit leases release database connections before Git/network operations. Failed clones no longer consume open-task capacity.
@@ -14,6 +15,8 @@
 - Updated go-jose to 4.1.6; moved the runtime to Alpine and removed build-only package managers. The verified arm64 image has no HIGH/CRITICAL Trivy findings.
 
 ### Added
+- Standalone Compose setup for external PostgreSQL and configurable local ports.
+- Real PostgreSQL/browser installation isolation test and configuration-generation checks.
 - Default human approval for external write tools, workspace tool policies and revision-bound push/merge approvals.
 - Context-bound encrypted secrets, key IDs and keyring rotation; migration of legacy Slack/Raindrop plaintext tokens.
 - Versioned migrations, retention, personal export/deletion, configuration audit history and protected metrics.

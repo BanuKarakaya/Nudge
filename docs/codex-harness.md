@@ -39,8 +39,9 @@ The Dockerfile pins `@openai/codex` **0.164.0**. Review protocol compatibility
 before changing it. The Node launcher and native subprocess are terminated as a
 process group on timeout. No app-server TCP/WebSocket port is exposed.
 
-Use one application replica. The durable [Slack queue](slack-jobs.md) does not
-make OAuth in-memory state or separate native-state volumes interchangeable.
+Start with one application replica. OAuth state is persisted in PostgreSQL;
+the durable [Slack queue](slack-jobs.md) does not make separate native-state
+volumes interchangeable. See [operations](operations.md) before scaling.
 Back up the database, encryption keys and runtime volume; stop old instances
 before a rollout. Railway is optional.
 

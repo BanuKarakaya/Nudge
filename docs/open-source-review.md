@@ -76,6 +76,11 @@ veya bağımsız penetrasyon testi değildir.
 
 ## Kalan sınırlar ve sonraki işler
 
+Bu bölüm 12 Kasım incelemesinin tarihsel sonucudur. Sonraki değişikliklerde token
+şifrelemesi, veritabanında OAuth state, retention/silme, özel AI adresi ve container
+taraması eklendi. Güncel durum için [inceleme düzeltmelerini](review-remediation.md)
+ve [işletim belgesini](operations.md) esas alın.
+
 1. **Slack ve Raindrop tokenları:** PostgreSQL'de uygulama katmanında şifrelenmeden
    tutuluyor. Veritabanı/disk erişimi kısıtlanmalı; bu tokenlar için bağımsız anahtar,
    eski kayıtları okuyabilen geçiş ve yeniden şifreleme planı ayrıca uygulanmalı.

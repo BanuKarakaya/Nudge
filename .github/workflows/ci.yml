@@ -93,6 +93,8 @@ jobs:
         with:
           persist-credentials: false
       - run: python3 scripts/setup-env.py
+      - name: Check fresh configuration and external database setup
+        run: NUDGY_TEST_COMPOSE=1 python3 scripts/test-installation.py
       - run: docker compose --profile app up -d --build --wait
       - name: Scan built image for high and critical vulnerabilities
         run: |

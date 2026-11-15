@@ -14,7 +14,8 @@ FROM node:22-alpine AS runtime
 
 WORKDIR /app
 ARG CODEX_VERSION=0.164.0
-RUN apk add --no-cache ca-certificates tzdata git tini \
+# Upgrade the base image's zlib too: versions before 1.4 contain CVE-2026-4738.
+RUN apk add --no-cache ca-certificates tzdata git tini 'zlib>=1.4-r0' \
     && npm install --global --ignore-scripts --no-audit --no-fund @openai/codex@${CODEX_VERSION} \
     && npm cache clean --force \
     && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \

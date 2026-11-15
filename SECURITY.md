@@ -19,8 +19,9 @@ send real API keys or private customer content with the report.
 
 - Keep `.env`, encryption keys, PostgreSQL backups and Codex state private.
 - Use HTTPS, private database networking and independent stable encryption keys.
-- Slack and Raindrop tokens currently lack application-layer encryption; restrict
-  database access and encrypt storage/backups. Other credential categories are
+- Slack and Raindrop tokens are encrypted by the production server; legacy
+  plaintext records are migrated on startup. Restrict database access and encrypt
+  storage/backups as well. Other credential categories are
   described in [the data inventory](docs/architecture.md).
 - Update Go, container base images, Codex and dependencies after compatibility checks.
 - Revoke a leaked credential immediately at its provider. Deleting it from a

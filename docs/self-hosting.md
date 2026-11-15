@@ -38,6 +38,11 @@ protocol; verify the selected model with a short, deliberate test request.
 
 ## 2. Start the database and server
 
+If host ports 8080 or 5432 are already occupied, set `NUDGY_HTTP_PORT` and
+`NUDGY_POSTGRES_PORT` in `.env` to unused ports. Internal container ports remain
+8080 and 5432. Use the chosen HTTP port in local URLs/health checks and set
+`NUDGE_PUBLIC_URL` and Slack callbacks to the address users actually visit.
+
 ```sh
 docker compose --profile app up -d --build --wait
 curl --fail http://localhost:8080/health
@@ -59,6 +64,27 @@ The Compose bootstrap script remains compatible but is not required by the serve
 Do not run complete Goose SQL files with `psql`: they include Down sections.
 Back up first and read [operations](operations.md) before upgrading. Never modify
 already recorded migrations or delete their version records to bypass checksums.
+
+### Using an existing PostgreSQL server
+
+The default Compose file supplies its own PostgreSQL service and overrides
+`DATABASE_URL`. To use your company's existing PostgreSQL server, set its
+connection URL in `.env`, then use the standalone alternative:
+
+```sh
+docker compose -f docker-compose.external.yml up -d --build --wait
+```
+
+This starts only Nudgy and preserves `DATABASE_URL` from `.env`. The address must
+be reachable from inside the container; `localhost` refers to the container
+itself. Use the TLS settings required by your database provider and a dedicated
+database/user allowed to create and alter Nudgy's tables. The server applies all
+migrations automatically. Do not start both Compose variants on port 8080.
+
+On Railway, deploy the repository's Dockerfile and set the same environment
+variables directly in the service. Use your own PostgreSQL URL, configure a
+public HTTPS domain and `/health/db` healthcheck, and mount writable persistent
+storage at `/var/lib/nudgy/codex` (uid/gid 1000). Railway does not require Compose.
 
 ## 3. Register your Slack app
 
@@ -130,15 +156,16 @@ metacharacters. Never source a configuration file from an untrusted source.
 
 ## Operations and data
 
-Run one application replica. OAuth state and native Codex state are not designed
-for arbitrary load balancing; a durable Slack job queue alone does not make the
-whole application horizontally scalable. `/health` checks the HTTP process;
+Start with one application replica. OAuth state, sessions and job queues are
+stored in PostgreSQL. Native Codex state needs a writable directory per replica;
+see [operations](operations.md) before scaling. `/health` checks the HTTP process;
 `/health/db` checks database reachability, not Slack/AI/provider readiness.
 
 Back up PostgreSQL, Codex state and the independent encryption keys. Limit access
-to all three. Slack bot tokens and Raindrop OAuth tokens are currently stored
-without application-level encryption; use encrypted storage/backups and restricted
-database access. See [the architecture/data inventory](architecture.md).
+to all three. Slack bot tokens and Raindrop OAuth tokens are encrypted by the
+production server using the base encryption key; legacy plaintext records are
+migrated on startup. Use encrypted storage/backups and restricted database access
+as well. See [the architecture/data inventory](architecture.md).
 
 Test an upgrade on a restored copy first. Stop old application instances before
 starting the replacement with the same persistent state. `docker compose down`

@@ -46,6 +46,10 @@ Open <http://localhost:8080/dashboard>. To connect Slack, follow
 interactivity. The installer becomes the workspace manager and configures their
 own AI key and models in **AI settings**. Optional integrations start disabled.
 
+For an existing PostgreSQL server, use `docker-compose.external.yml` as described
+in [the self-hosting guide](docs/self-hosting.md#using-an-existing-postgresql-server).
+If local ports are occupied, set `NUDGY_HTTP_PORT` / `NUDGY_POSTGRES_PORT` in `.env`.
+
 The helper creates independent random keys and refuses to overwrite an existing
 `.env`. The server embeds all migrations and records version/checksum history on startup;
 existing base schemas are adopted. Fresh Compose volumes may also run the legacy bootstrap.
@@ -90,6 +94,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow.
 
 ## Documentation
 
+- [Release validation and test boundaries](docs/release-validation.md)
 - [Self-hosting and configuration](docs/self-hosting.md)
 - [Architecture, external services and stored data](docs/architecture.md)
 - [Dashboard](docs/dashboard.md) and [workspace permissions / AI configuration](docs/workspace-panel.md)
