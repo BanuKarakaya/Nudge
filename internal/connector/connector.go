@@ -40,7 +40,7 @@ type Store interface {
 }
 type Remote interface {
 	Discover(context.Context, string, string) ([]Tool, error)
-	Call(context.Context, string, string, Tool, json.RawMessage) (string, error)
+	Call(context.Context, string, string, Tool, json.RawMessage, func(context.Context) error) (string, error)
 }
 type Service struct {
 	Store   Store
@@ -208,28 +208,34 @@ func (s *Service) Tools(ctx context.Context, identity coding.Identity) ([]servic
 					if len(args) > 16000 || !json.Valid(args) || !strings.HasPrefix(strings.TrimSpace(string(args)), "{") {
 						return "", workspace.ErrDenied
 					}
-					liveMember, err := s.Members.Member(ctx, identity.UserID)
-					if err != nil || liveMember.Team != identity.Team {
-						return "", workspace.ErrDenied
-					}
-					live, err := s.find(ctx, identity.UserID, c.ID, c.Revision)
-					if err != nil || !live.Enabled {
-						return "", ErrUnavailable
-					}
-					found := false
-					for _, item := range live.Tools {
-						if item.Selected && item.Fingerprint == t.Fingerprint && item.Name == t.Name {
-							found = true
+					authorize := func(ctx context.Context) error {
+						liveMember, err := s.Members.Member(ctx, identity.UserID)
+						if err != nil || liveMember.Team != identity.Team {
+							return workspace.ErrDenied
 						}
+						live, err := s.find(ctx, identity.UserID, c.ID, c.Revision)
+						if err != nil || !live.Enabled {
+							return ErrUnavailable
+						}
+						found := false
+						for _, item := range live.Tools {
+							if item.Selected && item.Fingerprint == t.Fingerprint && item.Name == t.Name {
+								found = true
+							}
+						}
+						if !found {
+							return workspace.ErrDenied
+						}
+						return nil
 					}
-					if !found {
-						return "", workspace.ErrDenied
+					if err := authorize(ctx); err != nil {
+						return "", err
 					}
 					token, err := s.Store.Secret(ctx, identity.UserID, c.ID, c.Revision)
 					if err != nil {
 						return "", ErrUnavailable
 					}
-					return s.Remote.Call(ctx, c.Endpoint, token, t, args)
+					return s.Remote.Call(ctx, c.Endpoint, token, t, args, authorize)
 				},
 			})
 		}

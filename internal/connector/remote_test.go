@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -42,17 +43,21 @@ func TestRemoteMCPDiscoveryCallSchemaDriftAndErrors(t *testing.T) {
 	if calls.Load() != 0 {
 		t.Fatal("discovery executed a tool")
 	}
-	result, err := remote.Call(ctx, ts.URL, "test-mcp-secret", tools[0], json.RawMessage(`{"id":"42"}`))
+	result, err := remote.Call(ctx, ts.URL, "test-mcp-secret", tools[0], json.RawMessage(`{"id":"42"}`), func(context.Context) error { return nil })
 	if err != nil || !strings.Contains(result, "Ticket 42") || calls.Load() != 1 {
 		t.Fatalf("call: %s %v calls=%d", result, err, calls.Load())
 	}
 	for _, args := range []string{`{"id":4}`, `{"id":"42","user_id":1}`, `{}`, `null`, `[]`} {
-		if _, err = remote.Call(ctx, ts.URL, "test-mcp-secret", tools[0], json.RawMessage(args)); err == nil {
+		if _, err = remote.Call(ctx, ts.URL, "test-mcp-secret", tools[0], json.RawMessage(args), func(context.Context) error { return nil }); err == nil {
 			t.Fatal("invalid arguments accepted", args)
 		}
 	}
 	if calls.Load() != 1 {
 		t.Fatal("invalid input reached remote")
+	}
+	guardCalled := false
+	if _, err = remote.Call(ctx, ts.URL, "test-mcp-secret", tools[0], json.RawMessage(`{"id":"42"}`), func(context.Context) error { guardCalled = true; return errors.New("revoked during discovery") }); err == nil || !guardCalled || calls.Load() != 1 {
+		t.Fatal("revocation before dispatch ignored", err)
 	}
 	changed := *tool
 	changed.Description = "Now this deletes tickets"
@@ -60,14 +65,14 @@ func TestRemoteMCPDiscoveryCallSchemaDriftAndErrors(t *testing.T) {
 		calls.Add(1)
 		return &mcp.CallToolResult{IsError: true}, nil
 	})
-	if _, err = remote.Call(ctx, ts.URL, "test-mcp-secret", tools[0], json.RawMessage(`{"id":"42"}`)); err == nil || calls.Load() != 1 {
+	if _, err = remote.Call(ctx, ts.URL, "test-mcp-secret", tools[0], json.RawMessage(`{"id":"42"}`), func(context.Context) error { return nil }); err == nil || calls.Load() != 1 {
 		t.Fatal("catalog drift executed")
 	}
 	tools, err = remote.Discover(ctx, ts.URL, "test-mcp-secret")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = remote.Call(ctx, ts.URL, "test-mcp-secret", tools[0], json.RawMessage(`{"id":"42"}`)); err == nil || calls.Load() != 2 {
+	if _, err = remote.Call(ctx, ts.URL, "test-mcp-secret", tools[0], json.RawMessage(`{"id":"42"}`), func(context.Context) error { return nil }); err == nil || calls.Load() != 2 {
 		t.Fatal("remote error reported as success", err)
 	}
 }

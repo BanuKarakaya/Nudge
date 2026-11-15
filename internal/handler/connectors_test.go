@@ -52,7 +52,7 @@ func (s *connectorMemory) Discover(context.Context, string, string) ([]connector
 	s.calls++
 	return []connector.Tool{{Name: "ticket_read", Description: "<script>alert(1)</script>", Schema: map[string]any{"type": "object"}, Fingerprint: "v1"}}, nil
 }
-func (s *connectorMemory) Call(context.Context, string, string, connector.Tool, json.RawMessage) (string, error) {
+func (s *connectorMemory) Call(context.Context, string, string, connector.Tool, json.RawMessage, func(context.Context) error) (string, error) {
 	s.calls++
 	return "ok", nil
 }

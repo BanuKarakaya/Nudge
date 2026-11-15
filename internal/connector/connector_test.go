@@ -78,7 +78,10 @@ func (r *memoryRemote) Discover(_ context.Context, _, token string) ([]Tool, err
 	r.token = token
 	return []Tool{{Name: "read", Schema: map[string]any{"type": "object"}, Fingerprint: "read-v1"}, {Name: "delete", Schema: map[string]any{"type": "object"}, Fingerprint: "delete-v1"}}, nil
 }
-func (r *memoryRemote) Call(_ context.Context, _, token string, _ Tool, _ json.RawMessage) (string, error) {
+func (r *memoryRemote) Call(ctx context.Context, _, token string, _ Tool, _ json.RawMessage, authorize func(context.Context) error) (string, error) {
+	if err := authorize(ctx); err != nil {
+		return "", err
+	}
 	r.calls++
 	r.token = token
 	return "done", nil

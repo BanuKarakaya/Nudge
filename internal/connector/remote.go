@@ -253,7 +253,7 @@ func (r *HTTPRemote) Discover(ctx context.Context, endpoint, token string) ([]To
 	defer cleanup()
 	return catalog(ctx, session)
 }
-func (r *HTTPRemote) Call(ctx context.Context, endpoint, token string, tool Tool, args json.RawMessage) (string, error) {
+func (r *HTTPRemote) Call(ctx context.Context, endpoint, token string, tool Tool, args json.RawMessage, authorize func(context.Context) error) (string, error) {
 	if len(args) > 16000 {
 		return "", ErrUnavailable
 	}
@@ -281,6 +281,14 @@ func (r *HTTPRemote) Call(ctx context.Context, endpoint, token string, tool Tool
 	}
 	if !matched {
 		return "", ErrUnavailable
+	}
+	// Discovery may take time. Recheck revocation after it, immediately before
+	// dispatching the actual operation. No database lock is held over HTTP.
+	if authorize == nil {
+		return "", ErrUnavailable
+	}
+	if err := authorize(ctx); err != nil {
+		return "", err
 	}
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: tool.Name, Arguments: args})
 	if err != nil || result == nil || result.IsError || result.NeedsInput() {
