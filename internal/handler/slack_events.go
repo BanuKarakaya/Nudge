@@ -443,12 +443,8 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 		message = result.Text
 	} else if errors.Is(err, context.DeadlineExceeded) {
 		message = agentTimeoutMessage
-	} else if liveError(err) == "daily_quota" {
-		message = "Günlük AI token bütçesinde yeni bir işlem başlatacak alan kalmadı; bu istek için işlem yapılmadı. Bütçe her gün 00:00 UTC’de (Türkiye saatiyle 03:00) yenilenir. Kullanımı dashboard’daki Kullanım bölümünden kontrol edebilirsin."
 	} else if liveError(err) == "workspace_busy" {
 		message = "Çalışma alanında aynı anda çalışabilecek işlem sayısına ulaşıldı; bu isteği başlatamadım. Devam eden işler tamamlanınca tekrar deneyebilirsin."
-	} else if liveError(err) == "token_limit" {
-		message = "Bu isteğe ayrılan AI token bütçesine ulaşıldığı için devam edemedim. Bazı adımlar gerçekleşmiş olabilir; tekrar denemeden önce dashboard’daki Canlı işlemler bölümünden gerçekleşen adımları kontrol edebilirsin."
 	} else if errors.Is(err, workspace.ErrAINotConfigured) {
 		message = "Çalışma alanının AI ayarları henüz hazır değil. Yönetici panelde kendi API anahtarını ekleyip modelini seçmeli. Panel bağlantısı için bana “panel” yazabilirsin."
 	}

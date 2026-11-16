@@ -25,32 +25,20 @@ commit and destination. A revision change requires a new proposal. An interrupte
 approved action with an unknown remote outcome is not automatically repeated.
 Old push buttons must be replaced with a current approval card.
 
-Daily admission reserves the smaller of the per-run limit and the remaining
-user/workspace daily budget. Reservations include concurrent requests; observed
-usage settles them after completion. The reserved allowance follows model
-routing. Limits stop a run when the provider reports usage, so a model call
-can exceed the remaining allowance before its usage arrives. Unknown usage
-retains its reservation. Daily budgets renew at 00:00 UTC. Slack distinguishes
-exhausted daily budgets, workspace concurrency and in-progress token limits.
+Nudgy does not impose daily or per-request AI token quotas. Usage is still
+recorded for dashboard metrics. The former `NUDGY_RUN_TOKEN_LIMIT`,
+`NUDGY_USER_DAILY_TOKENS` and `NUDGY_WORKSPACE_DAILY_TOKENS` settings are ignored,
+including on upgraded deployments. Historical token reservations do not block
+new requests. Workspace concurrency uses only active run leases.
 
 ## Settings
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `NUDGY_RETENTION_DAYS` | `90` | Terminal jobs/tasks, conversations, analytics, audit history and inactive native conversations; valid range 1–3650 |
-| `NUDGY_RUN_TOKEN_LIMIT` | `100000` | Reservation for each run; observed usage stops generation after the limit |
-| `NUDGY_USER_DAILY_TOKENS` | `500000` | User reservations/usage per UTC day |
-| `NUDGY_WORKSPACE_DAILY_TOKENS` | `2000000` | Workspace reservations/usage per UTC day |
-| `NUDGY_WORKSPACE_CONCURRENCY` | `2` | Active reserved runs per workspace; native processes also have a global limit of four per instance |
+| `NUDGY_WORKSPACE_CONCURRENCY` | `2` | Active runs per workspace; native processes also have a global limit of four per instance |
 | `NUDGY_METRICS_TOKEN` | empty | Bearer token for `/metrics`; empty disables it |
 | `NUDGY_CUSTOM_AI_BASE_URL` | empty | Operator-selected Responses-compatible endpoint; HTTPS or loopback HTTP |
-
-Token ceilings use reported usage, not provider billing controls. A currently
-streaming response can exceed the observed threshold, and a model handoff is a
-second stage. Use provider account spending limits for an absolute money ceiling.
-Unknown usage retains the full reservation; expired run leases free concurrency.
-Google search has its own provider billing and is not included in the AI token
-reservation. These limits are deployment defaults, not editable by members.
 
 The custom endpoint must implement Responses and `/models` in the format expected
 by the pinned native harness. A generic chat-completions-only local server is not

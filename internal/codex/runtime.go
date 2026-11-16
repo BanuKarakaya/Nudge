@@ -219,29 +219,6 @@ func (c *connection) rpc(ctx context.Context, method string, params any, out any
 	}
 }
 
-func effectiveTokenLimit(reserved int) int {
-	limit := 100000
-	if v, err := strconv.Atoi(os.Getenv("NUDGY_RUN_TOKEN_LIMIT")); err == nil && v > 0 {
-		limit = v
-	}
-	if reserved > 0 && reserved < limit {
-		limit = reserved
-	}
-	return limit
-}
-
-func remainingTokenLimit(req service.AgentRequest, usage *service.AgentTokenUsage) int {
-	limit := effectiveTokenLimit(req.TokenLimit)
-	if usage == nil {
-		return limit
-	}
-	base := 0
-	if req.ThreadID != "" && req.History.AgentTokenUsage != nil {
-		base = req.History.AgentTokenUsage.Total
-	}
-	return limit - max(0, usage.Total-base)
-}
-
 // A process is scoped to one conversation and one active turn. Its on-disk
 // thread persists across turns/restarts. This avoids cross-tenant dispatch and
 // ensures a failed child cannot take all users' sessions down with it.
@@ -250,7 +227,6 @@ func (r *Runtime) Run(parent context.Context, req service.AgentRequest) (service
 }
 
 func (r *Runtime) run(parent context.Context, req service.AgentRequest, intentOnly bool) (service.AgentResult, error) {
-	req.TokenLimit = effectiveTokenLimit(req.TokenLimit)
 	analytics.Report(parent, analytics.LiveEvent{Stage: "model_starting", Model: r.config.Model})
 	ctx, cancel := context.WithTimeout(parent, r.config.Timeout)
 	defer cancel()
@@ -435,10 +411,6 @@ func (r *Runtime) run(parent context.Context, req service.AgentRequest, intentOn
 	}
 	complex.config.ToolModels = nil
 	complex.config.ComplexModel = ""
-	req.TokenLimit = remainingTokenLimit(req, result.TokenUsage)
-	if req.TokenLimit <= 0 {
-		return result, analytics.Failure("token_limit", errors.New("bu çalıştırmanın token sınırına ulaşıldı"))
-	}
 	req.ThreadID = threadID
 	req.History.AgentTokenUsage = result.TokenUsage
 	analytics.Report(ctx, analytics.LiveEvent{Stage: "model_handoff", Model: complex.config.Model})
@@ -656,14 +628,6 @@ func (r *Runtime) consume(ctx context.Context, c *connection, req service.AgentR
 			if p.TurnID == turnID && p.TokenUsage.Total != nil {
 				total := p.TokenUsage.Total
 				usage = &service.AgentTokenUsage{Input: total.Input, Output: total.Output, Total: total.Total}
-				limit := effectiveTokenLimit(req.TokenLimit)
-				base := 0
-				if req.ThreadID != "" && req.History.AgentTokenUsage != nil {
-					base = req.History.AgentTokenUsage.Total
-				}
-				if usage.Total-base > limit {
-					return service.AgentResult{ThreadID: threadID, TokenUsage: usage}, analytics.Failure("token_limit", errors.New("bu çalıştırmanın token sınırına ulaşıldı"))
-				}
 			}
 		case "item/completed":
 			if p.TurnID == turnID {

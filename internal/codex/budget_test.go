@@ -1,32 +1,24 @@
 package codex
 
 import (
-	"errors"
 	"nudge/internal/analytics"
 	"nudge/internal/service"
 	"testing"
 )
 
-func TestReservedBudgetLimitsRuntimeAndModelHandoff(t *testing.T) {
-	t.Setenv("NUDGY_RUN_TOKEN_LIMIT", "1000")
-	req := service.AgentRequest{TokenLimit: 98, ThreadID: "thread-1", History: service.ConversationState{AgentTokenUsage: &service.AgentTokenUsage{Input: 100, Total: 100}}}
+func TestTokenUsageDoesNotImposeNudgyQuota(t *testing.T) {
+	// Old deployment variables must not silently restore removed quotas.
+	t.Setenv("NUDGY_RUN_TOKEN_LIMIT", "1")
+	t.Setenv("NUDGY_USER_DAILY_TOKENS", "1")
+	t.Setenv("NUDGY_WORKSPACE_DAILY_TOKENS", "1")
 	tracker := analytics.NewUsageTracker()
-	first := &service.AgentTokenUsage{Input: 140, Total: 140}
-	result, err := consumeUsagePackets(t, req, tracker, tokenUsagePacket(t, "thread-1", "turn-1", first), messagePacket(t, "thread-1", "turn-1", "final_answer", "done"), completedPacket(t, "thread-1", "turn-1", "completed"))
-	if err != nil || result.Text != "done" {
-		t.Fatalf("remaining allowance rejected: %v", err)
+	total := service.AgentTokenUsage{Input: 1500000, Output: 100000, Total: 1600000}
+	result, err := consumeUsagePackets(t, service.AgentRequest{}, tracker,
+		tokenUsagePacket(t, "thread-1", "turn-1", &total),
+		messagePacket(t, "thread-1", "turn-1", "final_answer", "completed"),
+		completedPacket(t, "thread-1", "turn-1", "completed"))
+	if err != nil || result.Text != "completed" {
+		t.Fatalf("usage blocked completion: %v", err)
 	}
-	req.TokenLimit = remainingTokenLimit(req, result.TokenUsage)
-	if req.TokenLimit != 58 {
-		t.Fatalf("handoff reset allowance: %d", req.TokenLimit)
-	}
-	req.History.AgentTokenUsage = result.TokenUsage
-	_, err = consumeUsagePackets(t, req, tracker, tokenUsagePacket(t, "thread-1", "turn-1", &service.AgentTokenUsage{Input: 199, Total: 199}))
-	var coded *analytics.OperationalError
-	if !errors.As(err, &coded) || coded.Code != "token_limit" {
-		t.Fatalf("reserved limit bypassed: %v", err)
-	}
-	if effectiveTokenLimit(2000) != 1000 || effectiveTokenLimit(0) != 1000 {
-		t.Fatal("configured run ceiling ignored")
-	}
+	assertUsageRecord(t, tracker, total)
 }

@@ -3,7 +3,7 @@
 ## Unreleased
 
 ### Fixed
-- Daily AI budgets reserve the remaining allowance instead of rejecting requests below the full run maximum; that allowance follows model routing. Slack now distinguishes daily quota, concurrency and per-request token limits.
+- Removed Nudgy-imposed daily and per-request AI token quotas, including legacy configuration enforcement. Usage metrics and workspace concurrency remain available.
 - Explicit action requests execute without redundant confirmation by default; existing manager approval/disabled policies remain enforced. Successful tracker actions return concise links and human-readable results.
 - Personal data, reminders, tool policies and audit history use the shared dashboard layout, navigation and styled forms; audit JSON remains available as an explicit download.
 - Natural dashboard requests send the requester's private sign-in link; setup guidance respects user roles, negation and actual installation capabilities.
@@ -33,7 +33,7 @@
 - Optional human approval for external write tools, workspace tool policies and revision-bound push/merge approvals.
 - Context-bound encrypted secrets, key IDs and keyring rotation; migration of legacy Slack/Raindrop plaintext tokens.
 - Versioned migrations, retention, personal export/deletion, configuration audit history and protected metrics.
-- Daily user/workspace token reservations, workspace concurrency limits and OAuth request limits.
+- Workspace concurrency limits and OAuth request limits.
 - Workspace timezones, reminder settings and durable catch-up scheduling.
 - Operator-configured Responses-compatible AI endpoint, including loopback servers.
 - Pinned native harness tests, race tests, formatting, static analysis and image vulnerability scanning in CI.

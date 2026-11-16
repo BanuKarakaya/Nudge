@@ -53,7 +53,7 @@ read process memory and decrypted content. This is not end-to-end encryption.
 Short fenced edit leases avoid holding pooled database connections during Git
 operations. Failed clones are terminal. Snapshot lists read metadata; full source
 is removed after push. Queues have bounded attempts and durable output checkpoints.
-HTTP timeouts, OAuth admission limits, token reservations and workspace concurrency
+HTTP timeouts, OAuth admission limits and workspace concurrency
 bound ordinary misuse. Provider outages and billing spikes still need monitoring.
 
 Remote effects and database receipts cannot share a transaction. A process crash

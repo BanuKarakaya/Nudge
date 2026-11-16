@@ -279,9 +279,7 @@ func TestOperationalFailuresExplainRecoveryWithoutLeakingDetails(t *testing.T) {
 		code string
 		want []string
 	}{
-		{"daily_quota", []string{"Günlük AI token", "03:00", "işlem yapılmadı"}},
 		{"workspace_busy", []string{"aynı anda", "başlatamadım"}},
-		{"token_limit", []string{"token bütçesine", "Bazı adımlar gerçekleşmiş olabilir", "Canlı işlemler"}},
 	} {
 		t.Run(tc.code, func(t *testing.T) {
 			sender := &conversationSender{}

@@ -9,13 +9,12 @@ type AgentRuntime interface {
 }
 
 type AgentRequest struct {
-	TokenLimit int // Host-reserved allowance for this request; zero uses the configured run limit.
-	UserID     int64
-	Key        ConversationKey
-	ThreadID   string
-	Input      string
-	History    ConversationState
-	Tools      AgentTools
+	UserID   int64
+	Key      ConversationKey
+	ThreadID string
+	Input    string
+	History  ConversationState
+	Tools    AgentTools
 }
 
 type AgentResult struct {

@@ -216,7 +216,7 @@ func TestUninstallRevokesSessionTokenAndPendingWork(t *testing.T) {
 	}
 }
 
-func TestPrivacyPreferencesBudgetsAndRetention(t *testing.T) {
+func TestPrivacyPreferencesRunAdmissionAndRetention(t *testing.T) {
 	db := reviewDB(t, 3)
 	ctx := context.Background()
 	installs := NewInstallationRepository(db, reviewCipher(t))
@@ -242,27 +242,19 @@ func TestPrivacyPreferencesBudgetsAndRetention(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("NUDGY_RUN_TOKEN_LIMIT", "100")
-	t.Setenv("NUDGY_USER_DAILY_TOKENS", "150")
-	id, reserved, err := ai.BeginBudget(ctx, user)
+	t.Setenv("NUDGY_WORKSPACE_CONCURRENCY", "1")
+	id, err := ai.BeginRun(ctx, user)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reserved != 100 {
-		t.Fatalf("initial reservation=%d", reserved)
+	if _, err = ai.BeginRun(ctx, user); err == nil {
+		t.Fatal("concurrency limit bypassed")
 	}
-	t.Setenv("NUDGY_WORKSPACE_CONCURRENCY", "3")
-	if _, reserved, err = ai.BeginBudget(ctx, user); err != nil || reserved != 50 {
-		t.Fatalf("remaining daily budget unusable: %d %v", reserved, err)
-	}
-	if _, _, err = ai.BeginBudget(ctx, user); err == nil {
-		t.Fatal("exhausted budget accepted")
-	}
-	if err = ai.FinishBudget(ctx, id, 10); err != nil {
+	if err = ai.FinishRun(ctx, id); err != nil {
 		t.Fatal(err)
 	}
-	if _, reserved, err = ai.BeginBudget(ctx, user); err != nil || reserved != 90 {
-		t.Fatal("unused reservation not released", err)
+	if _, err = ai.BeginRun(ctx, user); err != nil {
+		t.Fatal("finished slot not released", err)
 	}
 	if err = Cleanup(ctx, db, 90); err != nil {
 		t.Fatal("retention SQL failed", err)

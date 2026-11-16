@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"nudge/internal/ai"
-	"nudge/internal/analytics"
 	"nudge/internal/coding"
 	"nudge/internal/service"
 	"nudge/internal/workspace"
@@ -90,29 +89,18 @@ func (t *TenantRuntime) Run(ctx context.Context, req service.AgentRequest) (serv
 	if err != nil {
 		return service.AgentResult{}, err
 	}
-	if budgets, ok := t.store.(interface {
-		BeginBudget(context.Context, int64) (string, int, error)
-		FinishBudget(context.Context, string, int) error
+	if runs, ok := t.store.(interface {
+		BeginRun(context.Context, int64) (string, error)
+		FinishRun(context.Context, string) error
 	}); ok {
-		id, limit, err := budgets.BeginBudget(ctx, req.UserID)
+		id, err := runs.BeginRun(ctx, req.UserID)
 		if err != nil {
 			return service.AgentResult{}, err
 		}
-		req.TokenLimit = limit
-		usage := analytics.UsageTrackerFromContext(ctx)
-		if usage == nil {
-			usage = analytics.NewUsageTracker()
-			ctx = analytics.WithUsageTracker(ctx, usage)
-		}
-		before := len(usage.Snapshot())
 		defer func() {
-			tokens := 0
-			for _, u := range usage.Snapshot()[before:] {
-				tokens += u.TotalTokens
-			}
 			finish, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 			defer cancel()
-			_ = budgets.FinishBudget(finish, id, tokens)
+			_ = runs.FinishRun(finish, id)
 		}()
 	}
 	if req.History.AIRevision != c.Revision {
