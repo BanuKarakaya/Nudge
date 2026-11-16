@@ -3,6 +3,11 @@
 ## Unreleased
 
 ### Fixed
+- Natural dashboard requests send the requester's private sign-in link; setup guidance respects user roles, negation and actual installation capabilities.
+- Personal Feedbin/Raindrop accounts can be renewed and disconnected without workspace scope activation; existing Feedbin credentials no longer block renewal.
+- Existing conversations refresh their native tool catalog when custom tools change, preserving delivered history.
+- Provider text envelopes are rendered as readable Slack messages instead of raw JSON.
+- Binary release bundles include third-party notices and dependency licenses, covered by SHA-256 checksums.
 - Patched the runtime zlib package for CVE-2026-4738; corrected outdated token-encryption and OAuth-state documentation.
 - Workspace invitations and shared-scope Jira/Trello writes work in production wiring.
 - Provider authorization requires the link owner's live panel session throughout redirects.
@@ -15,6 +20,11 @@
 - Updated go-jose to 4.1.6; moved the runtime to Alpine and removed build-only package managers. The verified arm64 image has no HIGH/CRITICAL Trivy findings.
 
 ### Added
+- Opt-in real-model language acceptance tests with bounded inference requests and synthetic tool effects.
+- Concurrent PostgreSQL queue/retry and connection-loss tests, native provider outage recovery, and browser-backed member/manager installation isolation.
+- Live dashboard request stages, tool failures, delivery status, model/token usage and role-scoped team/user metrics.
+- Custom HTTPS MCP integrations with selected tools, shared service-account credentials and approval policies.
+- Installation-aware workspace guide for account setup, model settings, permissions, privacy and supported product limits.
 - Standalone Compose setup for external PostgreSQL and configurable local ports.
 - Real PostgreSQL/browser installation isolation test and configuration-generation checks.
 - Default human approval for external write tools, workspace tool policies and revision-bound push/merge approvals.

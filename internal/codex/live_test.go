@@ -30,20 +30,7 @@ func TestLiveOpenRouterHarness(t *testing.T) {
 	if binary == "" {
 		t.Fatal("pinned Codex binary required")
 	}
-	env, err := os.ReadFile("../../.env.local")
-	if err != nil {
-		t.Fatal("local credential file unavailable")
-	}
-	key := ""
-	for _, line := range strings.Split(string(env), "\n") {
-		name, value, found := strings.Cut(strings.TrimSpace(line), "=")
-		if found && strings.TrimSpace(strings.TrimPrefix(name, "export ")) == "OPENROUTER_API_KEY" {
-			key = strings.Trim(strings.TrimSpace(value), "\"'")
-		}
-	}
-	if !strings.HasPrefix(key, "sk-or-") || strings.ContainsAny(key, " \n\r\t") {
-		t.Fatal("local credential format invalid; value withheld")
-	}
+	key := liveTestAPIKey(t)
 	const simple = "deepseek/deepseek-v4.1-flash-1017"
 	const complex = "openai/gpt-6-luna"
 	client := &http.Client{Timeout: 40 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
@@ -216,4 +203,27 @@ func TestLiveOpenRouterHarness(t *testing.T) {
 		t.Fatal("coding answered without observed Luna completion")
 	}
 	t.Log("native DeepSeek-to-Luna handoff and final code answer passed")
+}
+
+// Credentials are consumed locally and never written to test output.
+func liveTestAPIKey(t *testing.T) string {
+	t.Helper()
+	if key := os.Getenv("OPENROUTER_API_KEY"); key != "" {
+		return key
+	}
+	env, err := os.ReadFile("../../.env.local")
+	if err != nil {
+		t.Fatal("local credential file unavailable")
+	}
+	key := ""
+	for _, line := range strings.Split(string(env), "\n") {
+		name, value, found := strings.Cut(strings.TrimSpace(line), "=")
+		if found && strings.TrimSpace(strings.TrimPrefix(name, "export ")) == "OPENROUTER_API_KEY" {
+			key = strings.Trim(strings.TrimSpace(value), "\"'")
+		}
+	}
+	if !strings.HasPrefix(key, "sk-or-") || strings.ContainsAny(key, " \n\r\t") {
+		t.Fatal("local credential format invalid; value withheld")
+	}
+	return key
 }

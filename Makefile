@@ -1,4 +1,4 @@
-.PHONY: test check build setup db run fmt-check lint
+.PHONY: test check build setup db run fmt-check lint eval-language
 
 test:
 	go test ./...
@@ -27,3 +27,8 @@ fmt-check:
 
 lint:
 	go run honnef.co/go/tools/cmd/staticcheck@v0.7.0 ./...
+
+# Paid inference; requires NUDGY_EVAL_MODELS, OPENROUTER_API_KEY and pinned binary.
+# Synthetic tool effects only; see docs/natural-language-flows.md.
+eval-language:
+	NUDGY_LIVE_LANGUAGE_TEST=1 go test -count=1 -timeout=15m -v ./internal/codex -run '^TestLiveNaturalLanguageFlows$$'

@@ -51,3 +51,34 @@ bağlantı silmenin izolasyonunu, güvenli araç hatalarını ve eski thread'in 
 kataloğu değişimlerini kapsar. Sahte model kullanan handler testleri doğal dil
 anlama testi değildir; yukarıdaki kabul senaryoları ayrıca gerçek modelle
 denenmelidir. Bir modelin her olası ifadede doğru seçim yapması garanti edilmez.
+
+## Gerçek model kabul testi
+
+`make eval-language` üretimdeki native runtime, araç tanımları ve workspace
+rehberiyle 19 senaryoyu seçtiğiniz her modelde çalıştırır. Türkçe/İngilizce ve
+konuşma bağlamıyla link isteme, olumsuz/alıntılanmış ifadeler, üçüncü taraf dashboard,
+DM hatası, kişisel hesap yenileme, üye yetkisi, desteklenmeyen hatırlatıcı,
+MCP/OpenAPI, veri silme, loglar, izinler, RSS ve araç çıktısı enjeksiyonu kapsanır.
+Araç seçimleri ve DM denemeleri doğrudan doğrulanır; cevaplar ayrıca sınırlı kavram
+ve yanlış başarı iddiası kontrollerinden geçer. Bu, tüm doğal dili ölçen bir hakem
+veya tüm özelliklerin eksiksiz test edildiği anlamına gelmez.
+
+```sh
+export NUDGY_TEST_CODEX_BINARY=/absolute/path/to/pinned/codex
+export NUDGY_EVAL_MODELS='your-first-model,your-second-model'
+# OPENROUTER_API_KEY değerini güvenli ortam/secret yöneticisiyle sağlayın.
+make eval-language
+```
+
+Bu test ücretli OpenRouter çıkarımı kullanır; sıradan `make check` çalıştırmasında
+atlanan, açıkça başlatılan bir kontroldür. Tek çalıştırma en fazla 150 HTTP model
+isteği, istekte 96 KiB girdi ve 1.200 çıktı tokenıyla sınırlıdır; otomatik test
+tekrarı yoktur. Bir ila üç model seçilebilir. Model hata verdiyse sonuç başarılı
+sayılmaz. Gizli anahtarlar çıktıya yazılmaz; yalnız sentetik konuşmalar kaydedilir.
+Yerel geliştirmede mevcut `.env.local` içindeki OPENROUTER_API_KEY yedek kaynak
+olarak okunabilir; ortam değişkeni önceliklidir.
+
+Model gerçek olsa da Slack DM, RSS içeriği ve hesap işlemleri sentetiktir. Gerçek
+OAuth, gerçek teslimat, tüm model ailesi, model sürümleri arasında tutarlılık veya
+üretim AI yükü bu testin kapsamı değildir. Model veya sistem talimatları değişince
+kabul testini yeniden çalıştırın; [son sonuçlar](release-completion.md).

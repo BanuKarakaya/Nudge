@@ -14,6 +14,8 @@ mkdir -p "$release_dir"
 for arch in amd64 arm64; do
   CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -o "$release_dir/nudge-server-linux-$arch" ./cmd/server
 done
-cp LICENSE CHANGELOG.md "$release_dir/"
-(cd "$release_dir" && shasum -a 256 nudge-server-* > SHA256SUMS)
+cp LICENSE CHANGELOG.md THIRD_PARTY_NOTICES.md "$release_dir/"
+mkdir -p "$release_dir/LICENSES"
+cp LICENSES/*.txt "$release_dir/LICENSES/"
+(cd "$release_dir" && shasum -a 256 nudge-server-* LICENSE CHANGELOG.md THIRD_PARTY_NOTICES.md LICENSES/*.txt > SHA256SUMS)
 printf 'Prepared %s; review before tagging or publishing.\n' "$release_dir"

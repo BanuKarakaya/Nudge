@@ -1,5 +1,9 @@
 # Yayın öncesi doğrulama — 15 Kasım 2026
 
+> Bu rapor 14–15 Kasım kapsamını korur. Sonraki canlı dil testleri,
+> dayanıklılık kontrolleri ve paket düzeltmeleri için
+> [16 Kasım sonuçlarına](release-completion.md) bakın.
+
 14–15 Kasım kontrolleri, `1d8ca10` üzerine bu raporla birlikte gelen kurulum,
 dokümantasyon, regresyon testi ve zlib güncellemelerini kapsar. Veritabanları,
 hesap kimlikleri, OAuth yanıtları ve anahtarlar sentetiktir. Mevcut müşteri

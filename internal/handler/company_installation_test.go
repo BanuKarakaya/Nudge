@@ -144,6 +144,58 @@ func TestCompanyInstallationBrowserAndPostgres(t *testing.T) {
 			t.Fatal("installer role/tenant lost")
 		}
 	}
+	// Verified Slack member identities join an existing installation without
+	// inheriting the installer's role. Use the real session issuer and browser jar.
+	memberClients := map[string]*http.Client{}
+	var firstMember int64
+	for _, team := range []string{"COMPANY_A", "COMPANY_B"} {
+		id, err := installs.SignInUser(ctx, team, "MEMBER")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if id == firstMember {
+			t.Fatal("same Slack identity crossed tenant boundary")
+		}
+		firstMember = id
+		member, err := store.Member(ctx, id)
+		if err != nil || member.Manager || member.Team != team {
+			t.Fatal("member acquired installer privileges")
+		}
+		jar, _ := cookiejar.New(nil)
+		client := &http.Client{Jar: jar, Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+		memberClients[team] = client
+		response := httptest.NewRecorder()
+		if err := portal.startSession(response, httptest.NewRequest("GET", server.URL+"/dashboard", nil), id, ""); err != nil {
+			t.Fatal(err)
+		}
+		origin, _ := url.Parse(server.URL)
+		jar.SetCookies(origin, response.Result().Cookies())
+		status, body, _ := request(client, "/dashboard/setup?team_id=OTHER&manager=true")
+		if status != 200 || !strings.Contains(body, team) {
+			t.Fatal("member could not open own panel")
+		}
+		for _, path := range []string{"/dashboard/preferences", "/dashboard/audit"} {
+			status, _, _ := request(client, path)
+			if status != 403 {
+				t.Fatalf("member accessed manager page %s: %d", path, status)
+			}
+		}
+		// Even a valid CSRF token cannot grant a member workspace write rights.
+		var raw string
+		for _, cookie := range jar.Cookies(origin) {
+			if cookie.Name == workspaceCookie {
+				raw = cookie.Value
+			}
+		}
+		result, err := client.PostForm(server.URL+"/dashboard/preferences", url.Values{"csrf": {workspaceHash("csrf:" + raw)}, "timezone": {"Europe/Istanbul"}, "enabled": {"true"}, "manager": {"true"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		result.Body.Close()
+		if result.StatusCode != 403 {
+			t.Fatalf("member changed workspace preferences: %d", result.StatusCode)
+		}
+	}
 	// A caller-supplied tenant does not move an authenticated browser's scope.
 	status, body, _ := request(clients["COMPANY_A"], "/dashboard/setup?team_id=COMPANY_B&user_id=999")
 	if status != 200 || !strings.Contains(body, "COMPANY_A") || strings.Contains(body, "COMPANY_B") {
@@ -156,6 +208,14 @@ func TestCompanyInstallationBrowserAndPostgres(t *testing.T) {
 	_, body, _ = request(clients["COMPANY_A"], "/dashboard/setup")
 	if strings.Contains(body, "COMPANY_A") {
 		t.Fatal("revoked installation retained panel access")
+	}
+	_, memberBody, _ := request(memberClients["COMPANY_A"], "/dashboard/setup")
+	if strings.Contains(memberBody, "COMPANY_A") {
+		t.Fatal("revoked member retained panel access")
+	}
+	memberStatus, memberBody, _ := request(memberClients["COMPANY_B"], "/dashboard/setup")
+	if memberStatus != 200 || !strings.Contains(memberBody, "COMPANY_B") {
+		t.Fatal("member revocation crossed workspace boundary")
 	}
 	status, body, _ = request(clients["COMPANY_B"], "/dashboard/setup")
 	if status != 200 || !strings.Contains(body, "COMPANY_B") {

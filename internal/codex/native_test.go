@@ -164,7 +164,7 @@ func TestNativeAppServerToolRoundTrip(t *testing.T) {
 		}
 		var body map[string]json.RawMessage
 		if json.NewDecoder(r.Body).Decode(&body) != nil {
-			http.Error(w, "invalid request", 400)
+			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
 		n := requests.Add(1)
@@ -252,7 +252,7 @@ func TestNativeAppServerMissingRolloutRecovery(t *testing.T) {
 		}
 		if req.URL.Path != "/responses" || json.NewDecoder(req.Body).Decode(&body) != nil {
 			t.Error("unexpected provider request")
-			http.Error(w, "invalid", 400)
+			http.Error(w, "invalid", http.StatusBadRequest)
 			return
 		}
 		if !strings.Contains(string(body.Input), "known-card") || !strings.Contains(string(body.Input), "Current user message") {
@@ -287,5 +287,71 @@ func TestNativeAppServerMissingRolloutRecovery(t *testing.T) {
 	}
 	if result.TokenUsage == nil || result.TokenUsage.Total != 25 {
 		t.Fatalf("old cumulative usage reused: %+v", result.TokenUsage)
+	}
+}
+
+// A provider outage must terminate within the caller's deadline, release the
+// runtime slot, and allow a subsequent request after the provider recovers.
+func TestNativeProviderFailureAndRecovery(t *testing.T) {
+	binary := os.Getenv("NUDGY_TEST_CODEX_BINARY")
+	if binary == "" {
+		t.Skip("requires pinned native Codex binary")
+	}
+	for _, mode := range []string{"unauthorized", "rate_limited", "broken_stream", "timeout"} {
+		t.Run(mode, func(t *testing.T) {
+			var recovered atomic.Bool
+			stopServer := make(chan struct{})
+			var requests atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				requests.Add(1)
+				if !recovered.Load() {
+					switch mode {
+					case "unauthorized":
+						http.Error(w, "synthetic unauthorized", http.StatusUnauthorized)
+					case "rate_limited":
+						w.Header().Set("Retry-After", "1")
+						http.Error(w, "synthetic rate limit", http.StatusTooManyRequests)
+					case "broken_stream":
+						w.Header().Set("Content-Type", "text/event-stream")
+						fmt.Fprint(w, "data: {\"type\":\"response.created\"}\n\n")
+					case "timeout":
+						select {
+						case <-req.Context().Done():
+						case <-stopServer:
+						}
+					}
+					return
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+				item := map[string]any{"type": "message", "id": "recovery-message", "role": "assistant", "phase": "final_answer", "status": "completed", "content": []any{map[string]any{"type": "output_text", "text": "Recovered.", "annotations": []any{}}}}
+				for _, event := range []any{
+					map[string]any{"type": "response.created", "response": map[string]any{"id": "recovery", "status": "in_progress", "output": []any{}}},
+					map[string]any{"type": "response.output_item.done", "output_index": 0, "item": item},
+					map[string]any{"type": "response.completed", "response": map[string]any{"id": "recovery", "status": "completed", "output": []any{item}, "usage": map[string]int{"input_tokens": 10, "output_tokens": 3, "total_tokens": 13}}},
+				} {
+					raw, _ := json.Marshal(event)
+					fmt.Fprintf(w, "data: %s\n\n", raw)
+				}
+			}))
+			defer server.Close()
+			defer close(stopServer)
+			runtime, err := New(Config{Binary: binary, Model: "offline-test-model", BaseURL: server.URL, APIKey: "synthetic-key", StateDir: t.TempDir(), Timeout: 10 * time.Second, MaxConcurrent: 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			failed, err := runtime.Run(ctx, runtimeTestRequest())
+			cancel()
+			if err == nil || failed.Text != "" || requests.Load() == 0 {
+				t.Fatalf("outage accepted or provider not reached: error=%v requests=%d", err, requests.Load())
+			}
+			recovered.Store(true)
+			ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			got, err := runtime.Run(ctx, runtimeTestRequest())
+			if err != nil || got.Text != "Recovered." {
+				t.Fatalf("runtime failed to recover: %v text=%q", err, got.Text)
+			}
+		})
 	}
 }

@@ -1,5 +1,9 @@
 # Nudgy incelemesi: uygulanan düzeltmeler
 
+> Tarihsel inceleme: aşağıdaki bulgular belgenin tarihindeki durumu anlatır.
+> Sonraki değişiklikler ve güncel doğrulama sınırları için
+> [16 Kasım yayın kontrollerine](release-completion.md) bakın.
+
 13 Kasım 2026. Kaynak: `nudgy-review.html`, b22994d için hazırlanmış inceleme.
 Bu belge uygulanan kodu, doğrulama kapsamını ve henüz tamamlanmayan ürün önerilerini
 ayırır. Üretime dağıtım veya canlı sağlayıcı hesaplarında işlem yapılmadı.

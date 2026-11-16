@@ -1,5 +1,9 @@
 # Açık kaynak hazırlık incelemesi
 
+> Tarihsel inceleme: aşağıdaki bulgular belgenin tarihindeki durumu anlatır.
+> Sonraki değişiklikler ve güncel doğrulama sınırları için
+> [16 Kasım yayın kontrollerine](release-completion.md) bakın.
+
 Tarih: **12 Kasım 2026**. Başlangıç sürümü `af4d76a`; inceleme sırasında mevcut
 panel çalışması ayrı bir işlem tarafından `edaae22` olarak kaydedildi. Bu inceleme
 panel değişikliklerini geri almaz. Son doğrulamalar güncel çalışma ağacında yapıldı.
