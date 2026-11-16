@@ -38,7 +38,7 @@ func TestNaturalDashboardRequestSendsPrivateLinkInExistingThread(t *testing.T) {
 			}
 			sender := &conversationSender{}
 			h := NewSlackEventHandler("", codingInstallations{}, nil, nil, agentFunc(func(ctx context.Context, r service.AgentRequest) (service.AgentResult, error) {
-				if r.ThreadID != "" || len(r.History.Turns) != 1 || r.History.AgentToolVersion != "+workspace-panel-v1" {
+				if r.ThreadID != "" || len(r.History.Turns) != 1 || r.History.AgentToolVersion != "+workspace-panel-v2" {
 					t.Fatal("existing thread did not refresh tools while retaining delivered history", r.History)
 				}
 				found := false

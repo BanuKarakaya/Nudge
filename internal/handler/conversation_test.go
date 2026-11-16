@@ -74,10 +74,12 @@ func conversationEvent(text string) slackEventEnvelope {
 	return event
 }
 func deliveredState() service.ConversationState {
+	fingerprint, _ := service.ToolCatalogFingerprint(service.NewAgentTools(nil, nil, nil, 1, time.Now(), time.UTC))
 	return service.ConversationState{
-		Turns:    []service.ConversationExchange{{Request: "özet", Reply: "<https://example.com/one|One>"}},
-		Articles: []service.ConversationArticle{{ID: "PREVIOUS-1", Title: "One", URL: "https://example.com/one"}},
-		RSS:      &service.RSSSummaryProgress{Scope: "today", ShownKeys: []string{"url:https://example.com/one"}},
+		AgentToolFingerprint: fingerprint,
+		Turns:                []service.ConversationExchange{{Request: "özet", Reply: "<https://example.com/one|One>"}},
+		Articles:             []service.ConversationArticle{{ID: "PREVIOUS-1", Title: "One", URL: "https://example.com/one"}},
+		RSS:                  &service.RSSSummaryProgress{Scope: "today", ShownKeys: []string{"url:https://example.com/one"}},
 	}
 }
 func assertAgentInput(t *testing.T, input, message, timezone string) {
@@ -158,7 +160,7 @@ func TestAgentHistoryAndThreadIDAreIsolatedByFullSlackScope(t *testing.T) {
 			h := &SlackEventHandler{installations: conversationInstallations{}, history: store, client: &conversationSender{},
 				runtime: agentFunc(func(_ context.Context, request service.AgentRequest) (service.AgentResult, error) {
 					calls++
-					if request.Key == base || request.ThreadID != "" || !reflect.DeepEqual(request.History, service.ConversationState{}) {
+					if request.Key == base || request.ThreadID != "" || !reflect.DeepEqual(request.History, service.ConversationState{AgentToolFingerprint: deliveredState().AgentToolFingerprint}) {
 						t.Fatalf("context leaked across %s: %+v", field, request)
 					}
 					return service.AgentResult{ThreadID: "separate-thread", Text: "Merhaba"}, nil

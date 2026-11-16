@@ -324,7 +324,7 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 				toolVersion += "+gitlab-semantic-merge-v5"
 			}
 			if h.workspace != nil {
-				toolVersion += "+workspace-panel-v1"
+				toolVersion += "+workspace-panel-v2"
 			}
 			for _, integration := range h.trackers {
 				toolVersion += "+" + integration.service.Kind() + "-management-v2"
@@ -386,6 +386,9 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 				runTools = service.WithWorkspaceTools(runTools, func(sendCtx context.Context) error {
 					return h.workspace.SendLink(sendCtx, identity.UserID, identity.Team)
 				})
+				runTools = service.WithWorkspaceGuide(runTools, func(readCtx context.Context) (service.WorkspaceGuide, error) {
+					return h.workspace.Guide(readCtx, identity.UserID, identity.Team)
+				})
 			}
 			trackerRequestID := ""
 			if eventID != "" {
@@ -410,6 +413,15 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 				if job.Attempts > 1 {
 					input += "\n\nHost recovery: this same Slack request was interrupted. Discover existing repository tasks and inspect their status and saved edits before continuing. Reuse the existing task for this request; completed branch publishing must not be repeated."
 				}
+			}
+			fingerprint, fingerprintErr := service.ToolCatalogFingerprint(runTools)
+			if fingerprintErr != nil {
+				return fingerprintErr
+			}
+			if state.AgentToolFingerprint != fingerprint {
+				state.AgentThreadID, history.AgentThreadID = "", ""
+				state.AgentTokenUsage, history.AgentTokenUsage = nil, nil
+				state.AgentToolFingerprint, history.AgentToolFingerprint = fingerprint, fingerprint
 			}
 			analytics.Stage(ctx, "agent_starting")
 			log.Printf("slack_request=%s stage=agent_started", requestID)

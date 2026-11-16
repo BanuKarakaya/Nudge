@@ -20,13 +20,14 @@ type ConversationArticle struct {
 }
 
 type ConversationState struct {
-	AIRevision       string                 `json:"ai_revision,omitempty"`
-	AgentThreadID    string                 `json:"agent_thread_id,omitempty"`
-	AgentToolVersion string                 `json:"agent_tool_version,omitempty"`
-	AgentTokenUsage  *AgentTokenUsage       `json:"agent_token_usage,omitempty"`
-	Turns            []ConversationExchange `json:"turns"`
-	Articles         []ConversationArticle  `json:"previously_recommended_articles"`
-	RSS              *RSSSummaryProgress    `json:"rss_progress,omitempty"`
+	AgentToolFingerprint string                 `json:"agent_tool_fingerprint,omitempty"`
+	AIRevision           string                 `json:"ai_revision,omitempty"`
+	AgentThreadID        string                 `json:"agent_thread_id,omitempty"`
+	AgentToolVersion     string                 `json:"agent_tool_version,omitempty"`
+	AgentTokenUsage      *AgentTokenUsage       `json:"agent_token_usage,omitempty"`
+	Turns                []ConversationExchange `json:"turns"`
+	Articles             []ConversationArticle  `json:"previously_recommended_articles"`
+	RSS                  *RSSSummaryProgress    `json:"rss_progress,omitempty"`
 }
 
 // RSSSummaryProgress preserves pagination data in histories saved before AgentRuntime.

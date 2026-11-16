@@ -118,3 +118,9 @@ func (r *RaindropConnectionRepository) RefreshConnection(ctx context.Context, us
 	}
 	return c, tx.Commit(ctx)
 }
+
+// Disconnect removes only this user's local credential; provider contents remain intact.
+func (r *RaindropConnectionRepository) Disconnect(ctx context.Context, user int64) error {
+	_, err := r.db.Exec(ctx, `DELETE FROM raindrop_connections WHERE user_id=$1`, user)
+	return err
+}

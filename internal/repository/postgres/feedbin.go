@@ -64,3 +64,9 @@ func (r *FeedbinConnectionRepository) GetByUserID(ctx context.Context, userID in
 	connection.Password, err = r.cipher.DecryptFor(connection.Password, "feedbin:"+strconv.FormatInt(userID, 10))
 	return connection, err
 }
+
+// Disconnect removes only this user's local credential; provider contents remain intact.
+func (r *FeedbinConnectionRepository) Disconnect(ctx context.Context, user int64) error {
+	_, err := r.db.Exec(ctx, `DELETE FROM feedbin_connections WHERE user_id=$1`, user)
+	return err
+}

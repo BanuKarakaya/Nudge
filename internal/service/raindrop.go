@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"errors"
+	"github.com/jackc/pgx/v5"
 
 	"nudge/internal/domain"
 	"nudge/internal/raindrop"
@@ -38,4 +40,12 @@ func (s *RaindropService) Connect(ctx context.Context, userID int64, code string
 		RefreshToken:   tokens.RefreshToken,
 		ExpiresAt:      raindrop.ExpiresAt(tokens.ExpiresIn),
 	})
+}
+
+func (s *RaindropService) IsConnected(ctx context.Context, userID int64) (bool, error) {
+	_, err := s.connections.GetByUserID(ctx, userID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
 }

@@ -31,6 +31,7 @@ const workspaceCookie = "nudgy_workspace"
 
 type workspaceProvider struct {
 	Kind, Name  string
+	Personal    bool
 	Connected   func(context.Context, int64) (bool, error)
 	AccountName func(context.Context, int64) (string, error)
 	Disconnect  func(context.Context, int64) error
@@ -255,6 +256,7 @@ func (h *WorkspaceHandler) provider(kind string) (workspaceProvider, bool) {
 type workspaceCard struct {
 	Kind, Name, Status, AccountName                      string
 	Configured, Enabled, Connected, Manager, Unavailable bool
+	Personal                                             bool
 	Count                                                int
 }
 type workspaceChoice struct {
@@ -355,13 +357,24 @@ func (h *WorkspaceHandler) home(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	for _, kind := range []string{"github", "gitlab", "jira", "trello"} {
-		names := map[string]string{"github": "GitHub", "gitlab": "GitLab", "jira": "Jira", "trello": "Trello"}
+	for _, kind := range []string{"github", "gitlab", "jira", "trello", "feedbin", "raindrop"} {
+		if section == "integrations" && (kind == "feedbin" || kind == "raindrop") {
+			continue
+		}
+		names := map[string]string{"github": "GitHub", "gitlab": "GitLab", "jira": "Jira", "trello": "Trello", "feedbin": "Feedbin", "raindrop": "Raindrop"}
 		card := workspaceCard{Kind: kind, Name: names[kind], Manager: m.Manager && section == "integrations"}
 		p, configured := h.provider(kind)
 		card.Configured = configured
+		card.Personal = p.Personal
+		if p.Personal {
+			card.Manager = false
+		}
 		if configured {
-			scope, err := h.store.Scope(ctx, m.UserID, kind)
+			scope := workspace.Scope{Enabled: p.Personal}
+			var err error
+			if !p.Personal {
+				scope, err = h.store.Scope(ctx, m.UserID, kind)
+			}
 			if err != nil {
 				h.page(w, 503, workspacePage{Error: "Entegrasyon ayarları okunamadı. Yeniden dene."})
 				return
@@ -384,6 +397,9 @@ func (h *WorkspaceHandler) home(w http.ResponseWriter, r *http.Request) {
 			card.Status = "Çalışma alanında kurulmadı"
 		case card.Connected:
 			card.Status = "Hesap bağlı"
+			if p.Personal {
+				card.Status = "Bağlantı kayıtlı · erişim kullanım sırasında doğrulanır"
+			}
 		default:
 			card.Status = "Hesabını doğrula"
 		}
@@ -403,7 +419,7 @@ func (h *WorkspaceHandler) settings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, ok := h.provider(r.PathValue("provider"))
-	if !ok || !m.Manager {
+	if !ok || p.Personal || !m.Manager {
 		h.page(w, 403, workspacePage{Error: "Entegrasyon ayarlarını yalnızca çalışma alanı yöneticisi değiştirebilir."})
 		return
 	}
@@ -435,7 +451,7 @@ func (h *WorkspaceHandler) save(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, ok := h.provider(r.PathValue("provider"))
-	if !ok || !m.Manager {
+	if !ok || p.Personal || !m.Manager {
 		h.page(w, 403, workspacePage{Error: "Bu ayarı yalnızca çalışma alanı yöneticisi değiştirebilir."})
 		return
 	}
@@ -488,7 +504,11 @@ func (h *WorkspaceHandler) connect(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	scope, err := h.store.Scope(r.Context(), m.UserID, p.Kind)
+	scope := workspace.Scope{Enabled: p.Personal}
+	var err error
+	if !p.Personal {
+		scope, err = h.store.Scope(r.Context(), m.UserID, p.Kind)
+	}
 	if err != nil || (!m.Manager && !scope.Enabled) {
 		h.page(w, 403, workspacePage{Error: "Önce yöneticinin bu entegrasyonu kurması gerekiyor."})
 		return

@@ -136,6 +136,10 @@ func main() {
 	feedbinHandler := handler.NewFeedbinHandler(feedbinService, links)
 	feedbinHandler.WithWorkspacePortal(workspacePortal)
 	feedbinHandler.RegisterRoutes(mux)
+	workspacePortal.RegisterReadingAccount("feedbin", "Feedbin", feedbinService.IsConnected, feedbinRepository.Disconnect)
+	if raindropOAuth.ClientID != "" && raindropOAuth.ClientSecret != "" && raindropOAuth.RedirectURL != "" {
+		workspacePortal.RegisterReadingAccount("raindrop", "Raindrop", raindropService.IsConnected, raindropRepository.Disconnect)
+	}
 	feedbinDigestService := service.NewFeedbinDigestService(feedbinRepository, feedbin.Client{
 		HTTPClient: &http.Client{Timeout: 15 * time.Second},
 	})

@@ -238,3 +238,13 @@ Sağlayıcı sözleşmeleri: [Codex sağlayıcı ayarları](https://learn.chatgp
 [OpenRouter anahtar doğrulama](https://openrouter.ai/docs/api/api-reference/api-keys/get-current-api-key),
 [OpenRouter model listesi](https://openrouter.ai/docs/api/api-reference/models/list-all-models-and-their-properties),
 [Google model bilgileri](https://aistudio.google.com/api-reference/models).
+
+## Doğal dil ve kişisel okuma hesapları
+
+`workspace_guide`, mevcut kurulum ve kullanıcı rolüne göre panel yollarını açıklar.
+Doğal istekler, olumsuz ifadeler ve ürün sınırları için
+[akış kabul senaryolarına](natural-language-flows.md) bakın.
+Feedbin ve yapılandırılmışsa Raindrop, Hesaplarım ekranından bağlanabilir, yeniden
+doğrulanabilir veya kişisel bağlantısı kaldırılabilir. Bunlar ortak repo/proje
+kapsamı gerektirmeyen kişisel okuma hesaplarıdır. Kayıtlı bağlantı, sağlayıcının
+o anda erişimi kabul ettiğini garanti etmez.
