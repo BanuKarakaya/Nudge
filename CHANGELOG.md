@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Fixed
+- Personal data, reminders, tool policies and audit history use the shared dashboard layout, navigation and styled forms; audit JSON remains available as an explicit download.
 - Natural dashboard requests send the requester's private sign-in link; setup guidance respects user roles, negation and actual installation capabilities.
 - Personal Feedbin/Raindrop accounts can be renewed and disconnected without workspace scope activation; existing Feedbin credentials no longer block renewal.
 - Existing conversations refresh their native tool catalog when custom tools change, preserving delivered history.

@@ -2,7 +2,7 @@
 <html lang="tr">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#351b21">
-<title>Nudgy · Çalışma alanı</title><link rel="icon" href="/dashboard/nudgy-mascot.webp" type="image/webp">
+<title>Nudgy · {{.Title}}</title><link rel="icon" href="/dashboard/nudgy-mascot.webp" type="image/webp">
 <link rel="stylesheet" href="/dashboard/styles.css">
 <link rel="stylesheet" href="/dashboard/workspace.css">
 </head>
@@ -12,7 +12,7 @@
     <a class="brand" href="/dashboard" aria-label="Nudgy çalışma alanı"><span class="brand-mark" aria-hidden="true"><img src="/dashboard/nudgy-mascot.webp" alt=""></span><span>Nudgy</span><span class="brand-badge">AI</span></a>
     <div class="workspace"><span class="workspace-dot" aria-hidden="true"></span><span><strong>{{if .Member.UserID}}{{.Member.Name}}{{else}}Çalışma alanın{{end}}</strong><small>{{if .Member.Manager}}Yönetici erişimi{{else if .Member.UserID}}Üye erişimi{{else}}Güvenli giriş{{end}}</small></span></div>
     <nav class="nav" aria-label="Panel bölümleri">
-      <p class="nav-label">Çalışma alanın</p>{{if .Member.UserID}}<a class="nav-item" href="/dashboard/data">Verilerim</a>{{end}}{{if .Member.Manager}}<a class="nav-item" href="/dashboard/audit">Denetim kaydı</a>{{end}}{{if .Member.Manager}}<a class="nav-item" href="/dashboard/preferences">Hatırlatıcılar</a><a class="nav-item" href="/dashboard/actions">Araç izinleri</a>{{end}}
+      <p class="nav-label">Çalışma alanın</p>{{if .Member.UserID}}<a class="nav-item {{if eq .Section "data"}}active{{end}}" href="/dashboard/data">Verilerim</a>{{end}}{{if .Member.Manager}}<a class="nav-item {{if eq .Section "audit"}}active{{end}}" href="/dashboard/audit">Denetim kaydı</a>{{end}}{{if .Member.Manager}}<a class="nav-item {{if eq .Section "preferences"}}active{{end}}" href="/dashboard/preferences">Hatırlatıcılar</a><a class="nav-item {{if eq .Section "actions"}}active{{end}}" href="/dashboard/actions">Araç izinleri</a>{{end}}
       <a class="nav-item {{if eq .Section "overview"}}active{{end}}" href="/dashboard" aria-label="Genel bakış"><span class="nav-icon" aria-hidden="true">◩</span><span class="nav-text">Genel bakış</span></a>
       {{if .Member.UserID}}<a class="nav-item {{if eq .Section "operations"}}active{{end}}" href="/dashboard/operations" aria-label="Canlı işlemler"><span class="nav-icon" aria-hidden="true">☷</span><span class="nav-text">Canlı işlemler</span></a><a class="nav-item {{if eq .Section "usage"}}active{{end}}" href="/dashboard/usage" aria-label="Kullanım"><span class="nav-icon" aria-hidden="true">◷</span><span class="nav-text">Kullanım</span></a>{{end}}
       {{if .Member.UserID}}<a class="nav-item {{if eq .Section "setup"}}active{{end}}" href="/dashboard/setup" aria-label="Kurulum"><span class="nav-icon" aria-hidden="true">⚙</span><span class="nav-text">Kurulum</span></a>{{end}}
@@ -49,6 +49,7 @@
 {{if .Member.OwnerMissing}}<div class="notice error" role="status">Çalışma alanının yöneticisi henüz doğrulanmamış. Kurulumu yöneten kişi <a href="/slack/install">Slack kurulumunu yeniden yetkilendirerek</a> yönetimi açabilir. Kişisel bağlantılar korunur.</div>{{end}}
 {{if .Message}}<div class="notice" role="status">{{.Message}}</div>{{end}}
 {{if or (eq .Section "overview") (eq .Section "operations") (eq .Section "usage")}}{{if .MonitorEnabled}}{{template "monitor" .}}{{else}}{{template "workspace-analytics" .}}{{end}}
+{{else if or (eq .Section "preferences") (eq .Section "data") (eq .Section "audit") (eq .Section "actions")}}{{template "workspace-settings" .}}
 {{else if eq .Section "setup"}}
 <section class="nudgy-note"><div class="mascot-large" aria-hidden="true"><img src="/dashboard/nudgy-mascot.webp" alt=""></div><div><span class="note-kicker">SANA AİT ÇALIŞMA ALANI</span><h2>Senin modellerin. Ekibinin hesapları.</h2><p>{{if .Member.Manager}}AI anahtarını ve modellerini seç, ekibinin kullanacağı servisleri aç. Tek başına çalışıyorsan tüm adımları kendin tamamlayabilirsin.{{else}}AI ayarlarını ve ortak entegrasyonları yöneticin hazırlar. Sen kendi servis hesaplarını doğrulayarak başlayabilirsin.{{end}}</p></div></section>
 <div class="workspace-metrics">

@@ -209,3 +209,17 @@
 .workspace-page .monitor-events time{font-size:11px;color:#8b7580}.workspace-page .monitor-events p{margin:3px 0;color:#71384b;overflow-wrap:anywhere}
 .workspace-page .monitor-record code{font-size:11px;overflow-wrap:anywhere}.workspace-page .monitor-record .activity-detail>p{overflow-wrap:anywhere}
 @media(max-width:720px){.workspace-page .monitor-day{grid-template-columns:70px 1fr 1fr;gap:8px}.workspace-page .monitor-latency{gap:10px}}
+
+/* Account and administration pages share the dashboard shell. */
+.workspace-page .reminder-schedule{grid-template-columns:repeat(2,minmax(0,1fr))}
+.workspace-page .utility-panel h2{font-size:18px;color:#38242c;margin:12px 0}
+.workspace-page .utility-panel .label{color:#75616a}
+.workspace-page .utility-panel .field-help{max-width:76ch}
+.workspace-page .utility-actions{margin-top:20px}
+.workspace-page .danger-panel{border-color:#dfbdc7}
+.workspace-page .danger-panel .actions .danger{border-color:#dfbdc7;color:#87364c;background:#fff7f8}
+.workspace-page .danger-panel .actions .danger:hover{background:#fae9ee;border-color:#c791a1}
+.workspace-page .tool-name{overflow-wrap:anywhere}
+.workspace-page .utility-panel summary{cursor:pointer;font-size:12px;color:#603b48;line-height:1.8}
+.workspace-page .utility-panel .panel-head{flex-wrap:wrap;gap:16px}
+@media(max-width:720px){.workspace-page .reminder-schedule{grid-template-columns:1fr}}

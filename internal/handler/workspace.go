@@ -25,7 +25,10 @@ import (
 
 //go:embed workspace_page.html
 var workspaceHTML string
-var workspaceTemplate = template.Must(template.New("workspace").Funcs(template.FuncMap{"count": formatCount, "millis": formatMillis, "activityTime": formatActivityTime, "activityStatus": activityStatus, "activityLabel": activityLabel, "monitorStage": monitorStage, "monitorError": monitorError, "monitorStatus": monitorStatusLabel, "monitorTime": monitorTime, "monitorRequest": monitorRequestLabel}).Parse(workspaceHTML + workspaceAnalyticsHTML + connectorHTML + monitorHTML))
+
+//go:embed workspace_settings.html
+var workspaceSettingsHTML string
+var workspaceTemplate = template.Must(template.New("workspace").Funcs(template.FuncMap{"count": formatCount, "millis": formatMillis, "activityTime": formatActivityTime, "activityStatus": activityStatus, "activityLabel": activityLabel, "monitorStage": monitorStage, "monitorError": monitorError, "monitorStatus": monitorStatusLabel, "monitorTime": monitorTime, "monitorRequest": monitorRequestLabel}).Parse(workspaceHTML + workspaceAnalyticsHTML + connectorHTML + monitorHTML + workspaceSettingsHTML))
 
 const workspaceCookie = "nudgy_workspace"
 
@@ -115,6 +118,7 @@ func (h *WorkspaceHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dashboard/data/export", h.personalData)
 	mux.HandleFunc("POST /dashboard/data/delete", h.personalData)
 	mux.HandleFunc("GET /dashboard/audit", h.personalData)
+	mux.HandleFunc("GET /dashboard/audit/export", h.personalData)
 	mux.HandleFunc("GET /dashboard/connectors", h.connectorPage)
 	mux.HandleFunc("POST /dashboard/connectors", h.connectorPage)
 	mux.HandleFunc("GET /dashboard/actions", h.actionPage)
@@ -263,7 +267,20 @@ type workspaceChoice struct {
 	ID, Name string
 	Selected bool
 }
+type workspaceActionRow struct{ Name, Mode, Description string }
+type workspaceAuditRow struct {
+	ID        int64     `json:"id"`
+	ActorID   int64     `json:"actor_id"`
+	Action    string    `json:"action"`
+	Target    string    `json:"target"`
+	CreatedAt time.Time `json:"created_at"`
+}
 type workspacePage struct {
+	Timezone, FormError string
+	ReminderEnabled     bool
+	ActionRows          []workspaceActionRow
+	AuditRows           []workspaceAuditRow
+
 	Monitor                                             repository.MonitorSummary
 	MonitorEnabled                                      bool
 	MonitorURL, MonitorUser                             string

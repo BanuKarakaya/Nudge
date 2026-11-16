@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"html/template"
 	"net/http"
 	"sort"
 	"time"
@@ -12,8 +11,6 @@ import (
 	"nudge/internal/tracker"
 	"nudge/internal/workspace"
 )
-
-var actionSettings = template.Must(template.New("actions").Parse(`<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Nudgy · Araç izinleri</title><link rel="stylesheet" href="/dashboard/workspace.css"><main style="max-width:960px;margin:40px auto;padding:24px"><a href="/dashboard">← Panele dön</a><h1>Araç izinleri</h1><p>Varsayılan olarak dış sistemlerde değişiklik yapan her işlem Slack’te sahibinin onayını ister. Otomatik izin, aracı modelin doğrudan kullanmasına izin verir.</p><table><thead><tr><th>Araç</th><th>İzin</th></tr></thead><tbody>{{range .Rows}}<tr><td><strong>{{.Name}}</strong><p>{{.Description}}</p></td><td><form method="post"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="tool" value="{{.Name}}"><select name="mode"><option value="approval" {{if eq .Mode "approval"}}selected{{end}}>Onay iste</option><option value="auto" {{if eq .Mode "auto"}}selected{{end}}>Otomatik</option><option value="disabled" {{if eq .Mode "disabled"}}selected{{end}}>Kapalı</option></select><button>Kaydet</button></form></td></tr>{{end}}</tbody></table></main></html>`))
 
 func (h *WorkspaceHandler) WithActions(store actionStore, events *SlackEventHandler) {
 	h.actions = store
@@ -59,8 +56,10 @@ func (h *WorkspaceHandler) actionPage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	data := workspacePage{Member: m, CSRF: csrf, Section: "actions", Title: "Araç izinleri", Description: "Nudgy’nin bağlı uygulamalarda işlem yaparken ne zaman onay isteyeceğini belirle."}
 	if !m.Manager || h.actions == nil {
-		writeError(w, 403, "manager required")
+		data.Error = "Araç izinleri için yönetici erişimi gerekiyor."
+		h.page(w, http.StatusForbidden, data)
 		return
 	}
 	names := h.actionTools(r.Context(), m)
@@ -73,10 +72,11 @@ func (h *WorkspaceHandler) actionPage(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if !found || h.actions.SetActionMode(r.Context(), m.UserID, tool, r.PostForm.Get("mode")) != nil {
-			writeError(w, 400, "invalid tool policy")
+			data.Error = "Araç izni kaydedilemedi. Geçerli bir araç ve izin seçerek tekrar dene."
+			h.page(w, http.StatusBadRequest, data)
 			return
 		}
-		http.Redirect(w, r, "/dashboard/actions", http.StatusSeeOther)
+		http.Redirect(w, r, "/dashboard/actions?saved=1", http.StatusSeeOther)
 		return
 	}
 	descriptions := map[string]string{}
@@ -85,21 +85,19 @@ func (h *WorkspaceHandler) actionPage(w http.ResponseWriter, r *http.Request) {
 			descriptions[d.Name] = d.Description
 		}
 	}
-	type row struct{ Name, Mode, Description string }
-	data := struct {
-		CSRF string
-		Rows []row
-	}{CSRF: csrf}
 	for _, name := range names {
 		mode, err := h.actions.ActionMode(r.Context(), m.UserID, name)
 		if err != nil {
-			writeError(w, 503, "policies unavailable")
+			data.Error = "Araç izinleri şu an okunamıyor."
+			h.page(w, http.StatusServiceUnavailable, data)
 			return
 		}
-		data.Rows = append(data.Rows, row{name, mode, descriptions[name]})
+		data.ActionRows = append(data.ActionRows, workspaceActionRow{name, mode, descriptions[name]})
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = actionSettings.Execute(w, data)
+	if r.URL.Query().Get("saved") == "1" {
+		data.Message = "Araç izni kaydedildi."
+	}
+	h.page(w, http.StatusOK, data)
 }
 
 func (h *WorkspaceHandler) routingTools(ctx context.Context, m workspace.Member) []string {

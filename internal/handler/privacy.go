@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"html/template"
 	"net/http"
 )
 
@@ -19,57 +18,77 @@ type personalDataStore interface {
 	AuditLog(context.Context, int64) (json.RawMessage, error)
 }
 
-var privacyTemplate = template.Must(template.New("privacy").Parse(`<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Nudgy · Verilerim</title><main style="max-width:720px;margin:40px auto;font-family:system-ui;padding:24px"><a href="/dashboard">← Panel</a><h1>Verilerim</h1><p><a href="/dashboard/data/export">Kişisel verilerimi JSON olarak indir</a></p><h2>Geçmişimi ve bağlantılarımı sil</h2><p>Konuşmaların, görevlerin, kişisel sağlayıcı bağlantıların ve kayıtlı bağlantıların silinir; oturumun kapatılır. Slack üyelik kaydın ve çalışma alanına ait ortak yönetici ayarları korunur. Slack’te ve sağlayıcılarda önceden oluşturulan içerik, yedekler ve ücret/kota kayıtları bu silmeye dahil değildir. Bu işlem geri alınamaz.</p><form method="post" action="/dashboard/data/delete"><input type="hidden" name="csrf" value="{{.}}"><label>Onaylamak için SİL yaz: <input name="confirm" required pattern="SİL"></label><button>Kişisel verilerimi sil</button></form></main></html>`))
-
 func (h *WorkspaceHandler) personalData(w http.ResponseWriter, r *http.Request) {
 	m, csrf, ok := h.session(w, r)
 	if !ok {
 		return
 	}
+	data := workspacePage{Member: m, CSRF: csrf, Section: "data", Title: "Verilerim", Description: "Kişisel verilerini indir veya Nudgy’de saklanan geçmişini ve bağlantılarını yönet."}
+	if r.URL.Path == "/dashboard/audit" || r.URL.Path == "/dashboard/audit/export" {
+		data.Section, data.Title, data.Description = "audit", "Denetim kaydı", "Çalışma alanındaki son 200 ayar ve güvenlik işlemi."
+	}
 	store, ok := h.store.(personalDataStore)
 	if !ok {
-		writeError(w, 503, "data service unavailable")
+		data.Error = "Veri hizmeti şu an kullanılamıyor."
+		h.page(w, http.StatusServiceUnavailable, data)
 		return
 	}
 	switch r.URL.Path {
 	case "/dashboard/data/delete":
 		if r.PostForm.Get("confirm") != "SİL" {
-			writeError(w, 400, "silme onayı gerekli")
+			data.FormError = "Silme işlemi yapılmadı. Onay alanına SİL yazmalısın."
+			h.page(w, http.StatusBadRequest, data)
 			return
 		}
 		if h.nativeData != nil {
 			if err := h.nativeData.DeleteUserState(r.Context(), m.UserID); err != nil {
-				writeError(w, 503, "AI geçmişi silinemedi; tekrar dene")
+				data.FormError = "AI geçmişi silinemedi; lütfen tekrar dene."
+				h.page(w, http.StatusServiceUnavailable, data)
 				return
 			}
 		}
 		if store.DeletePersonalData(r.Context(), m.UserID) != nil {
-			writeError(w, 503, "silme tamamlanamadı")
+			data.FormError = "Silme tamamlanamadı; lütfen tekrar dene."
+			h.page(w, http.StatusServiceUnavailable, data)
 			return
 		}
 		http.SetCookie(w, &http.Cookie{Name: workspaceCookie, Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode})
 		http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
-	case "/dashboard/data/export", "/dashboard/audit":
+	case "/dashboard/data/export", "/dashboard/audit", "/dashboard/audit/export":
 		var raw json.RawMessage
 		var err error
-		if r.URL.Path == "/dashboard/audit" {
+		if data.Section == "audit" {
 			if !m.Manager {
-				writeError(w, 403, "manager required")
+				data.Error = "Denetim kaydını yalnızca çalışma alanı yöneticisi görebilir."
+				h.page(w, http.StatusForbidden, data)
 				return
 			}
 			raw, err = store.AuditLog(r.Context(), m.UserID)
 		} else {
 			raw, err = store.ExportPersonalData(r.Context(), m.UserID)
-			w.Header().Set("Content-Disposition", `attachment; filename="nudgy-personal-data.json"`)
 		}
 		if err != nil {
-			writeError(w, 503, "export unavailable")
+			data.Error = "Veriler şu an alınamıyor. Lütfen tekrar dene."
+			h.page(w, http.StatusServiceUnavailable, data)
 			return
 		}
+		if r.URL.Path == "/dashboard/audit" {
+			if json.Unmarshal(raw, &data.AuditRows) != nil {
+				data.Error = "Denetim kaydı görüntülenemiyor."
+				h.page(w, http.StatusServiceUnavailable, data)
+				return
+			}
+			h.page(w, http.StatusOK, data)
+			return
+		}
+		filename := "nudgy-personal-data.json"
+		if data.Section == "audit" {
+			filename = "nudgy-audit-log.json"
+		}
+		w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(raw)
 	default:
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_ = privacyTemplate.Execute(w, csrf)
+		h.page(w, http.StatusOK, data)
 	}
 }
