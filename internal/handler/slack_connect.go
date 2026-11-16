@@ -52,7 +52,13 @@ func (h *SlackEventHandler) connectionReply(ctx context.Context, provider string
 		started := time.Now()
 		sendCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		defer cancel()
+		analytics.Report(ctx, analytics.LiveEvent{Stage: "tool_started", Tool: "workspace_connect"})
 		err := h.workspace.SendLink(sendCtx, identity.UserID, identity.Team)
+		stage, code := "tool_completed", ""
+		if err != nil {
+			stage, code = "tool_failed", "workspace_link_failed"
+		}
+		analytics.Report(ctx, analytics.LiveEvent{Stage: stage, Tool: "workspace_connect", ErrorCode: code, DurationMS: time.Since(started).Milliseconds()})
 		analytics.RecordTool(ctx, "workspace_connect", "host", started, err == nil, `{"private_panel_link":true}`)
 		if err != nil {
 			return "Panel bağlantısını özel mesajına gönderemedim. Biraz sonra tekrar dene.", false

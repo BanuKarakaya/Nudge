@@ -113,7 +113,7 @@ anahtarıyla müşteri içeriğini okumaya izin vermez.
    etkin servislerde **Hesabını doğrula** düğmesine basıp kendi hesaplarına izin
    verir. Üyeler GitHub App kurmaz ve repo/proje/pano seçmez.
 5. Günlük istekler Slack’ten yapılır. `panel`, `paneli aç`, `entegrasyonlar` veya
-   `dashboard` mesajı yeni bir özel panel bağlantısı gönderir. Mevcut sağlayıcı
+   `dashboard` mesajı yeni bir özel panel bağlantısı gönderir. “Dashboard linki verebilir misin?” gibi doğal isteklerde de modelin `workspace_connect` aracı aynı bağlantıyı yalnızca isteyen kişinin DM sohbetine yollar; sağlayıcı bağlantısı veya yönetici yetkisi gerekmez. Mevcut sağlayıcı
    bağlantı komutları ve agent bağlantı araçları da aynı panele yönlendirir.
 
 GitHub, GitLab, Jira ve Trello için ayrı otomatik kurulum davetleri yerine kalıcı

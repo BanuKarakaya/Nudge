@@ -11,6 +11,8 @@ import (
 // original error: provider/network/database diagnostics can contain secrets.
 func AgentToolFailure(err error) (code, message string) {
 	switch {
+	case errors.Is(err, ErrWorkspaceLinkDelivery):
+		return "workspace_link_failed", "Nudgy dashboard bağlantısı özel mesaja gönderilemedi. Gönderildi deme; kullanıcıya yeniden denemesini ve sorun sürerse Slack bot erişimini kontrol etmesini söyle."
 	case errors.Is(err, errRSSConnection):
 		return "rss_connection_required", "Bu kullanıcının Feedbin bağlantısı yok. Feedbin hesabını bağlaması gerekiyor; kullanıcıdan Slack içinde şifre isteme."
 	case errors.Is(err, errRSSCredentials):

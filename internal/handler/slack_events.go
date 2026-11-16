@@ -323,6 +323,9 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 			if h.gitlab != nil {
 				toolVersion += "+gitlab-semantic-merge-v5"
 			}
+			if h.workspace != nil {
+				toolVersion += "+workspace-panel-v1"
+			}
 			for _, integration := range h.trackers {
 				toolVersion += "+" + integration.service.Kind() + "-management-v2"
 			}
@@ -379,6 +382,11 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 				tools, codingReply = h.gitlab.ToolsForReply(tools, identity, codingReply)
 			}
 			var runTools service.AgentTools = tools
+			if h.workspace != nil {
+				runTools = service.WithWorkspaceTools(runTools, func(sendCtx context.Context) error {
+					return h.workspace.SendLink(sendCtx, identity.UserID, identity.Team)
+				})
+			}
 			trackerRequestID := ""
 			if eventID != "" {
 				trackerRequestID = event.TeamID + ":" + event.Event.Channel + ":" + eventID
