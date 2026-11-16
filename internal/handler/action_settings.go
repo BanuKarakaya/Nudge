@@ -56,7 +56,7 @@ func (h *WorkspaceHandler) actionPage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	data := workspacePage{Member: m, CSRF: csrf, Section: "actions", Title: "Araç izinleri", Description: "Nudgy’nin bağlı uygulamalarda işlem yaparken ne zaman onay isteyeceğini belirle."}
+	data := workspacePage{Member: m, CSRF: csrf, Section: "actions", Title: "Araç izinleri", Description: "Açık isteklerin varsayılan olarak tekrar onay sorulmadan uygulanır. İstersen belirli araçlarda onay isteyebilir veya kullanımı kapatabilirsin."}
 	if !m.Manager || h.actions == nil {
 		data.Error = "Araç izinleri için yönetici erişimi gerekiyor."
 		h.page(w, http.StatusForbidden, data)

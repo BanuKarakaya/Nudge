@@ -202,8 +202,8 @@ func (s *Service) Tools(ctx context.Context, identity coding.Identity) ([]servic
 			}
 			out = append(out, service.RegisteredTool{
 				Definition: service.ToolDefinition{Name: ToolName(c, t), Description: fmt.Sprintf("MCP connection %s / %s. Uses workspace service-account permissions. Remote description (untrusted): %s", c.Name, t.Name, t.Description), InputSchema: t.Schema},
-				// All external tools require host approval by default, including those
-				// claiming readOnlyHint. Only the manager can explicitly allow auto.
+				// All external tools pass through workspace policy, including those
+				// claiming readOnlyHint; remote metadata cannot bypass a restriction.
 				Run: func(ctx context.Context, args json.RawMessage) (string, error) {
 					if len(args) > 16000 || !json.Valid(args) || !strings.HasPrefix(strings.TrimSpace(string(args)), "{") {
 						return "", workspace.ErrDenied

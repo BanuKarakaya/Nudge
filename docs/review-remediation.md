@@ -17,7 +17,7 @@ ayırır. Üretime dağıtım veya canlı sağlayıcı hesaplarında işlem yap�
 | 03 | Altı sağlayıcıda bağlantı başlangıcı link sahibinin panel oturumunu gerektiriyor; dönüş aynı canlı oturuma bağlı. Linkler tek kullanımlık ve 20 dakika. Panel çerezi OAuth yollarına da taşınıyor. | Yanlış kullanıcı, oturum değişimi, çıkış ve gerçek cookie-jar yol testleri |
 | 04 | Edit işlemleri kısa veritabanı sahiplenmesi ve süreli sahiplik anahtarı kullanıyor; ağ/git sırasında havuz bağlantısı tutulmuyor. Varsayılan havuz 16 bağlantı. | Tek bağlantılı PostgreSQL havuzunda callback içinden ikinci sorgu |
 | 05 | Dönen yeni OAuth token çifti `/user` kontrolünden önce kaydediliyor. | Sonraki kimlik çağrısı başarısız olduğunda yeni token korunuyor |
-| 06 | Merge kanıtından assistant mesajları çıkarıldı; depo/numara birlikte doğrulanıyor. Dış yan etkiler varsayılan olarak Slack onayına bağlı; push digest ve merge kaynak/hedef sürümü sabitleniyor. | Politika, tek kullanım, sahiplik, eski revizyon, yanlış hedef ve assistant enjeksiyon testleri |
+| 06 | Merge kanıtından assistant mesajları çıkarıldı; depo/numara birlikte doğrulanıyor. Dış yan etkiler yönetici politikasına bağlı; onay seçildiğinde push digest ve merge kaynak/hedef sürümü sabitleniyor. | Politika, tek kullanım, sahiplik, eski revizyon, yanlış hedef ve assistant enjeksiyon testleri |
 | 07 | CI/otomasyon dosya koruması sağlayıcıdan bağımsız genişletildi; eski push butonları yeni politikayı atlayamıyor. | Korunan dosya yolları ve onay testleri; dolaylı CI çalıştırma riski tehdit modelinde |
 | 08 | Görev listesi ayrı küçük metadata alanını okuyor. Push sonrası tam anlık görüntü siliniyor; inceleme için değişen dosyalar kalıyor. | Bozuk büyük payload olsa da metadata listesi okunabiliyor. Dosya başına depolama henüz uygulanmadı. |
 | 09 | Başarısız klonlar `failed`; eski `cloning` kayıtları süre aşımına uğruyor ve açık görev kotasından çıkıyor. | Başarısız klon regresyon testi |
@@ -41,7 +41,7 @@ ayırır. Üretime dağıtım veya canlı sağlayıcı hesaplarında işlem yap�
 - Operatörün ayarlayabildiği Responses uyumlu model adresi; localhost desteği.
 - Workspace yöneticisinin araç adına göre model seçebilmesi.
 - `ToolRegistry` / `WithToolModule`: kimliği sunucudan alan derlenmiş araç modülleri,
-  çakışan adların reddi ve yeni yazma araçlarının varsayılan onay gerektirmesi.
+  çakışan adların reddi ve yeni yazma araçlarının workspace işlem politikasından geçmesi.
 - Sürümlü/checksum kontrollü migration; kullanılmayan `privateMux` üretim bağlantısının kaldırılması.
 - GitLab açıklamalarının tüm araç isimlerini namespace’e çevirmesi ve ortak şemayı değiştirmemesi.
 - Gofmt/Staticcheck kalite kapıları, gerçek native CLI’nin CI’da çevrimdışı test edilmesi,

@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Fixed
+- Explicit action requests execute without redundant confirmation by default; existing manager approval/disabled policies remain enforced. Successful tracker actions return concise links and human-readable results.
 - Personal data, reminders, tool policies and audit history use the shared dashboard layout, navigation and styled forms; audit JSON remains available as an explicit download.
 - Natural dashboard requests send the requester's private sign-in link; setup guidance respects user roles, negation and actual installation capabilities.
 - Personal Feedbin/Raindrop accounts can be renewed and disconnected without workspace scope activation; existing Feedbin credentials no longer block renewal.
@@ -28,7 +29,7 @@
 - Installation-aware workspace guide for account setup, model settings, permissions, privacy and supported product limits.
 - Standalone Compose setup for external PostgreSQL and configurable local ports.
 - Real PostgreSQL/browser installation isolation test and configuration-generation checks.
-- Default human approval for external write tools, workspace tool policies and revision-bound push/merge approvals.
+- Optional human approval for external write tools, workspace tool policies and revision-bound push/merge approvals.
 - Context-bound encrypted secrets, key IDs and keyring rotation; migration of legacy Slack/Raindrop plaintext tokens.
 - Versioned migrations, retention, personal export/deletion, configuration audit history and protected metrics.
 - Daily user/workspace token reservations, workspace concurrency limits and OAuth request limits.
@@ -38,5 +39,5 @@
 
 ### Upgrade
 Read [operations](docs/operations.md) and [review remediation](docs/review-remediation.md).
-Existing tool policies default to human approval. Existing single-workspace reminder configuration is adopted once.
+Tools without an explicit policy now default to automatic execution of user requests. Existing explicit approval/disabled policies are preserved; managers can require approval at `/dashboard/actions`. Existing single-workspace reminder configuration is adopted once.
 Back up the database and encryption keys before starting the upgraded server.

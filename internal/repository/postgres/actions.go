@@ -24,7 +24,7 @@ func NewActionStore(db *pgxpool.Pool, cipher secure.Cipher) *ActionStore {
 }
 func (s *ActionStore) ActionMode(ctx context.Context, user int64, tool string) (string, error) {
 	var mode string
-	err := s.db.QueryRow(ctx, `SELECT COALESCE(p.mode,'approval') FROM users u JOIN slack_installations i ON i.team_id=u.team_id AND i.bot_token<>'' LEFT JOIN nudge_action_policies p ON p.team_id=u.team_id AND p.tool=$2 WHERE u.id=$1`, user, tool).Scan(&mode)
+	err := s.db.QueryRow(ctx, `SELECT COALESCE(p.mode,'auto') FROM users u JOIN slack_installations i ON i.team_id=u.team_id AND i.bot_token<>'' LEFT JOIN nudge_action_policies p ON p.team_id=u.team_id AND p.tool=$2 WHERE u.id=$1`, user, tool).Scan(&mode)
 	return mode, err
 }
 func (s *ActionStore) SetActionMode(ctx context.Context, user int64, tool, mode string) error {

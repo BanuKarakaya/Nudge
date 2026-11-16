@@ -18,17 +18,20 @@ that session. OAuth state and consumed links are persisted and expire.
 ## Write authorization
 
 Read tools expose only allowed resources. Private draft edits cannot run shell,
-hooks or repository tests. External writes require a persisted, owner-bound Slack
-approval by default. Exact arguments are displayed as plain text. Push approvals
+hooks or repository tests. External writes default to automatic execution of
+explicit user requests.
+Managers can require persisted, owner-bound Slack approval for individual tools;
+in that mode exact arguments are displayed as plain text. Push approvals
 freeze file digests; merge approvals freeze source commit/destination. Permission
 and branch protection checks still run at execution. Policy can disable a tool;
-`auto` is an explicit manager choice that allows model-directed calls.
+`auto` allows model-directed calls within the configured provider scope.
 
 Merge intent uses only user-authored evidence, and repository/PR identifiers must
 be grounded together. Assistant text cannot grant authorization. The host treats
 thread context and tool descriptions/results as data. These instructions improve
-model behavior but are not a security boundary; permissions and approval enforce
-that boundary even if the model follows malicious content.
+model behavior but are not a security boundary. Provider permissions and
+workspace scope remain enforced; automatic mode has no per-action human gate
+if the model follows malicious content. Optional approval adds that gate.
 
 Automation entrypoints across providers are blocked, including common CI trees,
 Makefiles, shell scripts, package manifests and container definitions. Arbitrary
@@ -66,8 +69,8 @@ pool edit operations, credential refresh failures, terminal retries, single-use
 approval, revision changes, encryption AAD, output sanitization and native tool
 isolation. These checks do not constitute a live penetration test.
 
-Compiled-in tool modules are trusted server code. Registry defaults new extension
-operations to approval and prevents name collisions; module implementations must
-still validate input and live provider access. Remote MCP/plugin discovery is not
+Compiled-in tool modules are trusted server code. Registry classifies new extension
+operations as writes subject to workspace policy and prevents name collisions.
+Module implementations must still validate input and live provider access. Remote MCP/plugin discovery is not
 enabled. No target repository code is executed by Nudgy. Enterprise provider
 protocols and unrestricted plugin execution require separate threat review.

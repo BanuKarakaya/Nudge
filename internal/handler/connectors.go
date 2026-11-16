@@ -64,7 +64,7 @@ func (h *WorkspaceHandler) connectorPage(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if r.URL.Query().Get("done") == "saved" {
-		data.Message = "Kaydedildi. Bağlantı değiştiğinde eski işlem onayları ve otomatik izinler geçersizleşir."
+		data.Message = "Kaydedildi. Bağlantı değiştiğinde eski işlem onayları ve araca özel izin ayarları geçersizleşir. Yeni etkin araçlar varsayılan olarak açık istekleri doğrudan uygular."
 	}
 	h.page(w, 200, data)
 }

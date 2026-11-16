@@ -15,7 +15,7 @@
 <h2>{{.Name}}</h2><p>{{.Endpoint}}</p><p>{{if .Enabled}}Ekibe açık{{else}}Kapalı · Araçları seçip etkinleştir{{end}}</p>
 <form method="post" action="/dashboard/connectors"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="action" value="select"><input type="hidden" name="id" value="{{.ID}}"><input type="hidden" name="revision" value="{{.Revision}}">
 <div class="choices">{{range .Tools}}<label class="choice"><input type="checkbox" name="tool" value="{{.Name}}" {{if .Selected}}checked{{end}}><span><strong>{{.Name}}</strong><small>{{.Description}}</small></span></label>{{else}}<p>Sunucu araç bildirmedi.</p>{{end}}</div>
-<p>En fazla 12 araç seç. Yeni araçlar otomatik açılmaz. Tüm işlemler başlangıçta Slack onayı ister; otomatik izinleri <a href="/dashboard/actions">araç izinlerinden</a> yönetebilirsin.</p>
+<p>En fazla 12 araç seç. Yeni araçlar otomatik açılmaz. Seçip etkinleştirdiğin araçlar açık kullanıcı isteğinde tekrar onay sormadan çalışır; onay gereksinimini veya kapalı araçları <a href="/dashboard/actions">araç izinlerinden</a> yönetebilirsin.</p>
 <label class="enable"><input type="checkbox" name="enabled" value="true" {{if .Enabled}}checked{{end}}><span>Bu bağlantıyı ekibe aç</span></label>
 <label class="enable"><input type="checkbox" name="shared_account" value="true"><span>Seçili araçların bu çalışma alanındaki tüm Nudgy kullanıcılarına ortak servis hesabının yetkileriyle açılacağını biliyorum. Bu bağlantı, kullanıcıların uygulamadaki kişisel yetkilerini otomatik doğrulamaz.</span></label>
 <button class="primary" type="submit">Seçimi kaydet</button></form>

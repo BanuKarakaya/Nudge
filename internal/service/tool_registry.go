@@ -15,7 +15,7 @@ import (
 type ToolModule func(coding.Identity) []RegisteredTool
 type RegisteredTool struct {
 	Definition ToolDefinition
-	ReadOnly   bool // Defaults to a write requiring the host's approval policy.
+	ReadOnly   bool // Defaults to a write governed by the workspace action policy.
 	Run        func(context.Context, json.RawMessage) (string, error)
 }
 type ToolRegistry struct {

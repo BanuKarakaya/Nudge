@@ -41,10 +41,11 @@ describes MCP server implementations and supported protocol versions.
    connection and explicitly acknowledge sharing the service-account permissions
    with all Nudgy users in this Slack workspace. Save.
 5. Ask Nudgy in Slack to use that application. Selected tools are included in
-   the current user's workspace tool catalog. Every MCP tool initially requires
-   that requesting user's Slack approval, even if the server labels it read-only.
-   Managers can explicitly change this in **Araç izinleri**. Automatic mode
-   removes the approval step; it does not make a remote operation idempotent.
+   the current user's workspace tool catalog. Enabled MCP tools execute explicit user requests
+   without a second confirmation by default. Managers can require approval or
+   disable individual tools in **Araç izinleri**. Even tools labeled read-only
+   by the server pass through that policy. Automatic mode does not make a
+   remote operation idempotent.
 
 **Access model:** this first version is a shared service connection. It does not
 intersect permissions with each employee's personal account in the external
@@ -86,7 +87,7 @@ connection time and the transport dials the checked address.
   Tool schemas/descriptions are bounded; external JSON Schema references are
   rejected. Supported input validation drafts are draft-07 and 2020-12.
 - Configuration changes create new tool names. Old queued approvals and
-  automatic permissions no longer apply. Tool/model routes must be reselected
+  explicit tool policies no longer apply; newly enabled tools use the default auto policy. Tool/model routes must be reselected
   after configuration changes if needed.
 - Refreshing the server or credentials disables the connection and clears tool
   selections. Review the new catalog and enable it again. A changed endpoint

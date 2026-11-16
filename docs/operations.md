@@ -15,7 +15,9 @@ native AI state moves to user-scoped directories: old unowned rollout caches are
 removed and the next turn recovers the delivered conversation from PostgreSQL.
 This deliberately does not preserve undisplayed reasoning/tool history.
 
-External write tools default to **approval**. Workspace managers can select
+External write tools default to **auto**: a clear user request executes without a
+second confirmation. Missing target details still require clarification. Existing
+explicit manager policies are preserved. Workspace managers can select
 `approval`, `auto`, or `disabled` at `/dashboard/actions`. Approval is bound to the
 requesting person, workspace, channel, thread, exact arguments and a 20-minute
 expiry. Pushes also bind the reviewed digest; merges bind the observed source

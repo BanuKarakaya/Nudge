@@ -16,9 +16,11 @@ import (
 	"testing"
 	"time"
 
+	"nudge/internal/coding"
 	"nudge/internal/handler"
 	"nudge/internal/secure"
 	"nudge/internal/service"
+	"nudge/internal/tracker"
 	"nudge/internal/workspace"
 )
 
@@ -39,6 +41,65 @@ type languageEvalTools struct {
 func (s *languageEvalTools) Call(ctx context.Context, name string, args json.RawMessage) (string, error) {
 	s.calls = append(s.calls, name)
 	return s.AgentTools.Call(ctx, name, args)
+}
+
+// Production tracker schemas with strictly synthetic effects: no provider client
+// is called and no real card is created by these language acceptance cases.
+type actionLanguageTools struct {
+	service.AgentTools
+	fail   bool
+	writes int
+}
+
+func (a *actionLanguageTools) Call(_ context.Context, name string, args json.RawMessage) (string, error) {
+	var input struct {
+		Resource string   `json:"resource_id"`
+		List     string   `json:"list_id"`
+		Title    string   `json:"title"`
+		Item     string   `json:"item_id"`
+		Members  []string `json:"member_ids"`
+	}
+	if err := json.Unmarshal(args, &input); err != nil {
+		return "", err
+	}
+	switch name {
+	case "trello_connection_status", "trello_boards_list":
+		return `{"account":{"id":"banu","name":"Banu"},"resources":[{"id":"board","name":"Atci Co"}],"write_enabled":true}`, nil
+	case "trello_cards_list":
+		return `{"board_id":"board","current_user_id":"banu","lists":[{"id":"doing","name":"Doing"}],"items":[],"complete":true}`, nil
+	case "trello_lists_list":
+		return `[{"id":"doing","name":"Doing"}]`, nil
+	case "trello_members_list":
+		return `{"members":[{"id":"banu","name":"Banu"},{"id":"latif","name":"Latif"}]}`, nil
+	case "trello_card_read":
+		return `{"id":"card","title":"Nudgy bitiyor","url":"https://trello.com/c/synthetic-card","status":"Doing","status_id":"doing"}`, nil
+	case "trello_card_assign":
+		if input.Resource != "board" || input.Item != "card" || len(input.Members) != 2 || !((input.Members[0] == "banu" && input.Members[1] == "latif") || (input.Members[0] == "latif" && input.Members[1] == "banu")) {
+			return "", errors.New("incorrect assignment target")
+		}
+		a.writes++
+		return `{"status":"updated","item":{"id":"card","title":"Nudgy bitiyor","url":"https://trello.com/c/synthetic-card","member_ids":["banu","latif"]}}`, nil
+	case "trello_card_create":
+		if input.Resource != "board" || input.List != "doing" || input.Title != "Nudgy bitiyor" {
+			return "", errors.New("incorrect create target")
+		}
+		a.writes++
+		if a.fail {
+			return "", errors.New("synthetic provider failure; card was not created")
+		}
+		return `{"status":"created","item":{"id":"card","title":"Nudgy bitiyor","url":"https://trello.com/c/synthetic-card","status":"Doing","status_id":"doing"}}`, nil
+	default:
+		return "", errors.New("unexpected synthetic tool call")
+	}
+}
+
+type autoLanguagePolicy struct{}
+
+func (autoLanguagePolicy) ActionMode(context.Context, int64, string) (string, error) {
+	return "auto", nil
+}
+func (autoLanguagePolicy) ProposeAction(context.Context, service.ActionProposal) (service.ActionProposal, error) {
+	return service.ActionProposal{}, errors.New("unexpected approval proposal")
 }
 
 // Paid, explicitly opted-in inference through the production native runtime and
@@ -133,6 +194,9 @@ func TestLiveNaturalLanguageFlows(t *testing.T) {
 		t.Logf("bounded live requests=%d maximum=150 max_output_tokens=1200", requests)
 	}()
 	cases := []struct {
+		action      bool
+		writes      int
+		failWrite   bool
 		name, input string
 		must        []string
 		dm          bool
@@ -142,6 +206,10 @@ func TestLiveNaturalLanguageFlows(t *testing.T) {
 		forbidden   []string
 		history     []service.ConversationExchange
 	}{
+		{name: "action_create", action: true, writes: 1, input: "Trello'da Atci Co panosunun Doing listesine Nudgy bitiyor adlı kart oluştur.", must: []string{"trello_card_create"}, contains: []string{"kart", "liste", "doing", "https://trello.com/c/synthetic-card"}, forbidden: []string{"onay", "trello_card_create", "list_id", "resource_id"}},
+		{name: "action_assign", action: true, writes: 2, input: "Trello'da Atci Co panosunun Doing listesine Nudgy bitiyor adlı kart oluştur, beni ve Latif'i ata.", must: []string{"trello_card_create", "trello_card_assign"}, contains: []string{"kart", "liste", "doing", "atananlar", "banu", "latif", "https://trello.com/c/synthetic-card"}, forbidden: []string{"onay", "trello_card_create", "resource_id"}},
+		{name: "action_negated", action: true, input: "Trello'da 'Nudgy bitiyor kartını oluştur' cümlesini İngilizceye çevir. Kart oluşturma, hiçbir değişiklik yapma."},
+		{name: "action_failure", action: true, failWrite: true, writes: 1, input: "Trello'da Atci Co panosunun Doing listesine Nudgy bitiyor adlı kart oluştur.", must: []string{"trello_card_create"}, forbidden: []string{"kartı oluşturdum", "kart oluşturuldu", "https://trello.com/c/synthetic-card"}},
 		{name: "dashboard_turkish", input: "dashboard linki verebilir misin", must: []string{"workspace_connect"}, dm: true, contains: []string{"dm|özel"}},
 		{name: "dashboard_informal", input: "naci panelime giremiyom link atar mısın", must: []string{"workspace_connect"}, dm: true},
 		{name: "dashboard_english", input: "Please send me my Nudgy dashboard link.", must: []string{"workspace_connect"}, dm: true},
@@ -197,6 +265,12 @@ func TestLiveNaturalLanguageFlows(t *testing.T) {
 						}
 						return nil
 					}), func(context.Context) (service.WorkspaceGuide, error) { return guide, nil })}
+					var actionFixture *actionLanguageTools
+					if tc.action {
+						catalog := service.NewTrackerTools(base, tracker.New(nil, tracker.Client{Provider: "trello"}), tracker.Identity{}, nil)
+						actionFixture = &actionLanguageTools{AgentTools: catalog, fail: tc.failWrite}
+						tools.AgentTools = service.WithActionPolicy(actionFixture, autoLanguagePolicy{}, coding.Identity{UserID: 1}, func(context.Context, service.ActionProposal) error { return errors.New("unexpected confirmation") })
+					}
 					req := runtimeTestRequest()
 					req.Key.Thread = tc.name
 					req.Input = tc.input
@@ -223,6 +297,9 @@ func TestLiveNaturalLanguageFlows(t *testing.T) {
 					}
 					if (dmCount > 0) != tc.dm {
 						t.Errorf("dm attempts=%d expected=%t", dmCount, tc.dm)
+					}
+					if actionFixture != nil && actionFixture.writes != tc.writes {
+						t.Errorf("write attempts=%d expected=%d", actionFixture.writes, tc.writes)
 					}
 					lower := strings.ToLower(got.Text)
 					for _, group := range tc.contains {

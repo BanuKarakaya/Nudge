@@ -51,7 +51,7 @@ AI credentials belong to one workspace and are resolved for each invocation.
 
 Code tasks use isolated temporary Git directories and permission-checked file
 tools. Nudgy does not execute target repository tests, scripts, hooks or general
-shell tools. Finishing a code task proposes publishing a new task branch, requiring human approval by default; a PR/MR and merge
+shell tools. Finishing a code task proposes publishing a new task branch, with optional manager-required approval; a PR/MR and merge
 are separate operations. Review [repository tasks](repository-tasks.md) and
 [change requests](change-requests.md) before enabling write permissions.
 

@@ -23,6 +23,8 @@ kısa ömürlü giriş bağlantısı gönderir.
 | Bu ay ne kadar kullandık, en çok kim kullanıyor? | Gerçek metrik aracı yoksa Kullanım ekranına yönlendirir. Yöneticinin ekip kapsamını, üyenin kişisel kapsamını açıklar; rakam uydurmaz. |
 | Az önce cevap vermedin, nereden bakabilirim? | Canlı işlemler → ilgili istek ayrıntısı; son aşama, araç hatası ve Slack teslimi. İncelemeden hata nedeni uydurmaz. |
 | Bizim şirket içi uygulamayı bağlayabilir miyiz? | Mevcut MCP araçlarını veya yöneticinin Entegrasyonlar → Özel bağlantılar yolunu açıklar. REST/OpenAPI URL'sini kurulmuş MCP sanmaz. |
+| Doing listesine kart oluştur, beni ve Latif’i ata | Gerçek pano/liste/kişi kimliklerini keşfeder; varsayılan politikada tekrar onay istemeden oluşturur ve atar. Kart bağlantısı, liste ve doğrulanmış atananlarla kısa sonuç verir. Yönetici özellikle Onay iste seçmişse bu politikayı korur. |
+| “Kart oluştur” cümlesini çevir, kart oluşturma | Yalnızca çevirir; alıntıyı işlem isteği saymaz. |
 | Her yazma işleminde onay istemesini ayarlamak istiyorum | Yöneticiye Araç izinleri → Onay iste adımlarını verir; kendisi izin değiştirmez. |
 | Verilerimi indir / geçmişimi silmek istiyorum | Verilerim ekranına yönlendirir; indirme/silme kullanıcı tarafından yapılır. Silme için panelde açık SİL onayı gerekir. |
 | Hesabımın bağlantısını kaldır | Sağlayıcı bağlamdan belliyse Hesaplarım'daki kişisel bağlantı kaldırma yolunu anlatır; değilse hangi hesabı sorar. Sağlayıcı içeriğini sildiğini iddia etmez. |
