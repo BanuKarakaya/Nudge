@@ -206,6 +206,6 @@
 .workspace-page .activity-badge.completed{background:#e7efdf;color:#4f6740}
 .workspace-page .monitor-success{color:#4f6740}.workspace-page .monitor-warning{color:#8c622d}
 .workspace-page .monitor-events li{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:14px 0;border-bottom:1px solid #eeeaec}
-.workspace-page .monitor-events time{font-size:11px;color:#8b7580}.workspace-page .monitor-events p{margin:3px 0;overflow-wrap:anywhere}
+.workspace-page .monitor-events time{font-size:11px;color:#8b7580}.workspace-page .monitor-events p{margin:3px 0;color:#71384b;overflow-wrap:anywhere}
 .workspace-page .monitor-record code{font-size:11px;overflow-wrap:anywhere}.workspace-page .monitor-record .activity-detail>p{overflow-wrap:anywhere}
 @media(max-width:720px){.workspace-page .monitor-day{grid-template-columns:70px 1fr 1fr;gap:8px}.workspace-page .monitor-latency{gap:10px}}
