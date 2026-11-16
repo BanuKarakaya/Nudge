@@ -20,7 +20,7 @@ func (h *WorkspaceHandler) Guide(ctx context.Context, user int64, team string) (
 		p, ok := h.provider(kind)
 		instruction := "Yönetici Entegrasyonlar bölümünde servisi ve ortak alanları etkinleştirir. Üye Hesaplarım bölümünde kendi hesabını bağlar; Yeniden doğrula ile yeniler, Hesap bağlantımı kaldır ile yalnızca kişisel bağlantısını kaldırır."
 		if kind == "feedbin" || kind == "raindrop" {
-			instruction = "Kişisel bağlantıdır; ortak repo/proje/pano seçimi gerekmez. Hesaplarım → " + kind + " → Hesabını doğrula/Yeniden doğrula. Feedbin bilgileri sadece güvenli web formuna girilir; Raindrop kendi OAuth ekranında yetkilendirilir. Hesap bağlantımı kaldır yalnızca Nudgy'de saklanan kişisel erişimi kaldırır; sağlayıcıdaki içerikleri silmez."
+			instruction = "Kişisel bağlantıdır; ortak repo/proje/pano seçimi veya çalışma alanı yöneticisinin servisi etkinleştirmesi gerekmez. available_in_this_installation=true ise sunucu önkoşulları hazırdır; yönetici etkinleştirmesini bekleme. Hesaplarım → " + kind + " → Hesabını doğrula/Yeniden doğrula. Feedbin bilgileri sadece güvenli web formuna girilir; Raindrop kendi OAuth ekranında yetkilendirilir. Hesap bağlantımı kaldır yalnızca Nudgy'de saklanan kişisel erişimi kaldırır; sağlayıcıdaki içerikleri silmez."
 		}
 		if ok {
 			instruction = p.Name + ": " + instruction
