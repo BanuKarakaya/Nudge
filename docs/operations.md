@@ -25,6 +25,14 @@ commit and destination. A revision change requires a new proposal. An interrupte
 approved action with an unknown remote outcome is not automatically repeated.
 Old push buttons must be replaced with a current approval card.
 
+Daily admission reserves the smaller of the per-run limit and the remaining
+user/workspace daily budget. Reservations include concurrent requests; observed
+usage settles them after completion. The reserved allowance follows model
+routing. Limits stop a run when the provider reports usage, so a model call
+can exceed the remaining allowance before its usage arrives. Unknown usage
+retains its reservation. Daily budgets renew at 00:00 UTC. Slack distinguishes
+exhausted daily budgets, workspace concurrency and in-progress token limits.
+
 ## Settings
 
 | Variable | Default | Meaning |

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"nudge/internal/analytics"
 	"nudge/internal/domain"
 	"nudge/internal/repository"
 	"nudge/internal/service"
@@ -270,5 +271,36 @@ func TestAgentAcceptsSlackCharacterLimitBoundary(t *testing.T) {
 	h.replyWithSummary(conversationEvent("uzun yanıt"))
 	if len(sender.messages) != 1 || sender.messages[0] != text {
 		t.Fatal("valid Unicode character limit rejected")
+	}
+}
+
+func TestOperationalFailuresExplainRecoveryWithoutLeakingDetails(t *testing.T) {
+	for _, tc := range []struct {
+		code string
+		want []string
+	}{
+		{"daily_quota", []string{"Günlük AI token", "03:00", "işlem yapılmadı"}},
+		{"workspace_busy", []string{"aynı anda", "başlatamadım"}},
+		{"token_limit", []string{"token bütçesine", "Bazı adımlar gerçekleşmiş olabilir", "Canlı işlemler"}},
+	} {
+		t.Run(tc.code, func(t *testing.T) {
+			sender := &conversationSender{}
+			h := &SlackEventHandler{installations: conversationInstallations{}, history: make(conversationTestStore), client: sender, runtime: agentFunc(func(context.Context, service.AgentRequest) (service.AgentResult, error) {
+				return service.AgentResult{}, analytics.Failure(tc.code, errors.New("PRIVATE_PROVIDER_BODY"))
+			})}
+			h.replyWithSummary(conversationEvent("<@B123> Trello kartı oluştur"))
+			if len(sender.messages) != 1 {
+				t.Fatalf("messages=%v", sender.messages)
+			}
+			got := sender.messages[0]
+			for _, want := range tc.want {
+				if !strings.Contains(got, want) {
+					t.Errorf("missing %q: %s", want, got)
+				}
+			}
+			if strings.Contains(got, "PRIVATE_PROVIDER_BODY") || got == agentFailureMessage {
+				t.Fatal("unsafe or misleading failure response")
+			}
+		})
 	}
 }

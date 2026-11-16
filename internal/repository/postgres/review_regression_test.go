@@ -244,17 +244,24 @@ func TestPrivacyPreferencesBudgetsAndRetention(t *testing.T) {
 	}
 	t.Setenv("NUDGY_RUN_TOKEN_LIMIT", "100")
 	t.Setenv("NUDGY_USER_DAILY_TOKENS", "150")
-	id, err := ai.BeginBudget(ctx, user)
+	id, reserved, err := ai.BeginBudget(ctx, user)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = ai.BeginBudget(ctx, user); err == nil {
-		t.Fatal("quota exceeded")
+	if reserved != 100 {
+		t.Fatalf("initial reservation=%d", reserved)
+	}
+	t.Setenv("NUDGY_WORKSPACE_CONCURRENCY", "3")
+	if _, reserved, err = ai.BeginBudget(ctx, user); err != nil || reserved != 50 {
+		t.Fatalf("remaining daily budget unusable: %d %v", reserved, err)
+	}
+	if _, _, err = ai.BeginBudget(ctx, user); err == nil {
+		t.Fatal("exhausted budget accepted")
 	}
 	if err = ai.FinishBudget(ctx, id, 10); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = ai.BeginBudget(ctx, user); err != nil {
+	if _, reserved, err = ai.BeginBudget(ctx, user); err != nil || reserved != 90 {
 		t.Fatal("unused reservation not released", err)
 	}
 	if err = Cleanup(ctx, db, 90); err != nil {

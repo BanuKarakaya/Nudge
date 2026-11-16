@@ -91,13 +91,14 @@ func (t *TenantRuntime) Run(ctx context.Context, req service.AgentRequest) (serv
 		return service.AgentResult{}, err
 	}
 	if budgets, ok := t.store.(interface {
-		BeginBudget(context.Context, int64) (string, error)
+		BeginBudget(context.Context, int64) (string, int, error)
 		FinishBudget(context.Context, string, int) error
 	}); ok {
-		id, err := budgets.BeginBudget(ctx, req.UserID)
+		id, limit, err := budgets.BeginBudget(ctx, req.UserID)
 		if err != nil {
 			return service.AgentResult{}, err
 		}
+		req.TokenLimit = limit
 		usage := analytics.UsageTrackerFromContext(ctx)
 		if usage == nil {
 			usage = analytics.NewUsageTracker()

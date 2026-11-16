@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Fixed
+- Daily AI budgets reserve the remaining allowance instead of rejecting requests below the full run maximum; that allowance follows model routing. Slack now distinguishes daily quota, concurrency and per-request token limits.
 - Explicit action requests execute without redundant confirmation by default; existing manager approval/disabled policies remain enforced. Successful tracker actions return concise links and human-readable results.
 - Personal data, reminders, tool policies and audit history use the shared dashboard layout, navigation and styled forms; audit JSON remains available as an explicit download.
 - Natural dashboard requests send the requester's private sign-in link; setup guidance respects user roles, negation and actual installation capabilities.
