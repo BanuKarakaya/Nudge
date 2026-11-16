@@ -462,11 +462,11 @@ func (r *Runtime) consume(ctx context.Context, c *connection, req service.AgentR
 			key = "anonymous:" + item.Phase + ":" + item.Text
 		}
 		if index, ok := answerIndex[key]; ok {
-			answers[index] = item.Text
+			answers[index] = answerText(item.Text)
 			return
 		}
 		answerIndex[key] = len(answers)
-		answers = append(answers, item.Text)
+		answers = append(answers, answerText(item.Text))
 	}
 	started := time.Now()
 	var usage *service.AgentTokenUsage
