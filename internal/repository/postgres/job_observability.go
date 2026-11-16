@@ -43,6 +43,7 @@ func (r *SlackJobRepository) ReportJob(ctx context.Context, j repository.SlackJo
  current_tool=CASE WHEN $3='tool_started' THEN $5 WHEN $3 IN ('tool_completed','tool_failed','model_running') THEN '' ELSE current_tool END,
  error_code=CASE WHEN $6 IN ('','none') OR ($3='attempt_failed' AND error_code<>'') THEN error_code ELSE $6 END,
  trace=(SELECT COALESCE(jsonb_agg(value ORDER BY ord),'[]'::jsonb) FROM jsonb_array_elements(trace || $7::jsonb) WITH ORDINALITY AS e(value,ord) WHERE ord>GREATEST(jsonb_array_length(trace)+1-128,0)),
+ tool_failure_count=tool_failure_count+CASE WHEN $3 IN ('tool_failed','action_failed') THEN 1 ELSE 0 END,
  trace_count=trace_count+1,updated_at=NOW()
  WHERE `+ownedSlackJob, j.ID, j.ClaimToken, e.Stage, e.Model, e.Tool, e.ErrorCode, raw)); err != nil {
 		return err

@@ -26,7 +26,7 @@ func (s *monitorFake) Monitor(_ context.Context, user int64, team bool, f reposi
 	s.filters = f
 	s.calls++
 	now := time.Now()
-	return repository.MonitorSummary{Requests: 26, Running: 1, Tokens: 300, FilteredRequests: 26, UpdatedAt: now, Models: []repository.MonitorModel{{Model: "daily", Tokens: 300}}, Users: []repository.MonitorUser{{User: "U1", Name: "<script>alert(1)</script>", Requests: 26, Tokens: 300}}, Recent: []repository.MonitorRequest{{ID: 42, User: "U1", Name: "Banu", Status: "running", Stage: "tool_started", Tool: "web_search", CreatedAt: now, UpdatedAt: now, AvailableAt: &now, Events: []repository.MonitorEvent{{LiveEvent: analytics.LiveEvent{Stage: "tool_started", Model: "daily", Tool: "web_search"}, At: now, Attempt: 1}}}}}, s.err
+	return repository.MonitorSummary{IssueRequests: 1, ToolIssueRequests: 1, Requests: 26, Running: 1, Tokens: 300, FilteredRequests: 26, UpdatedAt: now, Models: []repository.MonitorModel{{Model: "daily", Tokens: 300}}, Users: []repository.MonitorUser{{User: "U1", Name: "<script>alert(1)</script>", Requests: 26, Tokens: 300}}, Recent: []repository.MonitorRequest{{ToolFailures: 1, ID: 42, User: "U1", Name: "Banu", Status: "running", Stage: "tool_started", Tool: "web_search", CreatedAt: now, UpdatedAt: now, AvailableAt: &now, Events: []repository.MonitorEvent{{LiveEvent: analytics.LiveEvent{Stage: "tool_started", Model: "daily", Tool: "web_search"}, At: now, Attempt: 1}}}}}, s.err
 }
 func TestMonitorPagesAndPollingUseSessionRolesAndSafeHTML(t *testing.T) {
 	h, members, mux := workspaceFixture(t)
@@ -34,7 +34,7 @@ func TestMonitorPagesAndPollingUseSessionRolesAndSafeHTML(t *testing.T) {
 	h.WithMonitor(repo)
 	for _, path := range []string{"/dashboard", "/dashboard/operations", "/dashboard/usage"} {
 		w := workspaceRequest(members, mux, 1, "GET", path, nil)
-		if w.Code != 200 || !repo.team || repo.user != 1 || !strings.Contains(w.Body.String(), "monitor.js") || !strings.Contains(w.Body.String(), "monitor-view") || strings.Contains(w.Body.String(), "<script>alert") {
+		if w.Code != 200 || !repo.team || repo.user != 1 || !strings.Contains(w.Body.String(), "monitor.js") || !strings.Contains(w.Body.String(), "monitor-view") || !strings.Contains(w.Body.String(), "%3.8") || !strings.Contains(w.Body.String(), "1 istekte araç hatası") || strings.Contains(w.Body.String(), "<script>alert") {
 			t.Fatal("manager monitor missing or unsafe", w.Code, w.Body)
 		}
 		if !strings.Contains(w.Header().Get("Content-Security-Policy"), "script-src 'self'") {

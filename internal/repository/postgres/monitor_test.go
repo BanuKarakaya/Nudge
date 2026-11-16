@@ -7,6 +7,7 @@ import (
 	"nudge/internal/analytics"
 	"nudge/internal/domain"
 	"nudge/internal/repository"
+	"nudge/migrations"
 	"strconv"
 	"strings"
 	"testing"
@@ -120,6 +121,10 @@ func TestLiveMonitorIncludesUnansweredJobsUsageAndIsolation(t *testing.T) {
 	if err != nil || filtered.FilteredRequests != 0 {
 		t.Fatal("guessed job ID leaked", filtered, err)
 	}
+	// A tool failure must remain visible even when the model delivers a response.
+	if err = jobs.ReportJob(ctx, j, analytics.LiveEvent{Stage: "tool_failed", Tool: "rss_inventory", ErrorCode: "tool_failed"}); err != nil {
+		t.Fatal(err)
+	}
 	// A completed interaction must not double count the queue request's usage.
 	if err = jobs.SaveResult(ctx, j, json.RawMessage(`{"secret":"PRIVATE_RESPONSE"}`)); err != nil {
 		t.Fatal(err)
@@ -131,9 +136,18 @@ func TestLiveMonitorIncludesUnansweredJobsUsageAndIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	team, err = repo.Monitor(ctx, owner, true, repository.MonitorFilters{})
-	if err != nil || team.Requests != 3 || team.Tokens != 35 || team.Completed != 2 {
-		t.Fatal("completion counted twice", team, err)
+	if err != nil || team.Requests != 3 || team.Tokens != 35 || team.Completed != 2 || team.IssueRequests != 2 || team.ToolIssueRequests != 1 {
+		t.Fatal("completion or error count incorrect", team, err)
 	}
+	filtered, err = repo.Monitor(ctx, owner, true, repository.MonitorFilters{Status: "issues"})
+	if err != nil || filtered.FilteredRequests != 2 {
+		t.Fatal("tool failure absent from issues filter", filtered, err)
+	}
+	own, err = repo.Monitor(ctx, owner, false, repository.MonitorFilters{JobID: j.ID})
+	if err != nil || own.Recent[0].ToolFailures != 1 || own.Recent[0].Status != "completed" || own.Recent[0].DeliveredAt == nil {
+		t.Fatal("delivered tool failure lost", own, err)
+	}
+
 }
 
 func TestLiveTraceBoundedAndDeletedWithPersonalData(t *testing.T) {
@@ -153,6 +167,9 @@ func TestLiveTraceBoundedAndDeletedWithPersonalData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err = jobs.ReportJob(ctx, j, analytics.LiveEvent{Stage: "tool_failed", Tool: "rss_inventory"}); err != nil {
+		t.Fatal(err)
+	}
 	for n := 0; n < 135; n++ {
 		if err = jobs.ReportJob(ctx, j, analytics.LiveEvent{Stage: "usage", Usage: &analytics.AIUsage{Model: "model", Provider: "provider", TotalTokens: 1}}); err != nil {
 			t.Fatal(err)
@@ -162,7 +179,7 @@ func TestLiveTraceBoundedAndDeletedWithPersonalData(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := repo.Monitor(ctx, user, false, repository.MonitorFilters{})
-	if err != nil || got.Tokens != 135 || got.Recent[0].TraceCount != 135 || len(got.Recent[0].Events) != 128 {
+	if err != nil || got.Tokens != 135 || got.Recent[0].TraceCount != 136 || got.IssueRequests != 1 || got.ToolIssueRequests != 1 || got.Recent[0].ToolFailures != 1 || len(got.Recent[0].Events) != 128 {
 		t.Fatal("bounded trace lost counters", got, err)
 	}
 	if _, err = db.Exec(ctx, `UPDATE nudge_slack_jobs SET lease_until=NOW()-INTERVAL '1 second' WHERE id=$1`, j.ID); err != nil {
@@ -183,5 +200,23 @@ func TestLiveTraceBoundedAndDeletedWithPersonalData(t *testing.T) {
 	var count int
 	if err = db.QueryRow(ctx, `SELECT count(*) FROM nudge_job_model_usage`).Scan(&count); err != nil || count != 0 {
 		t.Fatal("orphaned private usage", count, err)
+	}
+}
+
+func TestMonitorUpgradeRestoresRetainedToolFailures(t *testing.T) {
+	db := reviewDB(t, 2)
+	ctx := context.Background()
+	// Simulate the deployed 012 schema and its retained live log, then run the real upgrade.
+	if _, err := db.Exec(ctx, `ALTER TABLE nudge_slack_jobs DROP COLUMN tool_failure_count; DELETE FROM nudge_schema_migrations WHERE version='013_monitor_tool_failures.sql'; INSERT INTO nudge_slack_jobs(team_id,channel_id,thread_ts,slack_user_id,event_key,payload,trace) VALUES('T','C','1','U','upgrade','{}','[{"stage":"tool_failed"},{"stage":"action_failed"},{"stage":"tool_completed"}]')`); err != nil {
+		t.Fatal(err)
+	}
+	for n := 0; n < 2; n++ {
+		if err := migrations.Apply(ctx, db); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var count int
+	if err := db.QueryRow(ctx, `SELECT tool_failure_count FROM nudge_slack_jobs WHERE event_key='upgrade'`).Scan(&count); err != nil || count != 2 {
+		t.Fatal("upgrade lost or doubled tool errors", count, err)
 	}
 }

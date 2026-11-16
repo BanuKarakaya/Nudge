@@ -63,20 +63,23 @@ func NewAgentTools(digest *FeedbinDigestService, bookmarks BookmarkService, web 
 	var rssErr error
 	t.loadRSS = func(ctx context.Context) (agentRSSSnapshot, error) {
 		rssOnce.Do(func() {
-			rssErr = errors.New("RSS inventory unavailable")
+			rssErr = errRSSUnavailable
 			if digest == nil || digest.connections == nil || digest.client == nil {
 				return
 			}
 			connection, err := digest.connections.GetByUserID(ctx, userID)
 			if err != nil {
+				rssErr = rssConnectionFailure(err)
 				return
 			}
 			entries, err := digest.client.ListUnreadSince(ctx, connection.Email, connection.Password, time.Time{})
 			if err != nil {
+				rssErr = rssProviderFailure(err)
 				return
 			}
 			taggings, err := digest.client.ListTaggings(ctx, connection.Email, connection.Password)
 			if err != nil {
+				rssErr = rssProviderFailure(err)
 				return
 			}
 			snapshot.categories = make(map[int64][]string)

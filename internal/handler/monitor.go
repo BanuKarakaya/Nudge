@@ -94,7 +94,7 @@ func (h *WorkspaceHandler) serveMonitor(w http.ResponseWriter, r *http.Request, 
 		fail(400, "Geçersiz dönem.")
 		return
 	}
-	statusOK := map[string]bool{"": true, "queued": true, "running": true, "completed": true, "failed": true, "active": true, "unanswered": true}
+	statusOK := map[string]bool{"": true, "queued": true, "running": true, "completed": true, "failed": true, "active": true, "unanswered": true, "issues": true}
 	offset := 0
 	var err error
 	if r.URL.Query().Get("offset") != "" {
@@ -150,7 +150,7 @@ func (h *WorkspaceHandler) serveMonitor(w http.ResponseWriter, r *http.Request, 
 		data.MaxDailyRequests = max(data.MaxDailyRequests, d.Messages)
 	}
 	if data.Monitor.Requests > 0 {
-		data.ErrorRate = 100 * float64(data.Monitor.Failed) / float64(data.Monitor.Requests)
+		data.ErrorRate = 100 * float64(data.Monitor.IssueRequests) / float64(data.Monitor.Requests)
 	}
 	path := "/dashboard"
 	if section != "overview" {
@@ -189,7 +189,7 @@ func monitorStage(stage string) string {
 	return "İşlem aşaması bildirilmedi"
 }
 func monitorError(code string) string {
-	labels := map[string]string{"workspace_busy": "Çalışma alanının eşzamanlı AI iş sınırına ulaşıldı.", "daily_quota": "Günlük AI token kotası doldu; kota UTC gece yarısında yenilenir.", "token_limit": "Bu çalıştırmanın token sınırına ulaşıldı.", "runtime_start_failed": "Model çalıştırıcısı başlatılamadı; sunucu kurulumunu kontrol et.", "runtime_storage_failed": "Modelin çalışma dizinine erişilemiyor; sunucu disk ve dosya izinlerini kontrol et.", "timeout": "Zaman sınırı aşıldı.", "interrupted": "İşlem kesildi; yeniden başlatma veya iptal olabilir.", "ai_not_configured": "AI ayarları eksik. API anahtarı ve modeli kontrol et.", "access_denied": "Hesap veya çalışma alanı erişimi doğrulanamadı.", "lease_lost": "Bu işin sahipliği sona erdi; eski deneme durduruldu.", "slack_delivery_failed": "Yanıt Slack’e ulaştırılamadı. Bot erişimini, kanal üyeliğini ve Slack bağlantısını kontrol et.", "worker_panic": "İşleyici beklenmedik şekilde durdu.", "runtime_disconnected": "Model çalıştırıcısının bağlantısı yanıt tamamlanmadan kapandı.", "model_failed": "Model yanıt üretimini tamamlayamadı; sağlayıcı erişimini ve kotayı kontrol et.", "processing_failed": "İşlem tamamlanamadı. Kesin neden bildirilmedi; son aşamayı ve yeniden denemeleri incele."}
+	labels := map[string]string{"rss_connection_required": "Bu kullanıcının Feedbin bağlantısı yok; hesabını bağlaması gerekiyor.", "rss_credentials_unavailable": "Kayıtlı Feedbin hesabı sunucuda okunamadı; veritabanı ve şifreleme ayarlarını kontrol et.", "rss_access_denied": "Feedbin hesap erişimini reddetti (401/403); hesabını kontrol edip bağlantıyı yenile.", "rss_rate_limited": "Feedbin istek sınırına ulaşıldı (429); bir süre sonra yeniden dene.", "rss_unavailable": "RSS servisine erişilemedi veya verisi alınamadı; servis ve ağ durumunu kontrol et.", "workspace_busy": "Çalışma alanının eşzamanlı AI iş sınırına ulaşıldı.", "daily_quota": "Günlük AI token kotası doldu; kota UTC gece yarısında yenilenir.", "token_limit": "Bu çalıştırmanın token sınırına ulaşıldı.", "runtime_start_failed": "Model çalıştırıcısı başlatılamadı; sunucu kurulumunu kontrol et.", "runtime_storage_failed": "Modelin çalışma dizinine erişilemiyor; sunucu disk ve dosya izinlerini kontrol et.", "timeout": "Zaman sınırı aşıldı.", "interrupted": "İşlem kesildi; yeniden başlatma veya iptal olabilir.", "ai_not_configured": "AI ayarları eksik. API anahtarı ve modeli kontrol et.", "access_denied": "Hesap veya çalışma alanı erişimi doğrulanamadı.", "lease_lost": "Bu işin sahipliği sona erdi; eski deneme durduruldu.", "slack_delivery_failed": "Yanıt Slack’e ulaştırılamadı. Bot erişimini, kanal üyeliğini ve Slack bağlantısını kontrol et.", "worker_panic": "İşleyici beklenmedik şekilde durdu.", "runtime_disconnected": "Model çalıştırıcısının bağlantısı yanıt tamamlanmadan kapandı.", "model_failed": "Model yanıt üretimini tamamlayamadı; sağlayıcı erişimini ve kotayı kontrol et.", "processing_failed": "İşlem tamamlanamadı. Kesin neden bildirilmedi; son aşamayı ve yeniden denemeleri incele."}
 	if v, ok := labels[code]; ok {
 		return v
 	}

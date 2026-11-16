@@ -21,6 +21,7 @@ type MonitorEvent struct {
 	Attempt int       `json:"attempt"`
 }
 type MonitorRequest struct {
+	ToolFailures                                                       int64
 	ID                                                                 int64
 	User, Name, Channel, Thread, Status, Stage, Model, Tool, ErrorCode string
 	Attempts, TraceCount                                               int
@@ -41,6 +42,7 @@ type MonitorModel struct {
 	Requests, Calls, PromptTokens, CompletionTokens, Tokens int64
 }
 type MonitorSummary struct {
+	IssueRequests, ToolIssueRequests                                                                                                 int64
 	Requests, Queued, Running, Completed, Failed, Undelivered, ActiveUsers, Tokens, PromptTokens, CompletionTokens, FilteredRequests int64
 	AverageMS, P95MS                                                                                                                 float64
 	Daily                                                                                                                            []DailyUsage

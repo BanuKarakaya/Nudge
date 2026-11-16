@@ -59,6 +59,10 @@ Sayfalar açıkken 5 saniyede bir yenilenir; açık işlem ayrıntıları korunu
 hatasında son görüntü eski olarak işaretlenir. Oturum/erişim sona erdiğinde kayıtlar
 ekrandan temizlenir. Dönem, model, Slack kullanıcı ID’si, durum ve istek numarasıyla
 filtreleme yapılabilir. Durum ve istek numarası yalnızca log listesini daraltır.
+Hata oranı, başarısız sonuçlanan veya araç hatası kaydedilmiş istekleri tekilleştirerek
+sayar. Yanıtı teslim edilmiş bir istekte de araç hatası uyarısı görünebilir.
+“Hata görülen tüm istekler” filtresi bu işleri kapsar. Araç hata sayacı, son 128
+olay sınırından etkilenmez; yükseltmede mevcut loglardan geri doldurulur.
 Yöneticiler varsayılan olarak kendi ekiplerinin operasyon metadatasını ve kullanım
 sıralamasını, üyeler yalnızca kendi kayıtlarını görür. Başka şirketlerin verilerine
 erişilemez. Slack görünen adları yeni isteklerde günde en fazla bir kez güncellenir;

@@ -17,6 +17,11 @@ const (
 	authenticationURL = apiBaseURL + "/authentication.json"
 )
 
+// APIError exposes only the HTTP status, never credentials or response bodies.
+type APIError struct{ StatusCode int }
+
+func (e *APIError) Error() string { return fmt.Sprintf("Feedbin API returned HTTP %d", e.StatusCode) }
+
 type Entry struct {
 	ID                  int64     `json:"id"`
 	FeedID              int64     `json:"feed_id"`
@@ -118,7 +123,7 @@ func (c Client) getJSON(ctx context.Context, email, password, endpoint string, t
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("Feedbin API returned HTTP %d", resp.StatusCode)
+		return &APIError{StatusCode: resp.StatusCode}
 	}
 	return json.NewDecoder(resp.Body).Decode(target)
 }

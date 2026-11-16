@@ -11,6 +11,17 @@ import (
 // original error: provider/network/database diagnostics can contain secrets.
 func AgentToolFailure(err error) (code, message string) {
 	switch {
+	case errors.Is(err, errRSSConnection):
+		return "rss_connection_required", "Bu kullanıcının Feedbin bağlantısı yok. Feedbin hesabını bağlaması gerekiyor; kullanıcıdan Slack içinde şifre isteme."
+	case errors.Is(err, errRSSCredentials):
+		return "rss_credentials_unavailable", "Kayıtlı Feedbin hesabı sunucuda okunamadı. Bu bir boş RSS listesi değildir; veritabanı ve şifreleme ayarları kontrol edilmeli."
+	case errors.Is(err, errRSSAccess):
+		return "rss_access_denied", "Feedbin kayıtlı hesapla erişimi reddetti (401/403). Hesap durumunu kontrol edip Feedbin bağlantısını güvenli bağlantı ekranından yenile; Slack içinde şifre isteme."
+	case errors.Is(err, errRSSRateLimit):
+		return "rss_rate_limited", "Feedbin istek sınırına ulaşıldı (429). Bir süre sonra tekrar dene; sonucu sıfır kayıt olarak yorumlama."
+	case errors.Is(err, errRSSUnavailable):
+		return "rss_unavailable", "RSS servisine erişilemedi veya veri alınamadı. Servis ve ağ durumunu kontrol et; kesin neden doğrulanmadı, sıfır kayıt olduğunu söyleme."
+
 	case errors.Is(err, ErrActionDisabled):
 		return "action_disabled", "Workspace yöneticisi bu yazma aracını kapatmış. İşlem yapılmadı; başka araçla aşmaya çalışma."
 	case errors.Is(err, coding.ErrConnect):
