@@ -214,7 +214,7 @@
 .workspace-page .reminder-schedule{grid-template-columns:repeat(2,minmax(0,1fr))}
 .workspace-page .utility-panel h2{font-size:18px;color:#38242c;margin:12px 0}
 .workspace-page .utility-panel .label{color:#75616a}
-.workspace-page .utility-panel .field-help{max-width:76ch}
+.workspace-page .utility-panel .field-help{max-width:76ch;overflow-wrap:anywhere}
 .workspace-page .utility-actions{margin-top:20px}
 .workspace-page .danger-panel{border-color:#dfbdc7}
 .workspace-page .danger-panel .actions .danger{border-color:#dfbdc7;color:#87364c;background:#fff7f8}
