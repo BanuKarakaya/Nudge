@@ -98,7 +98,9 @@ jobs:
       - run: docker compose --profile app up -d --build --wait
       - name: Scan built image for high and critical vulnerabilities
         run: |
-          docker image save "$(docker compose images -q app)" -o "$RUNNER_TEMP/nudgy-image.tar"
+          app_container=$(docker compose ps -q app)
+          app_image=$(docker inspect --format '{{.Config.Image}}' "$app_container")
+          docker image save "$app_image" -o "$RUNNER_TEMP/nudgy-image.tar"
           docker run --rm -v "$RUNNER_TEMP:/scan:ro" aquasec/trivy:0.76.0 image --input /scan/nudgy-image.tar --scanners vuln --severity HIGH,CRITICAL --exit-code 1
       - name: Check container startup
         run: curl --fail --retry 15 --retry-connrefused --retry-delay 1 http://localhost:8080/health/db
