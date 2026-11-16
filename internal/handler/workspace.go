@@ -25,7 +25,7 @@ import (
 
 //go:embed workspace_page.html
 var workspaceHTML string
-var workspaceTemplate = template.Must(template.New("workspace").Funcs(template.FuncMap{"count": formatCount, "millis": formatMillis, "activityTime": formatActivityTime, "activityStatus": activityStatus, "activityLabel": activityLabel}).Parse(workspaceHTML + workspaceAnalyticsHTML + connectorHTML))
+var workspaceTemplate = template.Must(template.New("workspace").Funcs(template.FuncMap{"count": formatCount, "millis": formatMillis, "activityTime": formatActivityTime, "activityStatus": activityStatus, "activityLabel": activityLabel, "monitorStage": monitorStage, "monitorError": monitorError, "monitorStatus": monitorStatusLabel, "monitorTime": monitorTime, "monitorRequest": monitorRequestLabel}).Parse(workspaceHTML + workspaceAnalyticsHTML + connectorHTML + monitorHTML))
 
 const workspaceCookie = "nudgy_workspace"
 
@@ -37,6 +37,7 @@ type workspaceProvider struct {
 	Resources   func(context.Context, workspace.Member) ([]workspace.Resource, error)
 }
 type WorkspaceHandler struct {
+	monitor       repository.MonitorRepository
 	connectors    *connector.Service
 	nativeData    nativeDataCleaner
 	actions       actionStore
@@ -97,6 +98,7 @@ func (h *WorkspaceHandler) RegisterTracker(s *tracker.Service) {
 	}})
 }
 func (h *WorkspaceHandler) RegisterRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /dashboard/live/data", h.monitorData)
 	mux.HandleFunc("GET /dashboard", h.analyticsPage)
 	mux.HandleFunc("GET /dashboard/setup", h.home)
 	mux.HandleFunc("GET /dashboard/integrations", h.home)
@@ -117,7 +119,7 @@ func (h *WorkspaceHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dashboard/actions", h.actionPage)
 	mux.HandleFunc("POST /dashboard/actions", h.actionPage)
 	files := http.StripPrefix("/dashboard/", http.FileServer(http.FS(dashboard.Files())))
-	for _, name := range []string{"styles.css", "workspace.css", "nudgy-mascot.webp"} {
+	for _, name := range []string{"styles.css", "workspace.css", "monitor.js", "nudgy-mascot.webp"} {
 		mux.Handle("GET /dashboard/"+name, files)
 	}
 	for _, path := range []string{"/dashboard/{$}", "/dashboard/index.html", "/dashboard/branch-rules.html"} {
@@ -260,6 +262,11 @@ type workspaceChoice struct {
 	Selected bool
 }
 type workspacePage struct {
+	Monitor                                             repository.MonitorSummary
+	MonitorEnabled                                      bool
+	MonitorURL, MonitorUser                             string
+	MonitorJob                                          int64
+	MaxDailyRequests                                    int64
 	Connections                                         []connector.Connection
 	RoutingTools                                        []string
 	Member                                              workspace.Member
@@ -292,7 +299,7 @@ func (h *WorkspaceHandler) page(w http.ResponseWriter, status int, data workspac
 
 	privatePageHeaders(w)
 	w.Header().Set("Referrer-Policy", "strict-origin")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; img-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
 	var b bytes.Buffer
 	if workspaceTemplate.Execute(&b, data) != nil {
 		http.Error(w, "Panel gösterilemiyor", 500)

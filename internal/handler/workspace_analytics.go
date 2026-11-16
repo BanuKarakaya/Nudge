@@ -19,6 +19,10 @@ var workspaceAnalyticsHTML string
 func (h *WorkspaceHandler) WithAnalytics(r repository.WorkspaceAnalyticsRepository) { h.analytics = r }
 
 func (h *WorkspaceHandler) analyticsPage(w http.ResponseWriter, r *http.Request) {
+	if h.monitor != nil {
+		h.monitorPage(w, r)
+		return
+	}
 	m, csrf, ok := h.session(w, r)
 	if !ok {
 		return

@@ -224,6 +224,7 @@ func (r *Runtime) Run(parent context.Context, req service.AgentRequest) (service
 }
 
 func (r *Runtime) run(parent context.Context, req service.AgentRequest, intentOnly bool) (service.AgentResult, error) {
+	analytics.Report(parent, analytics.LiveEvent{Stage: "model_starting", Model: r.config.Model})
 	ctx, cancel := context.WithTimeout(parent, r.config.Timeout)
 	defer cancel()
 	slots := r.slots
@@ -250,7 +251,7 @@ func (r *Runtime) run(parent context.Context, req service.AgentRequest, intentOn
 	}
 	work := filepath.Join(home, "workspace")
 	if err := os.MkdirAll(work, 0700); err != nil {
-		return service.AgentResult{}, errors.New("Codex workspace unavailable")
+		return service.AgentResult{}, analytics.Failure("runtime_storage_failed", errors.New("Codex workspace unavailable"))
 	}
 	_ = os.Chtimes(home, time.Now(), time.Now())
 	defer func() { _ = os.Chtimes(home, time.Now(), time.Now()) }()
@@ -294,7 +295,7 @@ func (r *Runtime) run(parent context.Context, req service.AgentRequest, intentOn
 	}
 	if err = cmd.Start(); err != nil {
 		stdin.Close()
-		return service.AgentResult{}, errors.New("could not start Codex app-server")
+		return service.AgentResult{}, analytics.Failure("runtime_start_failed", errors.New("could not start Codex app-server"))
 	}
 	defer func() { cancel(); stdin.Close(); _ = cmd.Wait() }()
 	packets, failures := make(chan packet), make(chan error, 1)
@@ -313,7 +314,7 @@ func (r *Runtime) run(parent context.Context, req service.AgentRequest, intentOn
 				return
 			}
 		}
-		failures <- errors.New("Codex connection closed before completion")
+		failures <- analytics.Failure("runtime_disconnected", errors.New("Codex connection closed before completion"))
 	}()
 	c := connection{encoder: json.NewEncoder(stdin), packets: packets, errors: failures}
 	if err = c.rpc(ctx, "initialize", map[string]any{"clientInfo": map[string]string{"name": "nudgy", "title": "Nudgy", "version": "1.0.0"}, "capabilities": map[string]bool{"experimentalApi": true}}, nil); err != nil {
@@ -409,6 +410,7 @@ func (r *Runtime) run(parent context.Context, req service.AgentRequest, intentOn
 	complex.config.ComplexModel = ""
 	req.ThreadID = threadID
 	req.History.AgentTokenUsage = result.TokenUsage
+	analytics.Report(ctx, analytics.LiveEvent{Stage: "model_handoff", Model: complex.config.Model})
 	log.Printf("harness=codex thread=%s stage=model_handoff model=%s", threadID, complex.config.Model)
 	return complex.startTurn(ctx, &c, req, threadID, "Host continuation after model routing: you are now the configured model. Any tool call that triggered routing has NOT executed; call it again if still needed. Complete the original unresolved user request above using this conversation and existing tool results. Do not hand off again. Return the finished answer, not a routing acknowledgement.")
 }
@@ -425,6 +427,7 @@ func (r *Runtime) startTurn(ctx context.Context, c *connection, req service.Agen
 	if turnStarted.Turn.ID == "" {
 		return service.AgentResult{}, errors.New("missing Codex turn identity")
 	}
+	analytics.Report(ctx, analytics.LiveEvent{Stage: "model_running", Model: r.config.Model})
 	log.Printf("harness=codex thread=%s turn=%s stage=turn_started model=%s", threadID, turnStarted.Turn.ID, r.config.Model)
 	return r.consume(ctx, c, req, threadID, turnStarted.Turn.ID)
 }
@@ -568,6 +571,7 @@ func (r *Runtime) consume(ctx context.Context, c *connection, req service.AgentR
 					success, requestHandoff = true, true
 				} else if allowed[p.Tool] && p.Tool != handoffTool && !handoff {
 					begin := time.Now()
+					analytics.Report(ctx, analytics.LiveEvent{Stage: "tool_started", Model: r.config.Model, Tool: p.Tool})
 					log.Printf("harness=codex thread=%s turn=%s stage=tool_started tool=%s", threadID, turnID, p.Tool)
 					toolCtx, toolCancel := context.WithTimeout(ctx, 45*time.Second)
 					output, err = req.Tools.Call(toolCtx, p.Tool, p.Arguments)
@@ -581,6 +585,11 @@ func (r *Runtime) consume(ctx context.Context, c *connection, req service.AgentR
 						output = "Tool result too large. Request a smaller page."
 						success = false
 					}
+					stage := "tool_completed"
+					if !success {
+						stage = "tool_failed"
+					}
+					analytics.Report(ctx, analytics.LiveEvent{Stage: stage, Model: r.config.Model, Tool: p.Tool, ErrorCode: errorCode, DurationMS: time.Since(begin).Milliseconds()})
 					log.Printf("harness=codex thread=%s turn=%s stage=tool_completed tool=%s success=%t error_code=%s duration_ms=%d", threadID, turnID, p.Tool, success, errorCode, time.Since(begin).Milliseconds())
 				}
 				analytics.RecordTool(ctx, p.Tool, r.config.Model, operationStarted, success, output)
@@ -625,7 +634,7 @@ func (r *Runtime) consume(ctx context.Context, c *connection, req service.AgentR
 					base = req.History.AgentTokenUsage.Total
 				}
 				if usage.Total-base > limit {
-					return service.AgentResult{ThreadID: threadID, TokenUsage: usage}, errors.New("bu çalıştırmanın token sınırına ulaşıldı")
+					return service.AgentResult{ThreadID: threadID, TokenUsage: usage}, analytics.Failure("token_limit", errors.New("bu çalıştırmanın token sınırına ulaşıldı"))
 				}
 			}
 		case "item/completed":
@@ -644,7 +653,7 @@ func (r *Runtime) consume(ctx context.Context, c *connection, req service.AgentR
 				continue
 			}
 			if p.Turn.Status != "completed" {
-				return service.AgentResult{}, fmt.Errorf("Codex turn ended with status %s (%s)", p.Turn.Status, safeErrorInfo(p.Turn.Error.Info))
+				return service.AgentResult{}, analytics.Failure("model_failed", fmt.Errorf("Codex turn ended with status %s (%s)", p.Turn.Status, safeErrorInfo(p.Turn.Error.Info)))
 			}
 			for _, item := range p.Turn.Items {
 				rememberAnswer(item)

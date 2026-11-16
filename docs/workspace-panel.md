@@ -46,6 +46,39 @@ Ayar değişikliği yeni native thread alanı başlatır; yalnızca aynı kullan
 önce iletilmiş geçmiş taşınır. Anahtar kaldırılınca sonraki çağrılar durur. Hâlihazırda
 başlamış bir sağlayıcı isteği, normal istek zaman aşımına kadar tamamlanabilir.
 
+## Canlı izleme ve kullanım
+
+- **Genel bakış** (`/dashboard`): devam eden/kuyruktaki istekler, hata oranı,
+  yanıt gönderilemeyenler, token tüketimi ve günlük kullanım grafikleri.
+- **Canlı işlemler** (`/dashboard/operations`): thread ve istek numarası, son aşama,
+  model/araç, denemeler, Slack teslim durumu ve zaman damgalı işlem logları.
+- **Kullanım** (`/dashboard/usage`): model bazında girdi/çıktı tokenları, günlük
+  istek sayısı, ortalama ve p95 süreleri; yöneticiler için en çok kullanan 50 üye.
+
+Sayfalar açıkken 5 saniyede bir yenilenir; açık işlem ayrıntıları korunur. Yenileme
+hatasında son görüntü eski olarak işaretlenir. Oturum/erişim sona erdiğinde kayıtlar
+ekrandan temizlenir. Dönem, model, Slack kullanıcı ID’si, durum ve istek numarasıyla
+filtreleme yapılabilir. Durum ve istek numarası yalnızca log listesini daraltır.
+Yöneticiler varsayılan olarak kendi ekiplerinin operasyon metadatasını ve kullanım
+sıralamasını, üyeler yalnızca kendi kayıtlarını görür. Başka şirketlerin verilerine
+erişilemez. Slack görünen adları yeni isteklerde günde en fazla bir kez güncellenir;
+ad alınamazsa kullanıcı ID’si gösterilir.
+
+Ayrıntılı canlı kayıtlar bu sürümden sonraki Slack mention ve onay işleri içindir.
+Eski kayıtlara aşama veya model dağılımı uydurulmaz. Zamanlanmış özetler ve sistem
+servislerinin bütün logları bu akışa dahil değildir. Tokenlar sağlayıcının bildirdiği
+kullanımdır; fatura değildir. Bir model devrindeki ve yeniden denemelerdeki bildirilen
+kullanımlar birleştirilir; henüz bildirilmemiş tüketim görünmeyebilir. Her işin son
+128 olayı tutulur; token toplamları bu sınırdan etkilenmez. Tamamlanan/başarısız iş
+kayıtları mevcut 90 günlük saklama politikasını izler.
+
+**Nudgy cevap vermediyse:** önce Canlı işlemler ekranında kullanıcıyı bul; kuyruk,
+son aşama, hata kodu, sahiplik süresi ve Slack teslim durumunu incele. “Yanıt
+gönderilemeyen hatalar” filtresi teslim edilmemiş, başarısız işleri gösterir; halen
+çalışan/bekleyenler için “Devam edenler” filtresini kullan. Hiç kayıt yoksa Slack
+Events ayarları ve dağıtım loglarına bak: sunucuya ulaşmayan istek veya veritabanı
+erişilemezken oluşan hata dashboard’a kaydedilemez.
+
 ## Gizlilik sınırı
 
 İşletmeci veya çalışma alanı yöneticisi için özel konuşmaları, kod farklarını ve

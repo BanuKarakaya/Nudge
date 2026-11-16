@@ -18,6 +18,8 @@ type AIUsage struct {
 type UsageTracker struct {
 	mu    sync.Mutex
 	calls []AIUsage
+	// OnAdd must be configured before the tracker is shared with providers.
+	OnAdd func(AIUsage)
 }
 
 func NewUsageTracker() *UsageTracker {
@@ -31,6 +33,9 @@ func (t *UsageTracker) Add(call AIUsage) {
 	t.mu.Lock()
 	t.calls = append(t.calls, call)
 	t.mu.Unlock()
+	if t.OnAdd != nil {
+		t.OnAdd(call)
+	}
 }
 
 func (t *UsageTracker) Snapshot() []AIUsage {

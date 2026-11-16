@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"nudge/internal/analytics"
 	"nudge/internal/coding"
 	"nudge/internal/repository"
 	"nudge/internal/service"
@@ -46,7 +47,14 @@ type queuedReply struct {
 
 // ProcessJob bypasses process-local replay suppression: durable ownership has
 // already been acquired, and a new attempt must be allowed after interruption.
-func (h *SlackEventHandler) ProcessJob(ctx context.Context, job repository.SlackJob) error {
+func (h *SlackEventHandler) ProcessJob(ctx context.Context, job repository.SlackJob) (resultErr error) {
+	ctx = h.reportingContext(ctx, job)
+	analytics.Stage(ctx, "worker_started")
+	defer func() {
+		if resultErr != nil {
+			analytics.Report(ctx, analytics.LiveEvent{Stage: "attempt_failed", ErrorCode: liveError(resultErr)})
+		}
+	}()
 	if h.jobs == nil {
 		return errors.New("Slack job queue unavailable")
 	}
@@ -111,12 +119,15 @@ func (h *SlackEventHandler) deliverQueuedReply(ctx context.Context, event slackE
 		if err := h.jobs.CheckLease(ctx, job); err != nil {
 			return err
 		}
+		analytics.Stage(ctx, "delivery_started")
 		sendCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		err = h.postReply(sendCtx, installation.BotToken, event.Event.Channel, job.Key.Thread, prepared.Message, reply)
 		cancel()
 		if err != nil {
+			analytics.Report(ctx, analytics.LiveEvent{Stage: "delivery_failed", ErrorCode: "slack_delivery_failed"})
 			return err
 		}
+		analytics.Stage(ctx, "delivery_completed")
 		// Slack and Postgres cannot commit atomically. A crash before this mark
 		// can resend a message, but never regenerates a persisted response.
 		if err := h.jobs.MarkDelivered(ctx, job); err != nil {

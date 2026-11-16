@@ -190,3 +190,22 @@
 .workspace-page .connector-panel .enable{align-items:flex-start;line-height:1.7;margin:14px 0}
 .workspace-page .connector-panel details{margin:24px 0}
 .workspace-page .connector-panel .form-grid{margin:18px 0}
+
+/* Durable live request monitoring. */
+.workspace-page .monitor-toolbar{display:flex;justify-content:space-between;align-items:center;gap:16px;margin:6px 0 20px;font-size:12px;flex-wrap:wrap}
+.workspace-page .monitor-toolbar>div{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.workspace-page .monitor-toolbar button{padding:9px 14px;border-radius:7px;border:1px solid #94616b;background:transparent;color:var(--text);cursor:pointer}
+.workspace-page #monitor-status,.workspace-page .monitor-updated{font-size:11px;color:var(--muted);line-height:1.7}
+.workspace-page .live-dot{width:7px;height:7px;background:#a6bd8d;border-radius:50%;display:inline-block}
+.workspace-page .monitor-latency{display:flex;gap:24px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin:0 0 24px}
+.workspace-page .monitor-day{display:grid;grid-template-columns:90px 1fr 1fr;gap:12px;padding:12px 0;border-top:1px solid #eeeaec;color:#71676c;font-size:11px}
+.workspace-page .monitor-day label{min-width:0}.workspace-page .monitor-day meter{display:block;width:100%;margin-top:7px;height:10px;accent-color:#94616b}
+.workspace-page .monitor-table-wrap{overflow:auto}.workspace-page .monitor-table{width:100%;border-collapse:collapse;color:#49353f;font-size:12px;text-align:left}
+.workspace-page .monitor-table th,.workspace-page .monitor-table td{padding:14px 12px;border-bottom:1px solid #eeeaec;white-space:nowrap}
+.workspace-page .activity-badge.running,.workspace-page .activity-badge.queued{background:#f4ebd9;color:#7a622d}
+.workspace-page .activity-badge.completed{background:#e7efdf;color:#4f6740}
+.workspace-page .monitor-success{color:#4f6740}.workspace-page .monitor-warning{color:#8c622d}
+.workspace-page .monitor-events li{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:14px 0;border-bottom:1px solid #eeeaec}
+.workspace-page .monitor-events time{font-size:11px;color:#8b7580}.workspace-page .monitor-events p{margin:3px 0;overflow-wrap:anywhere}
+.workspace-page .monitor-record code{font-size:11px;overflow-wrap:anywhere}.workspace-page .monitor-record .activity-detail>p{overflow-wrap:anywhere}
+@media(max-width:720px){.workspace-page .monitor-day{grid-template-columns:70px 1fr 1fr;gap:8px}.workspace-page .monitor-latency{gap:10px}}

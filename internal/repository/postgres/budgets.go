@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 
+	"nudge/internal/analytics"
 	"nudge/internal/coding"
 )
 
@@ -36,10 +37,10 @@ func (s *WorkspaceAIStore) BeginBudget(ctx context.Context, user int64) (string,
 	}
 	reserve := budgetLimit("NUDGY_RUN_TOKEN_LIMIT", 100000)
 	if running >= budgetLimit("NUDGY_WORKSPACE_CONCURRENCY", 2) {
-		return "", errors.New("çalışma alanının eşzamanlı iş sınırına ulaşıldı; biraz sonra tekrar dene")
+		return "", analytics.Failure("workspace_busy", errors.New("çalışma alanının eşzamanlı iş sınırına ulaşıldı; biraz sonra tekrar dene"))
 	}
 	if workspaceTokens+reserve > budgetLimit("NUDGY_WORKSPACE_DAILY_TOKENS", 2000000) || userTokens+reserve > budgetLimit("NUDGY_USER_DAILY_TOKENS", 500000) {
-		return "", errors.New("günlük AI token kotası doldu; kota UTC gece yarısında yenilenir")
+		return "", analytics.Failure("daily_quota", errors.New("günlük AI token kotası doldu; kota UTC gece yarısında yenilenir"))
 	}
 	id, err := coding.RandomID()
 	if err != nil {

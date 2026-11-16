@@ -7,15 +7,22 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"nudge/internal/analytics"
 	"nudge/internal/repository"
 )
 
 type workerJobStore struct {
+	events []analytics.LiveEvent
 	repository.SlackJobRepository
 	job      repository.SlackJob
 	claimErr error
 	retries  int
 	delay    time.Duration
+}
+
+func (q *workerJobStore) ReportJob(_ context.Context, _ repository.SlackJob, e analytics.LiveEvent) error {
+	q.events = append(q.events, e)
+	return nil
 }
 
 func (q *workerJobStore) ClaimNext(context.Context) (repository.SlackJob, error) {
@@ -61,6 +68,9 @@ func TestSlackWorkerRecoversInterruptedAttempts(t *testing.T) {
 				return nil
 			}}
 			worked, err := w.ProcessNext(ctx)
+			if mode == "panic" && (len(q.events) != 1 || q.events[0].ErrorCode != "worker_panic") {
+				t.Fatal("panic missing from dashboard")
+			}
 			if mode == "empty" || mode == "claim failure" {
 				if worked || calls != 0 || q.retries != 0 || (mode == "empty" && err != nil) || (mode == "claim failure" && err == nil) {
 					t.Fatal("claim failure ran work")

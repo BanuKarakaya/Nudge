@@ -40,3 +40,16 @@ read-only. Endpoint/credential/catalog changes invalidate old approval tool name
 The HTTP client checks DNS addresses at dial time, disables redirects and proxies,
 and limits requests/results. Private networks require operator-approved origins.
 See [MCP security and deployment details](docs/mcp-connections.md).
+
+## Live dashboard data
+
+Workspace managers can view their own team's request metadata, model/token totals,
+Slack display names and usage ranking. Members can view only their own operational
+records. Live polling uses the existing session and rechecks membership; it does
+not accept operator keys or caller-selected identity. Operational events contain
+host-selected stages, safe error codes and tool/model identifiers, not conversation
+bodies, tool arguments, credentials or raw provider errors. Historical raw message
+columns and queued payload/results are excluded from the dashboard projection.
+Personal export includes live metadata; personal deletion and job retention delete
+its associated per-model usage. This is application access control, not protection
+against infrastructure administrators with direct database access.

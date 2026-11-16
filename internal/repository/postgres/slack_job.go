@@ -52,7 +52,7 @@ func (r *SlackJobRepository) ClaimNext(ctx context.Context) (repository.SlackJob
             WHERE p.team_id=q.team_id AND p.channel_id=q.channel_id AND p.thread_ts=q.thread_ts
             AND p.slack_user_id=q.slack_user_id AND p.id<q.id AND p.status IN ('queued','running'))
         ORDER BY q.id FOR UPDATE OF q SKIP LOCKED LIMIT 1
-    ) UPDATE nudge_slack_jobs q SET status='running',attempts=attempts+1,
+    ) UPDATE nudge_slack_jobs q SET status='running',stage='worker_started',current_tool='',error_code='',attempts=attempts+1,
         claim_token=$1,lease_until=NOW()+($2*INTERVAL '1 second'),updated_at=NOW()
       FROM candidate WHERE q.id=candidate.id
       RETURNING q.id,q.team_id,q.channel_id,q.thread_ts,q.slack_user_id,q.event_key,
@@ -88,12 +88,12 @@ func jobUpdated(tag pgconn.CommandTag, err error) error {
 }
 
 func (r *SlackJobRepository) SaveResult(ctx context.Context, j repository.SlackJob, result json.RawMessage) error {
-	return jobUpdated(r.db.Exec(ctx, `UPDATE nudge_slack_jobs SET result=$3,updated_at=NOW()
+	return jobUpdated(r.db.Exec(ctx, `UPDATE nudge_slack_jobs SET result=$3,stage='response_ready',updated_at=NOW()
         WHERE `+ownedSlackJob+` AND result IS NULL`, j.ID, j.ClaimToken, result))
 }
 
 func (r *SlackJobRepository) MarkDelivered(ctx context.Context, j repository.SlackJob) error {
-	return jobUpdated(r.db.Exec(ctx, `UPDATE nudge_slack_jobs SET delivered_at=COALESCE(delivered_at,NOW()),updated_at=NOW()
+	return jobUpdated(r.db.Exec(ctx, `UPDATE nudge_slack_jobs SET delivered_at=COALESCE(delivered_at,NOW()),stage='delivery_completed',updated_at=NOW()
         WHERE `+ownedSlackJob+` AND result IS NOT NULL`, j.ID, j.ClaimToken))
 }
 
@@ -107,7 +107,7 @@ func (r *SlackJobRepository) Complete(ctx context.Context, j repository.SlackJob
 	if success {
 		status = "completed"
 	}
-	if err := jobUpdated(tx.Exec(ctx, `UPDATE nudge_slack_jobs SET status=$3,claim_token=NULL,
+	if err := jobUpdated(tx.Exec(ctx, `UPDATE nudge_slack_jobs SET status=$3,error_code=CASE WHEN $3='completed' THEN '' ELSE error_code END,current_tool='',claim_token=NULL,
         lease_until=NULL,updated_at=NOW(),finished_at=NOW() WHERE `+ownedSlackJob+` AND delivered_at IS NOT NULL`, j.ID, j.ClaimToken, status)); err != nil {
 		return err
 	}

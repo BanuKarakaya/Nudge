@@ -10,11 +10,14 @@ import (
 	"testing"
 	"time"
 
+	"nudge/internal/analytics"
 	"nudge/internal/repository"
 	"nudge/internal/service"
 )
 
 type testJobQueue struct {
+	events    []analytics.LiveEvent
+	reportErr error
 	repository.SlackJobRepository
 	job                                        repository.SlackJob
 	enqueueErr, saveErr, completeErr, leaseErr error
@@ -259,5 +262,60 @@ func TestQueuedAgentFailureIsDeliveredAndTerminal(t *testing.T) {
 	}
 	if !q.completed || q.success || len(sender.messages) != 1 || sender.messages[0] != agentTimeoutMessage {
 		t.Fatal("failure lost or retried forever")
+	}
+}
+
+func (q *testJobQueue) ReportJob(ctx context.Context, _ repository.SlackJob, e analytics.LiveEvent) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	q.events = append(q.events, e)
+	return q.reportErr
+}
+func TestSlackJobReportsUsageBeforeCompletionIncludingFailure(t *testing.T) {
+	for _, mode := range []string{"success", "model_failure", "telemetry_failure"} {
+		t.Run(mode, func(t *testing.T) {
+			q := &testJobQueue{}
+			queuedEvent(t, q, conversationEvent("RSS listesini getir"))
+			if mode == "telemetry_failure" {
+				q.reportErr = errors.New("offline")
+			}
+			sender := &conversationSender{}
+			h := NewSlackEventHandler("", conversationInstallations{}, nil, nil, agentFunc(func(ctx context.Context, r service.AgentRequest) (service.AgentResult, error) {
+				tracker := analytics.UsageTrackerFromContext(ctx)
+				tracker.Add(analytics.AIUsage{Provider: "synthetic", Model: "daily", TotalTokens: 13})
+				found := false
+				for _, e := range q.events {
+					if e.Stage == "usage" && e.Usage != nil && e.Usage.TotalTokens == 13 {
+						found = true
+					}
+				}
+				if !found || q.completed {
+					t.Fatal("usage not visible before model returns")
+				}
+				if mode == "model_failure" {
+					return service.AgentResult{}, analytics.Failure("model_failed", errors.New("PRIVATE"))
+				}
+				return service.AgentResult{Text: "Tamam"}, nil
+			}), nil, make(conversationTestStore), sender, nil).WithJobQueue(q)
+			if err := h.ProcessJob(context.Background(), q.job); err != nil {
+				t.Fatal(err)
+			}
+			stages := map[string]bool{}
+			for _, e := range q.events {
+				stages[e.Stage] = true
+			}
+			for _, stage := range []string{"worker_started", "agent_starting", "usage", "response_ready", "delivery_started", "delivery_completed"} {
+				if !stages[stage] {
+					t.Fatal("missing stage", stage)
+				}
+			}
+			if !q.completed || !q.job.Delivered || (mode == "model_failure") == q.success {
+				t.Fatal("incorrect outcome")
+			}
+			if mode == "model_failure" && !stages["attempt_failed"] {
+				t.Fatal("failure invisible")
+			}
+		})
 	}
 }

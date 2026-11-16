@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"nudge/internal/analytics"
 	"nudge/internal/coding"
 	"nudge/internal/repository"
 	"nudge/internal/service"
@@ -31,6 +32,7 @@ func (h *SlackEventHandler) WithActions(store actionStore, interactions *SlackIn
 	interactions.actions = h
 }
 func (h *SlackEventHandler) notifyAction(ctx context.Context, p service.ActionProposal) error {
+	analytics.Report(ctx, analytics.LiveEvent{Stage: "approval_waiting", Tool: p.Tool})
 	installation, err := h.installations.GetByUserID(ctx, p.Identity.UserID)
 	if err != nil {
 		return err
@@ -171,6 +173,7 @@ func (h *SlackEventHandler) processActionJob(ctx context.Context, event slackEve
 			})
 			callCtx = coding.WithApprovedRevision(callCtx, p.Revision)
 			var result string
+			analytics.Report(ctx, analytics.LiveEvent{Stage: "action_starting", Tool: p.Tool})
 			if strings.HasSuffix(p.Tool, "repository_edit_finish") {
 				var a struct {
 					Task string `json:"task_id"`
@@ -196,11 +199,13 @@ func (h *SlackEventHandler) processActionJob(ctx context.Context, event slackEve
 				result, err = tools.Call(callCtx, p.Tool, p.Arguments)
 			}
 			if err == nil {
+				analytics.Report(ctx, analytics.LiveEvent{Stage: "action_completed", Tool: p.Tool})
 				success = true
 				message = "Onayladığın işlem tamamlandı.\n" + slack.SanitizeGeneratedText(result)
 			}
 		}
 		if err != nil {
+			analytics.Report(ctx, analytics.LiveEvent{Stage: "action_failed", Tool: p.Tool, ErrorCode: liveError(err)})
 			code, description := service.AgentToolFailure(err)
 			message = fmt.Sprintf("İşlem tamamlanamadı (%s). %s", code, description)
 		}
@@ -219,6 +224,7 @@ func (h *SlackEventHandler) processActionJob(ctx context.Context, event slackEve
 	if err = h.jobs.SaveResult(ctx, job, raw); err != nil {
 		return err
 	}
+	analytics.Stage(ctx, "response_ready")
 	return h.deliverQueuedReply(ctx, event, job, prepared)
 }
 

@@ -84,7 +84,7 @@ this JSON format; rotating them invalidates old links.
 
 ## Data and observability
 
-`/dashboard/data` exports profile/bookmarks/delivered conversations/activity and
+`/dashboard/data` exports profile/bookmarks/delivered conversations/activity/live operation metadata and
 can delete personal application data, provider connections, sessions and native
 rollouts. Workspace membership, shared manager configuration, quota accounting
 and the deletion audit remain. Provider-side messages/issues/branches, backups
@@ -95,6 +95,21 @@ request may already have committed; deletion cannot recall it.
 entries. Logs are JSON with request, job, thread and tool identifiers. `/metrics`
 returns queue and connection-pool gauges without message content. No OpenTelemetry
 collector is required; distributed traces are not implemented.
+
+The dashboard polls its session-protected `/dashboard/live/data` endpoint every
+five seconds. Managers see operational metadata and usage rankings for their own
+workspace; members see only their own requests. `/dashboard/operations` shows
+queue, model, tool, retry, failure and Slack delivery stages before a job finishes.
+`/dashboard/usage` splits reported token use by model, including failed attempts.
+Names are cached from Slack profiles for 24 hours (ID fallback); no email is stored.
+`012_live_observability.sql` runs automatically at startup. No extra service or
+collector is needed. Each job retains at most 128 events; usage totals are separate.
+The existing 90-day completed/failed job retention and personal deletion also
+remove this metadata. Dashboard logs exclude prompts, responses, tool arguments,
+provider error bodies and credentials. They cover queued mentions/approvals, not
+all scheduler or infrastructure activity. A request that never reached the server,
+a total database outage, and token usage not reported by the provider cannot be
+reconstructed here. Use deployment logs and Slack Events diagnostics in those cases.
 
 Queue attempts stop at eight, including abandoned leases. `failed` items no longer
 block newer conversation jobs. Do not blindly reset failed external writes:

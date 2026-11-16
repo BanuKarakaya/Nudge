@@ -9,8 +9,11 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"nudge/internal/analytics"
 	"nudge/internal/repository"
 )
+
+var errWorkerPanic = errors.New("worker panic")
 
 type SlackJobWorker struct {
 	Jobs    repository.SlackJobRepository
@@ -64,6 +67,11 @@ func (w SlackJobWorker) ProcessNext(ctx context.Context) (bool, error) {
 	}
 	retryCtx, retryCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer retryCancel()
+	if errors.Is(err, errWorkerPanic) {
+		if report, ok := w.Jobs.(repository.JobReporter); ok {
+			_ = report.ReportJob(retryCtx, job, analytics.LiveEvent{Stage: "attempt_failed", ErrorCode: "worker_panic"})
+		}
+	}
 	retryErr := w.Jobs.Retry(retryCtx, job, delay)
 	return true, errors.Join(err, retryErr)
 }
@@ -71,7 +79,7 @@ func (w SlackJobWorker) ProcessNext(ctx context.Context) (bool, error) {
 func (w SlackJobWorker) process(ctx context.Context, job repository.SlackJob) (err error) {
 	defer func() {
 		if recover() != nil {
-			err = fmt.Errorf("Slack job %d panicked", job.ID)
+			err = fmt.Errorf("Slack job %d: %w", job.ID, errWorkerPanic)
 		}
 	}()
 	return w.Process(ctx, job)

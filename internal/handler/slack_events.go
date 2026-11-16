@@ -190,6 +190,9 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 		threadTS = event.Event.TS
 	}
 	tracker := analytics.NewUsageTracker()
+	tracker.OnAdd = func(u analytics.AIUsage) {
+		analytics.Report(parent, analytics.LiveEvent{Stage: "usage", Model: u.Model, Usage: &u})
+	}
 	operations := &analytics.OperationTracker{}
 	analyticsRecord := repository.InteractionRecord{
 		RequestID: requestID, TeamID: event.TeamID, ChannelID: event.Event.Channel,
@@ -218,6 +221,7 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 	defer cancel()
 	ctx = analytics.WithUsageTracker(ctx, tracker)
 	ctx = analytics.WithOperationTracker(ctx, operations)
+	analytics.Stage(ctx, "identity_lookup")
 	userID, err := h.installations.GetUserIDBySlackUserID(ctx, event.TeamID, event.Event.User)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -233,12 +237,14 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 	}
 	analyticsRecord.UserID = userID
 	log.Printf("slack_request=%s stage=user_resolved user_id=%d slack_user_id=%q team_id=%q elapsed_ms=%d", requestID, userID, event.Event.User, event.TeamID, time.Since(started).Milliseconds())
+	analytics.Stage(ctx, "installation_lookup")
 	installation, err := h.installations.GetByUserID(ctx, userID)
 	if err != nil {
 		log.Printf("slack_request=%s stage=installation_lookup_failed elapsed_ms=%d error=%q", requestID, time.Since(started).Milliseconds(), err)
 		return err
 	}
 	log.Printf("slack_request=%s stage=installation_loaded elapsed_ms=%d", requestID, time.Since(started).Milliseconds())
+	h.refreshProfile(ctx, userID, installation.BotToken, event.Event.User)
 	var removeProcessingReaction func()
 	if reactionClient, ok := h.client.(slackReactionClient); ok && event.Event.TS != "" {
 		reactionCtx, reactionCancel := context.WithTimeout(ctx, 3*time.Second)
@@ -265,6 +271,7 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 		}
 	}
 	// Resolve credentials and show activity before waiting for this conversation.
+	analytics.Stage(ctx, "history_loading")
 	lockStarted := time.Now()
 	lockCtx, lockCancel := context.WithTimeout(ctx, 15*time.Second)
 	unlock, lockErr := h.conversationLocks.lock(lockCtx, key)
@@ -396,6 +403,7 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 					input += "\n\nHost recovery: this same Slack request was interrupted. Discover existing repository tasks and inspect their status and saved edits before continuing. Reuse the existing task for this request; completed branch publishing must not be repeated."
 				}
 			}
+			analytics.Stage(ctx, "agent_starting")
 			log.Printf("slack_request=%s stage=agent_started", requestID)
 			result, err = h.runtime.Run(ctx, service.AgentRequest{
 				UserID: userID,
@@ -427,6 +435,7 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 		analyticsRecord.Action = "CONNECTION_LINK"
 	}
 	if err != nil {
+		analytics.Report(ctx, analytics.LiveEvent{Stage: "attempt_failed", ErrorCode: liveError(err)})
 		log.Printf("slack_request=%s stage=agent_failed elapsed_ms=%d error=%q", requestID, time.Since(started).Milliseconds(), err)
 		if historyLoaded {
 			state.AgentThreadID = ""
@@ -477,6 +486,7 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 			return persistErr
 		}
 		job.Result = raw
+		analytics.Stage(parent, "response_ready")
 		return h.deliverQueuedReply(parent, event, *job, prepared)
 	}
 	// Generation timeout must not prevent a clear error response being delivered.

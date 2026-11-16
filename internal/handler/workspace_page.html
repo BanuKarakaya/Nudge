@@ -14,7 +14,7 @@
     <nav class="nav" aria-label="Panel bölümleri">
       <p class="nav-label">Çalışma alanın</p>{{if .Member.UserID}}<a class="nav-item" href="/dashboard/data">Verilerim</a>{{end}}{{if .Member.Manager}}<a class="nav-item" href="/dashboard/audit">Denetim kaydı</a>{{end}}{{if .Member.Manager}}<a class="nav-item" href="/dashboard/preferences">Hatırlatıcılar</a><a class="nav-item" href="/dashboard/actions">Araç izinleri</a>{{end}}
       <a class="nav-item {{if eq .Section "overview"}}active{{end}}" href="/dashboard" aria-label="Genel bakış"><span class="nav-icon" aria-hidden="true">◩</span><span class="nav-text">Genel bakış</span></a>
-      {{if .Member.UserID}}<a class="nav-item {{if eq .Section "operations"}}active{{end}}" href="/dashboard/operations" aria-label="İşlemlerim"><span class="nav-icon" aria-hidden="true">☷</span><span class="nav-text">İşlemlerim</span></a><a class="nav-item {{if eq .Section "usage"}}active{{end}}" href="/dashboard/usage" aria-label="Kullanım"><span class="nav-icon" aria-hidden="true">◷</span><span class="nav-text">Kullanım</span></a>{{end}}
+      {{if .Member.UserID}}<a class="nav-item {{if eq .Section "operations"}}active{{end}}" href="/dashboard/operations" aria-label="Canlı işlemler"><span class="nav-icon" aria-hidden="true">☷</span><span class="nav-text">Canlı işlemler</span></a><a class="nav-item {{if eq .Section "usage"}}active{{end}}" href="/dashboard/usage" aria-label="Kullanım"><span class="nav-icon" aria-hidden="true">◷</span><span class="nav-text">Kullanım</span></a>{{end}}
       {{if .Member.UserID}}<a class="nav-item {{if eq .Section "setup"}}active{{end}}" href="/dashboard/setup" aria-label="Kurulum"><span class="nav-icon" aria-hidden="true">⚙</span><span class="nav-text">Kurulum</span></a>{{end}}
       {{if .Member.Manager}}
       <a class="nav-item {{if eq .Section "ai"}}active{{end}}" href="/dashboard/ai" aria-label="AI ayarları"><span class="nav-icon" aria-hidden="true">✳</span><span class="nav-text">AI ayarları</span></a>
@@ -48,7 +48,7 @@
 <div class="page-heading"><div><div class="eyebrow"><span class="eyebrow-line"></span> NUDGY WORKSPACE</div><h1>{{.Title}}</h1><p>{{.Description}}</p></div></div>
 {{if .Member.OwnerMissing}}<div class="notice error" role="status">Çalışma alanının yöneticisi henüz doğrulanmamış. Kurulumu yöneten kişi <a href="/slack/install">Slack kurulumunu yeniden yetkilendirerek</a> yönetimi açabilir. Kişisel bağlantılar korunur.</div>{{end}}
 {{if .Message}}<div class="notice" role="status">{{.Message}}</div>{{end}}
-{{if or (eq .Section "overview") (eq .Section "operations") (eq .Section "usage")}}{{template "workspace-analytics" .}}
+{{if or (eq .Section "overview") (eq .Section "operations") (eq .Section "usage")}}{{if .MonitorEnabled}}{{template "monitor" .}}{{else}}{{template "workspace-analytics" .}}{{end}}
 {{else if eq .Section "setup"}}
 <section class="nudgy-note"><div class="mascot-large" aria-hidden="true"><img src="/dashboard/nudgy-mascot.webp" alt=""></div><div><span class="note-kicker">SANA AİT ÇALIŞMA ALANI</span><h2>Senin modellerin. Ekibinin hesapları.</h2><p>{{if .Member.Manager}}AI anahtarını ve modellerini seç, ekibinin kullanacağı servisleri aç. Tek başına çalışıyorsan tüm adımları kendin tamamlayabilirsin.{{else}}AI ayarlarını ve ortak entegrasyonları yöneticin hazırlar. Sen kendi servis hesaplarını doğrulayarak başlayabilirsin.{{end}}</p></div></section>
 <div class="workspace-metrics">
@@ -97,4 +97,5 @@
 {{end}}
 {{end}}
 </div><footer class="footer"><span>Nudgy dashboard</span><span>Entegrasyonlar · Kişisel hesaplar</span></footer></main>
-</div></body></html>
+</div>{{if .MonitorEnabled}}<script src="/dashboard/monitor.js" defer></script>{{end}}
+</body></html>
