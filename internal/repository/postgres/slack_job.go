@@ -12,16 +12,24 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"nudge/internal/repository"
+	"nudge/internal/secure"
 	"nudge/migrations"
 )
 
-type SlackJobRepository struct{ db *pgxpool.Pool }
+type SlackJobRepository struct {
+	db          *pgxpool.Pool
+	traceCipher secure.Cipher
+}
 
-func NewSlackJobRepository(ctx context.Context, db *pgxpool.Pool) (*SlackJobRepository, error) {
+func NewSlackJobRepository(ctx context.Context, db *pgxpool.Pool, ciphers ...secure.Cipher) (*SlackJobRepository, error) {
 	if err := migrations.Apply(ctx, db); err != nil {
 		return nil, err
 	}
-	return &SlackJobRepository{db: db}, nil
+	r := &SlackJobRepository{db: db}
+	if len(ciphers) > 0 {
+		r.traceCipher = ciphers[0]
+	}
+	return r, nil
 }
 
 func (r *SlackJobRepository) Enqueue(ctx context.Context, j repository.SlackJob) error {
@@ -132,3 +140,7 @@ func (r *SlackJobRepository) Retry(ctx context.Context, j repository.SlackJob, d
 }
 
 var _ repository.SlackJobRepository = (*SlackJobRepository)(nil)
+
+func (r *SlackJobRepository) Fail(ctx context.Context, j repository.SlackJob, code string) error {
+	return jobUpdated(r.db.Exec(ctx, `UPDATE nudge_slack_jobs SET status='failed',error_code=CASE WHEN error_code='' THEN $3 ELSE error_code END,finished_at=NOW(),updated_at=NOW(),claim_token=NULL,lease_until=NULL WHERE `+ownedSlackJob, j.ID, j.ClaimToken, code))
+}

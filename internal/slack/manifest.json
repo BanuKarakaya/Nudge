@@ -1,0 +1,21 @@
+{
+  "display_information": {
+    "name": "Nudgy",
+    "description": "Your workspace assistant for conversations, reading and connected tools.",
+    "background_color": "#172235"
+  },
+  "features": {
+    "bot_user": {"display_name": "Nudgy", "always_online": true},
+    "app_home": {"home_tab_enabled": false, "messages_tab_enabled": true, "messages_tab_read_only_enabled": false}
+  },
+  "oauth_config": {
+    "redirect_urls": ["https://YOUR_NUDGY_HOST/slack/oauth/callback"],
+    "scopes": {"bot": ["app_mentions:read", "chat:write", "reactions:write", "users:read", "im:write", "channels:history", "groups:history", "im:history", "mpim:history"]}
+  },
+  "settings": {
+    "event_subscriptions": {"request_url": "https://YOUR_NUDGY_HOST/slack/events", "bot_events": ["app_mention", "message.im", "app_uninstalled", "tokens_revoked"]},
+    "interactivity": {"is_enabled": true, "request_url": "https://YOUR_NUDGY_HOST/slack/interactions"},
+    "socket_mode_enabled": false,
+    "token_rotation_enabled": false
+  }
+}

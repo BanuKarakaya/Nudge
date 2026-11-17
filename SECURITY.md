@@ -49,7 +49,12 @@ records. Live polling uses the existing session and rechecks membership; it does
 not accept operator keys or caller-selected identity. Operational events contain
 host-selected stages, safe error codes and tool/model identifiers, not conversation
 bodies, tool arguments, credentials or raw provider errors. Historical raw message
-columns and queued payload/results are excluded from the dashboard projection.
+columns and queued payload/results are excluded from normal dashboard list polling.
+Selecting an owned job exposes the requester’s message/reply and separately
+encrypted, redacted provider request/response content. Only the requesting member
+can read content, including when the viewer is a manager. Wire capture is bounded
+and never stores authentication headers. Secret redaction is best effort; ordinary
+private prose is still private data protected by ownership and encryption.
 Personal export includes live metadata; personal deletion and job retention delete
-its associated per-model usage. This is application access control, not protection
+its associated per-model usage, encrypted model calls and signed-in HTTP error logs. This is application access control, not protection
 against infrastructure administrators with direct database access.

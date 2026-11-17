@@ -98,3 +98,23 @@ func TestSlackWorkerRecoversInterruptedAttempts(t *testing.T) {
 		})
 	}
 }
+
+type terminalJobStore struct {
+	workerJobStore
+	failed bool
+}
+
+func (q *terminalJobStore) Fail(context.Context, repository.SlackJob, string) error {
+	q.failed = true
+	return nil
+}
+func TestSlackWorkerStopsPermanentFailure(t *testing.T) {
+	q := &terminalJobStore{}
+	q.job = repository.SlackJob{ID: 1, Attempts: 1}
+	w := SlackJobWorker{Jobs: q, Process: func(context.Context, repository.SlackJob) error {
+		return repository.Permanent(errors.New("not installed"))
+	}}
+	if _, err := w.ProcessNext(context.Background()); err == nil || !q.failed || q.retries != 0 {
+		t.Fatal("permanent job retried")
+	}
+}

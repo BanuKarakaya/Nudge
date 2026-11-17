@@ -11,6 +11,7 @@ import (
 
 	"nudge/internal/domain"
 	"nudge/internal/repository"
+	"nudge/internal/slack"
 )
 
 type memoryOutbox struct {
@@ -229,5 +230,33 @@ func TestScheduledDigestPassesExactWindowAndNeverRecomputesQueuedDigest(t *testi
 	}
 	if calls != 1 || client.calls["second"] != 2 || len(q.complete) != 1 {
 		t.Fatal("retry did not reuse the queued digest")
+	}
+}
+
+type terminalOutbox struct {
+	memoryOutbox
+	failed bool
+}
+
+func (q *terminalOutbox) Fail(context.Context, repository.NotificationDelivery) error {
+	q.failed = true
+	return nil
+}
+
+type botInvitation struct{}
+
+func (botInvitation) DiscoverWorkspace(context.Context, int64) error { return nil }
+func (botInvitation) DeliverInvitation(context.Context, int64, string) error {
+	return &slack.APIError{Method: "conversations.open", Code: "cant_dm_bot", Status: 200}
+}
+func TestBotInvitationStopsWithoutRetry(t *testing.T) {
+	q := &terminalOutbox{}
+	ctx := context.Background()
+	if err := q.Enqueue(ctx, 1, "connection_invitation", "workspace", repository.NotificationMessage{Connection: "workspace"}); err != nil {
+		t.Fatal(err)
+	}
+	worker := DeliveryWorker{Notifications: q, Onboarding: botInvitation{}}
+	if _, err := worker.DeliverNext(ctx); err == nil || !q.failed || len(q.retries) != 0 || len(q.complete) != 0 {
+		t.Fatal("bot invitation retried or marked delivered")
 	}
 }

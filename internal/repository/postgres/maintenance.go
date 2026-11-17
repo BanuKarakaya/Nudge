@@ -32,6 +32,7 @@ func Cleanup(ctx context.Context, db *pgxpool.Pool, days int) error {
 	}
 	for _, q := range []string{
 		`DELETE FROM nudge_conversations WHERE updated_at<NOW()-($1*INTERVAL '1 day')`,
+		`DELETE FROM nudge_http_errors WHERE created_at<NOW()-($1*INTERVAL '1 day')`,
 		`DELETE FROM nudge_slack_jobs WHERE status IN ('completed','failed') AND finished_at<NOW()-($1*INTERVAL '1 day')`,
 		`DELETE FROM nudge_ai_interactions WHERE created_at<NOW()-($1*INTERVAL '1 day')`,
 		`DELETE FROM nudge_audit_log WHERE created_at<NOW()-($1*INTERVAL '1 day')`,

@@ -12,6 +12,7 @@ import (
 
 	"nudge/internal/analytics"
 	"nudge/internal/repository"
+	"nudge/internal/secure"
 	"nudge/internal/workspace"
 	"nudge/migrations"
 )
@@ -19,14 +20,19 @@ import (
 var _ repository.AnalyticsRepository = (*AnalyticsRepository)(nil)
 
 type AnalyticsRepository struct {
-	db *pgxpool.Pool
+	db          *pgxpool.Pool
+	traceCipher secure.Cipher
 }
 
-func NewAnalyticsRepository(ctx context.Context, db *pgxpool.Pool) (*AnalyticsRepository, error) {
+func NewAnalyticsRepository(ctx context.Context, db *pgxpool.Pool, ciphers ...secure.Cipher) (*AnalyticsRepository, error) {
 	if err := migrations.Apply(ctx, db); err != nil {
 		return nil, err
 	}
-	return &AnalyticsRepository{db: db}, nil
+	r := &AnalyticsRepository{db: db}
+	if len(ciphers) > 0 {
+		r.traceCipher = ciphers[0]
+	}
+	return r, nil
 }
 
 func (r *AnalyticsRepository) RecordInteraction(ctx context.Context, record repository.InteractionRecord) error {

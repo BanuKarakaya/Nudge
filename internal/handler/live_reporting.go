@@ -7,6 +7,7 @@ import (
 	"nudge/internal/analytics"
 	"nudge/internal/repository"
 	"nudge/internal/service"
+	"nudge/internal/slack"
 	"nudge/internal/workspace"
 	"time"
 )
@@ -15,6 +16,15 @@ func (h *SlackEventHandler) reportingContext(ctx context.Context, j repository.S
 	store, ok := h.jobs.(repository.JobReporter)
 	if !ok {
 		return ctx
+	}
+	if modelStore, ok := h.jobs.(repository.ModelCallReporter); ok {
+		ctx = analytics.WithModelReporter(ctx, func(call analytics.ModelCall) {
+			persist, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+			defer cancel()
+			if err := modelStore.ReportModelCall(persist, j, call); err != nil {
+				log.Printf("slack_job=%d stage=model_trace_unavailable", j.ID)
+			}
+		})
 	}
 	return analytics.WithReporter(ctx, func(e analytics.LiveEvent) {
 		persist, cancel := context.WithTimeout(context.WithoutCancel(ctx), 750*time.Millisecond)
@@ -25,6 +35,13 @@ func (h *SlackEventHandler) reportingContext(ctx context.Context, j repository.S
 	})
 }
 func liveError(err error) string {
+	if errors.Is(err, repository.ErrWorkspaceNotInstalled) {
+		return "workspace_not_installed"
+	}
+	var slackError *slack.APIError
+	if errors.As(err, &slackError) {
+		return "slack_" + slackError.Code
+	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return "timeout"
 	}

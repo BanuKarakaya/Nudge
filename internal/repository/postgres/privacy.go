@@ -27,6 +27,7 @@ func (s *WorkspaceStore) DeletePersonalData(ctx context.Context, user int64) err
 		}
 	}
 	for _, query := range []string{
+		`DELETE FROM nudge_http_errors WHERE user_id=$1`,
 		`DELETE FROM nudge_slack_jobs j USING users u WHERE u.id=$1 AND j.team_id=u.team_id AND j.slack_user_id=u.slack_user_id`,
 		`DELETE FROM nudge_conversations c USING users u WHERE u.id=$1 AND c.team_id=u.team_id AND c.slack_user_id=u.slack_user_id`,
 		`DELETE FROM nudge_ai_interactions WHERE user_id=$1`,

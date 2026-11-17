@@ -2,6 +2,8 @@ package postgres
 
 import (
 	"context"
+	"errors"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -97,16 +99,11 @@ func (r *InstallationRepository) GetByUserID(ctx context.Context, userID int64) 
 }
 
 func (r *InstallationRepository) UpsertUser(ctx context.Context, teamID, slackUserID string) (int64, error) {
-	const query = `
-		INSERT INTO users (team_id, slack_user_id)
-		VALUES ($1, $2)
-		ON CONFLICT (team_id, slack_user_id) DO UPDATE SET
-			slack_user_id = EXCLUDED.slack_user_id
-		RETURNING id`
-
-	var userID int64
-	err := r.db.QueryRow(ctx, query, teamID, slackUserID).Scan(&userID)
-	return userID, err
+	id, err := r.SignInUser(ctx, teamID, slackUserID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, repository.Permanent(repository.ErrWorkspaceNotInstalled)
+	}
+	return id, err
 }
 
 // SignInUser accepts a verified Slack identity only for an existing installation.

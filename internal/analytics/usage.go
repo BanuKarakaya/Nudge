@@ -7,6 +7,9 @@ import (
 
 // AIUsage is emitted by each provider call that contributes to a user turn.
 type AIUsage struct {
+	CachedTokens     int
+	ReasoningTokens  int
+	CostUSD          *float64
 	Provider         string
 	Model            string
 	PromptTokens     int

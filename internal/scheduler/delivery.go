@@ -75,6 +75,13 @@ func (w DeliveryWorker) DeliverNext(ctx context.Context) (bool, error) {
 	finishCtx, finishCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer finishCancel()
 	if err != nil {
+		if repository.IsPermanent(err) {
+			if terminal, ok := w.Notifications.(interface {
+				Fail(context.Context, repository.NotificationDelivery) error
+			}); ok {
+				return true, errors.Join(err, terminal.Fail(finishCtx, d))
+			}
+		}
 		retryErr := w.Notifications.Retry(finishCtx, d, retryDelay(d.Attempts))
 		return true, errors.Join(fmt.Errorf("notification %d send failed: %w", d.ID, err), retryErr)
 	}

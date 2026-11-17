@@ -21,6 +21,11 @@ type MonitorEvent struct {
 	Attempt int       `json:"attempt"`
 }
 type MonitorRequest struct {
+	RequestText, ResponseText                                          string
+	ContentVisible                                                     bool
+	ModelCalls                                                         []analytics.ModelCall
+	CachedTokens, ReasoningTokens, ModelCallCount, CostCalls           int64
+	CostUSD                                                            float64
 	ToolFailures                                                       int64
 	ID                                                                 int64
 	User, Name, Channel, Thread, Status, Stage, Model, Tool, ErrorCode string
@@ -42,6 +47,9 @@ type MonitorModel struct {
 	Requests, Calls, PromptTokens, CompletionTokens, Tokens int64
 }
 type MonitorSummary struct {
+	HTTPErrors                                                                                                                       []HTTPError
+	CachedTokens, ReasoningTokens, ModelCallCount, CostCalls                                                                         int64
+	CostUSD                                                                                                                          float64
 	IssueRequests, ToolIssueRequests                                                                                                 int64
 	Requests, Queued, Running, Completed, Failed, Undelivered, ActiveUsers, Tokens, PromptTokens, CompletionTokens, FilteredRequests int64
 	AverageMS, P95MS                                                                                                                 float64
@@ -53,4 +61,19 @@ type MonitorSummary struct {
 }
 type MonitorRepository interface {
 	Monitor(context.Context, int64, bool, MonitorFilters) (MonitorSummary, error)
+}
+
+// ModelCallReporter stores encrypted content separately from operational events.
+type ModelCallReporter interface {
+	ReportModelCall(context.Context, SlackJob, analytics.ModelCall) error
+}
+
+type HTTPError struct {
+	RequestID, Method, Route string
+	Status                   int
+	DurationMS               int64
+	CreatedAt                time.Time
+}
+type HTTPErrorRecorder interface {
+	RecordHTTPError(context.Context, int64, HTTPError) error
 }

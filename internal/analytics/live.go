@@ -36,7 +36,7 @@ func Stage(ctx context.Context, stage string) { Report(ctx, LiveEvent{Stage: sta
 // Validate uses a host-owned catalog. It cannot become an arbitrary log sink.
 func ValidStage(stage string) bool {
 	switch stage {
-	case "worker_started", "identity_lookup", "installation_lookup", "history_loading", "agent_starting", "model_starting", "model_running", "model_handoff", "tool_started", "tool_completed", "tool_failed", "approval_waiting", "action_starting", "action_completed", "action_failed", "response_ready", "delivery_started", "delivery_failed", "delivery_completed", "attempt_failed", "usage":
+	case "provider_failed", "worker_started", "identity_lookup", "installation_lookup", "history_loading", "agent_starting", "model_starting", "model_running", "model_handoff", "tool_started", "tool_completed", "tool_failed", "approval_waiting", "action_starting", "action_completed", "action_failed", "response_ready", "delivery_started", "delivery_failed", "delivery_completed", "attempt_failed", "usage":
 		return true
 	}
 	return false

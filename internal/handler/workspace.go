@@ -28,7 +28,7 @@ var workspaceHTML string
 
 //go:embed workspace_settings.html
 var workspaceSettingsHTML string
-var workspaceTemplate = template.Must(template.New("workspace").Funcs(template.FuncMap{"count": formatCount, "millis": formatMillis, "activityTime": formatActivityTime, "activityStatus": activityStatus, "activityLabel": activityLabel, "monitorStage": monitorStage, "monitorError": monitorError, "monitorStatus": monitorStatusLabel, "monitorTime": monitorTime, "monitorRequest": monitorRequestLabel}).Parse(workspaceHTML + workspaceAnalyticsHTML + connectorHTML + monitorHTML + workspaceSettingsHTML))
+var workspaceTemplate = template.Must(template.New("workspace").Funcs(template.FuncMap{"messages": inspectorMessages, "chartPoints": chartPoints, "percent": monitorPercent, "cost": monitorCost, "count": formatCount, "millis": formatMillis, "activityTime": formatActivityTime, "activityStatus": activityStatus, "activityLabel": activityLabel, "monitorStage": monitorStage, "monitorError": monitorError, "monitorStatus": monitorStatusLabel, "monitorTime": monitorTime, "monitorRequest": monitorRequestLabel}).Parse(workspaceHTML + workspaceAnalyticsHTML + connectorHTML + monitorHTML + workspaceSettingsHTML))
 
 const workspaceCookie = "nudgy_workspace"
 
@@ -103,6 +103,7 @@ func (h *WorkspaceHandler) RegisterTracker(s *tracker.Service) {
 }
 func (h *WorkspaceHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dashboard/live/data", h.monitorData)
+	mux.HandleFunc("GET /dashboard/slack-manifest", h.slackManifest)
 	mux.HandleFunc("GET /dashboard", h.analyticsPage)
 	mux.HandleFunc("GET /dashboard/setup", h.home)
 	mux.HandleFunc("GET /dashboard/integrations", h.home)
@@ -124,7 +125,7 @@ func (h *WorkspaceHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dashboard/actions", h.actionPage)
 	mux.HandleFunc("POST /dashboard/actions", h.actionPage)
 	files := http.StripPrefix("/dashboard/", http.FileServer(http.FS(dashboard.Files())))
-	for _, name := range []string{"styles.css", "workspace.css", "monitor.js", "nudgy-mascot.webp"} {
+	for _, name := range []string{"styles.css", "workspace.css", "monitor.js", "nudgy-mascot.webp", "nudgy-icon.png", "nudgy-thinking-emoji.png"} {
 		mux.Handle("GET /dashboard/"+name, files)
 	}
 	for _, path := range []string{"/dashboard/{$}", "/dashboard/index.html", "/dashboard/branch-rules.html"} {
@@ -258,6 +259,7 @@ func (h *WorkspaceHandler) provider(kind string) (workspaceProvider, bool) {
 }
 
 type workspaceCard struct {
+	Setup, Callback                                      string
 	Kind, Name, Status, AccountName                      string
 	Configured, Enabled, Connected, Manager, Unavailable bool
 	Personal                                             bool
@@ -382,6 +384,8 @@ func (h *WorkspaceHandler) home(w http.ResponseWriter, r *http.Request) {
 		card := workspaceCard{Kind: kind, Name: names[kind], Manager: m.Manager && section == "integrations"}
 		p, configured := h.provider(kind)
 		card.Configured = configured
+		card.Setup = providerSetup(kind)
+		card.Callback = h.base + "/" + kind + "/oauth/callback"
 		card.Personal = p.Personal
 		if p.Personal {
 			card.Manager = false
@@ -407,7 +411,7 @@ func (h *WorkspaceHandler) home(w http.ResponseWriter, r *http.Request) {
 		}
 		switch {
 		case !configured:
-			card.Status = "Bu Nudgy kurulumunda mevcut değil"
+			card.Status = "Sunucu bağlantı ayarı bekleniyor"
 		case card.Unavailable:
 			card.Status = "Hesap durumu alınamadı"
 		case !card.Enabled:

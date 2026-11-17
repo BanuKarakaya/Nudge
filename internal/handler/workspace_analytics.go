@@ -139,7 +139,15 @@ func (h *WorkspaceHandler) analyticsPage(w http.ResponseWriter, r *http.Request)
 	h.page(w, 200, data)
 }
 
-func formatCount(n int64) string {
+func formatCount(value any) string {
+	var n int64
+	switch v := value.(type) {
+	case int:
+		n = int64(v)
+	case int64:
+		n = v
+	}
+
 	s := strconv.FormatInt(n, 10)
 	start := 0
 	if n < 0 {

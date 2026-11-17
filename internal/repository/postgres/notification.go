@@ -143,3 +143,11 @@ func (r *NotificationRepository) Retry(ctx context.Context, d repository.Notific
 	}
 	return err
 }
+
+func (r *NotificationRepository) Fail(ctx context.Context, d repository.NotificationDelivery) error {
+	result, err := r.db.Exec(ctx, `UPDATE notifications SET delivery_status='failed',lease_until=NULL,claim_token=NULL WHERE id=$1 AND claim_token=$2 AND delivery_status='sending'`, d.ID, d.ClaimToken)
+	if err == nil && result.RowsAffected() != 1 {
+		return errors.New("notification lease lost")
+	}
+	return err
+}

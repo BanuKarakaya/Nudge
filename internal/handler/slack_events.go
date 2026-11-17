@@ -65,6 +65,7 @@ type slackReactionClient interface {
 }
 
 const processingReaction = "nudgy-thinking-emoji"
+const fallbackProcessingReaction = "thinking_face"
 
 func NewSlackEventHandler(signingSecret string, installations repository.InstallationRepository, bookmarks service.BookmarkService, feedbinDigest *service.FeedbinDigestService, runtime service.AgentRuntime, web service.WebAssistant, history service.ConversationStore, client slackThreadMessageClient, timezone *time.Location, analytics ...repository.AnalyticsRepository) *SlackEventHandler {
 	var analyticsRepository repository.AnalyticsRepository
@@ -91,11 +92,14 @@ type slackEventEnvelope struct {
 			Bot   []string `json:"bot"`
 			OAuth []string `json:"oauth"`
 		} `json:"tokens"`
-		User     string `json:"user"`
-		Text     string `json:"text"`
-		Channel  string `json:"channel"`
-		TS       string `json:"ts"`
-		ThreadTS string `json:"thread_ts"`
+		User        string `json:"user"`
+		BotID       string `json:"bot_id"`
+		Subtype     string `json:"subtype"`
+		ChannelType string `json:"channel_type"`
+		Text        string `json:"text"`
+		Channel     string `json:"channel"`
+		TS          string `json:"ts"`
+		ThreadTS    string `json:"thread_ts"`
 	} `json:"event"`
 }
 
@@ -135,7 +139,7 @@ func (h *SlackEventHandler) handle(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	if envelope.Event.Type != "app_mention" {
+	if !conversationalEvent(envelope) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
@@ -239,6 +243,9 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 	log.Printf("slack_request=%s stage=user_resolved user_id=%d slack_user_id=%q team_id=%q elapsed_ms=%d", requestID, userID, event.Event.User, event.TeamID, time.Since(started).Milliseconds())
 	analytics.Stage(ctx, "installation_lookup")
 	installation, err := h.installations.GetByUserID(ctx, userID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return repository.Permanent(repository.ErrWorkspaceNotInstalled)
+	}
 	if err != nil {
 		log.Printf("slack_request=%s stage=installation_lookup_failed elapsed_ms=%d error=%q", requestID, time.Since(started).Milliseconds(), err)
 		return err
@@ -248,7 +255,13 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 	var removeProcessingReaction func()
 	if reactionClient, ok := h.client.(slackReactionClient); ok && event.Event.TS != "" {
 		reactionCtx, reactionCancel := context.WithTimeout(ctx, 3*time.Second)
-		err := reactionClient.AddReaction(reactionCtx, installation.BotToken, event.Event.Channel, event.Event.TS, processingReaction)
+		reaction := processingReaction
+		err := reactionClient.AddReaction(reactionCtx, installation.BotToken, event.Event.Channel, event.Event.TS, reaction)
+		var apiErr *slack.APIError
+		if errors.As(err, &apiErr) && apiErr.Code == "invalid_name" {
+			reaction = fallbackProcessingReaction
+			err = reactionClient.AddReaction(reactionCtx, installation.BotToken, event.Event.Channel, event.Event.TS, reaction)
+		}
 		reactionCancel()
 		if err != nil {
 			log.Printf("slack_request=%s stage=processing_reaction_failed error=%q", requestID, err)
@@ -257,7 +270,7 @@ func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slac
 			removeProcessingReaction = func() {
 				removeCtx, removeCancel := context.WithTimeout(context.Background(), 3*time.Second)
 				defer removeCancel()
-				if err := reactionClient.RemoveReaction(removeCtx, installation.BotToken, event.Event.Channel, event.Event.TS, processingReaction); err != nil {
+				if err := reactionClient.RemoveReaction(removeCtx, installation.BotToken, event.Event.Channel, event.Event.TS, reaction); err != nil {
 					log.Printf("slack_request=%s stage=processing_reaction_remove_failed error=%q", requestID, err)
 				} else {
 					log.Printf("slack_request=%s stage=processing_reaction_removed", requestID)
@@ -583,4 +596,11 @@ func (h *SlackEventHandler) linkMergePeers() {
 		h.coding.service.WithMergePeer(h.gitlab.service)
 		h.gitlab.service.WithMergePeer(h.coding.service)
 	}
+}
+
+func conversationalEvent(e slackEventEnvelope) bool {
+	if e.Event.BotID != "" || e.Event.Subtype != "" {
+		return false
+	}
+	return e.Event.Type == "app_mention" || (e.Event.Type == "message" && e.Event.ChannelType == "im" && strings.HasPrefix(e.Event.Channel, "D"))
 }

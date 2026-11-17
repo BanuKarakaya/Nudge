@@ -8,9 +8,9 @@ type SlackInstallation struct {
 }
 
 type SlackMember struct {
-	ID      string
-	Deleted bool
-	IsBot   bool
+	ID      string `json:"id"`
+	Deleted bool   `json:"deleted"`
+	IsBot   bool   `json:"is_bot"`
 }
 
 type WorkspaceUser struct {

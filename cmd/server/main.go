@@ -7,9 +7,11 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -198,7 +200,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("initialize conversation history: %v", err)
 	}
-	analyticsRepository, err := postgres.NewAnalyticsRepository(context.Background(), db)
+	analyticsRepository, err := postgres.NewAnalyticsRepository(context.Background(), db, aiCipher)
 	if err != nil {
 		log.Fatalf("initialize analytics: %v", err)
 	}
@@ -229,7 +231,7 @@ func main() {
 		log.Fatalf("Jira/Trello configuration: %v", err)
 	}
 	jobCtx, jobCancel := context.WithTimeout(appCtx, 15*time.Second)
-	jobRepository, err := postgres.NewSlackJobRepository(jobCtx, db)
+	jobRepository, err := postgres.NewSlackJobRepository(jobCtx, db, aiCipher)
 	jobCancel()
 	if err != nil {
 		log.Fatalf("initialize Slack jobs: %v", err)
@@ -285,7 +287,18 @@ func main() {
 
 	addr := ":" + port
 	log.Printf("Nudgy server listening on %s", addr)
-	server := &http.Server{Addr: addr, Handler: handler.HTTPMiddleware(mux), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 120 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20}
+	var proxies []netip.Prefix
+	for _, raw := range strings.Split(os.Getenv("NUDGY_TRUSTED_PROXIES"), ",") {
+		if strings.TrimSpace(raw) == "" {
+			continue
+		}
+		prefix, err := netip.ParsePrefix(strings.TrimSpace(raw))
+		if err != nil {
+			log.Fatal("invalid NUDGY_TRUSTED_PROXIES CIDR")
+		}
+		proxies = append(proxies, prefix)
+	}
+	server := &http.Server{Addr: addr, Handler: handler.HTTPMiddleware(mux, handler.HTTPOptions{TrustedProxies: proxies, ReportError: workspacePortal.RecordHTTPError}), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 120 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20}
 	serverDone := make(chan error, 1)
 	go func() { serverDone <- server.ListenAndServe() }()
 	select {

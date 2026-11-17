@@ -89,7 +89,7 @@ func (c APIClient) ListUsers(ctx context.Context, token string) ([]domain.SlackM
 			return nil, err
 		}
 		if resp.StatusCode != http.StatusOK || !result.OK {
-			return nil, fmt.Errorf("Slack users.list failed: %s", result.Error)
+			return nil, &APIError{Method: "users.list", Code: result.Error, Status: resp.StatusCode}
 		}
 		members = append(members, result.Members...)
 		cursor = strings.TrimSpace(result.Metadata.Next)
@@ -124,7 +124,7 @@ func (c APIClient) OpenDirectMessage(ctx context.Context, token, slackUserID str
 		if result.Error == "" {
 			result.Error = resp.Status
 		}
-		return "", fmt.Errorf("Slack conversations.open failed: %s", result.Error)
+		return "", &APIError{Method: "conversations.open", Code: result.Error, Status: resp.StatusCode}
 	}
 	return result.Channel.ID, nil
 }
@@ -212,7 +212,7 @@ func (c APIClient) setReaction(ctx context.Context, token, endpoint string, payl
 		if result.Error == "" {
 			result.Error = resp.Status
 		}
-		return fmt.Errorf("Slack reaction request failed: %s", result.Error)
+		return &APIError{Method: "reactions", Code: result.Error, Status: resp.StatusCode}
 	}
 	return nil
 }
@@ -248,7 +248,7 @@ func (c APIClient) postText(ctx context.Context, token string, payload postMessa
 		if result.Error == "" {
 			result.Error = resp.Status
 		}
-		return fmt.Errorf("Slack chat.postMessage failed: %s", result.Error)
+		return &APIError{Method: "chat.postMessage", Code: result.Error, Status: resp.StatusCode}
 	}
 	return nil
 }
@@ -353,7 +353,7 @@ func (c APIClient) post(ctx context.Context, token string, body []byte) error {
 		if result.Error == "" {
 			result.Error = resp.Status
 		}
-		return fmt.Errorf("Slack chat.postMessage failed: %s", result.Error)
+		return &APIError{Method: "chat.postMessage", Code: result.Error, Status: resp.StatusCode}
 	}
 	return nil
 }

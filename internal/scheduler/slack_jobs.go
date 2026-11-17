@@ -72,6 +72,13 @@ func (w SlackJobWorker) ProcessNext(ctx context.Context) (bool, error) {
 			_ = report.ReportJob(retryCtx, job, analytics.LiveEvent{Stage: "attempt_failed", ErrorCode: "worker_panic"})
 		}
 	}
+	if repository.IsPermanent(err) {
+		if terminal, ok := w.Jobs.(interface {
+			Fail(context.Context, repository.SlackJob, string) error
+		}); ok {
+			return true, errors.Join(err, terminal.Fail(retryCtx, job, "permanent_failure"))
+		}
+	}
 	retryErr := w.Jobs.Retry(retryCtx, job, delay)
 	return true, errors.Join(err, retryErr)
 }

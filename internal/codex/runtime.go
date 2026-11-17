@@ -258,12 +258,24 @@ func (r *Runtime) run(parent context.Context, req service.AgentRequest, intentOn
 	}
 	_ = os.Chtimes(home, time.Now(), time.Now())
 	defer func() { _ = os.Chtimes(home, time.Now(), time.Now()) }()
+	baseURL, apiKey, catalogURL := r.config.BaseURL, r.config.APIKey, r.config.ModelCatalogURL
+	if analytics.HasModelReporter(ctx) {
+		observedURL, observedKey, closeObserver, err := observeProvider(ctx, r.config)
+		if err != nil {
+			return service.AgentResult{}, analytics.Failure("telemetry_start_failed", err)
+		}
+		defer closeObserver()
+		baseURL, apiKey = observedURL, observedKey
+		if catalogURL != "" {
+			catalogURL = observedURL + "/models"
+		}
+	}
 	args := []string{"app-server", "--listen", "stdio://"}
 	// No ambient configuration or access to application secrets. The model key
 	// is consumed by the provider, not exposed as a tool argument or instruction.
 	for _, value := range []string{
 		`model_provider="nudgy"`, `model_providers.nudgy.name="Nudgy API"`,
-		`model_providers.nudgy.base_url=` + strconv.Quote(r.config.BaseURL),
+		`model_providers.nudgy.base_url=` + strconv.Quote(baseURL),
 		`model_providers.nudgy.env_key="NUDGY_MODEL_API_KEY"`,
 		`model_providers.nudgy.wire_api="responses"`,
 		`model_providers.nudgy.requires_openai_auth=false`,
@@ -279,12 +291,12 @@ func (r *Runtime) run(parent context.Context, req service.AgentRequest, intentOn
 		args = append(args, "-c", value)
 	}
 	if r.config.ModelCatalogURL != "" {
-		args = append(args, "-c", `model_providers.nudgy.model_catalog_url=`+strconv.Quote(r.config.ModelCatalogURL))
+		args = append(args, "-c", `model_providers.nudgy.model_catalog_url=`+strconv.Quote(catalogURL))
 	}
 	cmd := exec.CommandContext(ctx, r.config.Binary, args...)
 	isolateProcess(cmd)
 	cmd.Dir = work
-	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "CODEX_HOME=" + home, "NUDGY_MODEL_API_KEY=" + r.config.APIKey, "RUST_LOG=error"}
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "CODEX_HOME=" + home, "NUDGY_MODEL_API_KEY=" + apiKey, "RUST_LOG=error"}
 	cmd.Stderr = io.Discard // provider diagnostics can include prompts; never forward them to Railway.
 	cmd.WaitDelay = 2 * time.Second
 	stdin, err := cmd.StdinPipe()
@@ -472,7 +484,7 @@ func (r *Runtime) consume(ctx context.Context, c *connection, req service.AgentR
 	started := time.Now()
 	var usage *service.AgentTokenUsage
 	defer func() {
-		if usage == nil {
+		if usage == nil || analytics.HasModelReporter(ctx) {
 			return
 		}
 		if req.ThreadID != "" && req.History.AgentTokenUsage == nil {

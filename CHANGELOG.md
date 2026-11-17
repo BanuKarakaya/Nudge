@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### Fixed
+- Decode Slack bot flags; stop permanent Slack/constraint retries; fall back to a standard thinking reaction in fresh workspaces.
+- Explain missing provider application setup with exact callback/setting names; trust forwarded client IPs only for configured proxies.
 - Removed Nudgy-imposed daily and per-request AI token quotas, including legacy configuration enforcement. Usage metrics and workspace concurrency remain available.
 - Explicit action requests execute without redundant confirmation by default; existing manager approval/disabled policies remain enforced. Successful tracker actions return concise links and human-readable results.
 - Personal data, reminders, tool policies and audit history use the shared dashboard layout, navigation and styled forms; audit JSON remains available as an explicit download.
@@ -23,6 +25,9 @@
 - Updated go-jose to 4.1.6; moved the runtime to Alpine and removed build-only package managers. The verified arm64 image has no HIGH/CRITICAL Trivy findings.
 
 ### Added
+- Compact dashboard charts, owner-only conversation/model-call inspection, encrypted redacted provider traces, cache/reasoning tokens and reported USD cost coverage.
+- Request IDs, route/status/duration logs and signed-in dashboard HTTP error history.
+- Slack DM support, downloadable app manifest/icon/emoji assets and a one-time icon setup helper.
 - Opt-in real-model language acceptance tests with bounded inference requests and synthetic tool effects.
 - Concurrent PostgreSQL queue/retry and connection-loss tests, native provider outage recovery, and browser-backed member/manager installation isolation.
 - Live dashboard request stages, tool failures, delivery status, model/token usage and role-scoped team/user metrics.

@@ -103,13 +103,18 @@ Names are cached from Slack profiles for 24 hours (ID fallback); no email is sto
 `012_live_observability.sql` runs automatically at startup. No extra service or
 collector is needed. Each job retains at most 128 events; usage totals are separate.
 The existing 90-day completed/failed job retention and personal deletion also
-remove this metadata. Dashboard logs exclude prompts, responses, tool arguments,
-provider error bodies and credentials. They cover queued mentions/approvals, not
+remove this metadata and associated encrypted model call contents. Normal list
+polling excludes message content. A selected owned request exposes redacted
+provider request/response bodies; managers cannot read another member’s content.
+Migration 014 adds cache/reasoning/cost coverage, per-call details and signed-in
+dashboard HTTP errors. See [rollout details](feedback-fixes.md). These cover
+queued mentions/DMs/approvals and signed-in HTTP errors, not
 all scheduler or infrastructure activity. A request that never reached the server,
 a total database outage, and token usage not reported by the provider cannot be
 reconstructed here. Use deployment logs and Slack Events diagnostics in those cases.
 
-Queue attempts stop at eight, including abandoned leases. `failed` items no longer
+Queue attempts stop immediately for classified permanent failures, or at eight
+for transient failures, including abandoned leases. `failed` items no longer
 block newer conversation jobs. Do not blindly reset failed external writes:
 inspect the provider outcome first. Slack delivery remains at-least-once; a crash
 after Slack accepts a message but before its receipt is saved can duplicate it.

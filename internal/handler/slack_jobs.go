@@ -62,8 +62,8 @@ func (h *SlackEventHandler) ProcessJob(ctx context.Context, job repository.Slack
 	if err := json.Unmarshal(job.Payload, &event); err != nil {
 		return err
 	}
-	if event.Event.Type != "app_mention" || eventConversationKey(event) != job.Key || slackEventKey(event) != job.EventKey {
-		return errors.New("Slack job identity mismatch")
+	if !conversationalEvent(event) || eventConversationKey(event) != job.Key || slackEventKey(event) != job.EventKey {
+		return repository.Permanent(errors.New("Slack job identity mismatch"))
 	}
 	if err := h.jobs.CheckLease(ctx, job); err != nil {
 		return err
@@ -74,7 +74,7 @@ func (h *SlackEventHandler) ProcessJob(ctx context.Context, job repository.Slack
 			return err
 		}
 		if prepared.Version != 1 || prepared.Message == "" {
-			return errors.New("invalid saved Slack response")
+			return repository.Permanent(errors.New("invalid saved Slack response"))
 		}
 		err := h.deliverQueuedReply(ctx, event, job, prepared)
 		if err == nil {
@@ -166,7 +166,9 @@ func (h *SlackEventHandler) clearRecoveredReaction(ctx context.Context, event sl
 	if err != nil {
 		return
 	}
-	_ = client.RemoveReaction(ctx, installation.BotToken, event.Event.Channel, event.Event.TS, processingReaction)
+	for _, reaction := range []string{processingReaction, fallbackProcessingReaction} {
+		_ = client.RemoveReaction(ctx, installation.BotToken, event.Event.Channel, event.Event.TS, reaction)
+	}
 }
 
 type leasedAgentTools struct {

@@ -34,11 +34,15 @@
       if (current !== generation || paused || stopped || document.hidden) return;
       if (typeof data.html !== 'string' || typeof data.updated_at !== 'string') throw new Error('invalid response');
       const expanded = new Set(Array.from(view.querySelectorAll('details[open][data-job-id]'), node => node.dataset.jobId));
+      const panels = new Set(Array.from(view.querySelectorAll('details[open][data-panel-id]'), node => node.dataset.panelId));
+      const scrolls = Array.from(view.querySelectorAll('.monitor-events, .wire-grid pre, .bounded-list')).map(node => node.scrollTop);
       const template = document.createElement('template');
       template.innerHTML = data.html;
       // There are no scripts or event handlers in this server-owned fragment.
       view.replaceChildren(template.content.cloneNode(true));
       view.querySelectorAll('details[data-job-id]').forEach(node => { node.open = expanded.has(node.dataset.jobId); });
+      view.querySelectorAll('details[data-panel-id]').forEach(node => { node.open = panels.has(node.dataset.panelId); });
+      view.querySelectorAll('.monitor-events, .wire-grid pre, .bounded-list').forEach((node, i) => { node.scrollTop = scrolls[i] || 0; });
       status.textContent = 'Canlı · 5 saniyede bir yenilenir';
     } catch (error) {
       if (current === generation && !paused && !stopped && !document.hidden) status.textContent = 'Bağlantı kurulamadı · Ekrandaki kayıtlar güncel olmayabilir. Yeniden denenecek.';

@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"nudge/internal/analytics"
 	"nudge/internal/coding"
 	"nudge/internal/handler"
 	"nudge/internal/secure"
@@ -284,10 +285,32 @@ func TestLiveNaturalLanguageFlows(t *testing.T) {
 					req.Tools = tools
 					ctx, cancel := context.WithTimeout(context.Background(), 70*time.Second)
 					defer cancel()
+					// Exercise the same provider observer used by queued Slack jobs,
+					// while keeping every external tool effect synthetic.
+					usage := analytics.NewUsageTracker()
+					var observedMu sync.Mutex
+					var observed []analytics.ModelCall
+					ctx = analytics.WithModelReporter(analytics.WithUsageTracker(ctx, usage), func(call analytics.ModelCall) {
+						observedMu.Lock()
+						defer observedMu.Unlock()
+						observed = append(observed, call)
+					})
 					got, err := runtime.Run(ctx, req)
 					if err != nil {
 						t.Fatalf("native eval failed (details withheld): %T", err)
 					}
+					observedMu.Lock()
+					captured := append([]analytics.ModelCall(nil), observed...)
+					observedMu.Unlock()
+					if len(captured) == 0 || len(usage.Snapshot()) != len(captured) {
+						t.Fatalf("provider calls or per-call usage missing/duplicated: calls=%d usage=%d", len(captured), len(usage.Snapshot()))
+					}
+					for _, call := range captured {
+						if call.Status != http.StatusOK || call.ErrorCode != "" || call.Request == "" || call.Response == "" || call.Usage == nil || call.Usage.TotalTokens <= 0 {
+							t.Errorf("provider inspection incomplete: status=%d code=%q request_bytes=%d response_bytes=%d usage=%+v (content withheld)", call.Status, call.ErrorCode, len(call.Request), len(call.Response), call.Usage)
+						}
+					}
+					t.Logf("observed provider calls=%d usage records=%d", len(captured), len(usage.Snapshot()))
 					t.Logf("synthetic answer=%q tools=%v dm_attempts=%d", got.Text, tools.calls, dmCount)
 					if strings.TrimSpace(got.Text) == "" {
 						t.Error("empty answer")

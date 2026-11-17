@@ -118,3 +118,5 @@ names or trademarks.
 ## Custom company integrations
 
 Connect internal applications and other MCP servers from **Dashboard → Integrations → Özel bağlantılar** without editing Nudgy. Managers discover and select tools; enabled MCP operations execute explicit user requests without a second confirmation by default; managers can require approval or disable individual tools. This first version uses a shared service-account token, not each employee's external account. See the [MCP setup, permissions and example adapter](docs/mcp-connections.md).
+
+Installation feedback, Slack branding and the request inspector: [setup and rollout notes](docs/feedback-fixes.md).
