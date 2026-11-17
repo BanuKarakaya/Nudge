@@ -112,13 +112,18 @@ anahtarıyla müşteri içeriğini okumaya izin vermez.
 4. Üyeler `/dashboard` adresinde **Slack ile giriş yap** düğmesiyle giriş yapar;
    etkin servislerde **Hesabını doğrula** düğmesine basıp kendi hesaplarına izin
    verir. Üyeler GitHub App kurmaz ve repo/proje/pano seçmez.
-5. Günlük istekler Slack’ten yapılır. `panel`, `paneli aç`, `entegrasyonlar` veya
-   `dashboard` mesajı yeni bir özel panel bağlantısı gönderir. “Dashboard linki verebilir misin?” gibi doğal isteklerde de modelin `workspace_connect` aracı aynı bağlantıyı yalnızca isteyen kişinin DM sohbetine yollar; sağlayıcı bağlantısı veya yönetici yetkisi gerekmez. Mevcut sağlayıcı
+5. Günlük istekler Slack’ten yapılır. Dashboard’a erişmek istediğini doğal dille
+   söylemen yeterli: “Lütfen dashboardu aç”, “dashboard linkini ver” veya
+   “yönetim ekranına girmek istiyorum”. Model yazım hatalarını ve konuşmadaki
+   “linkini at” gibi referansları bağlamdan yorumlar; belirli bir kelime, komut
+   veya ayrıca DM istemek gerekmez. `workspace_connect` giriş bağlantısını
+   yalnızca isteyen kişinin DM sohbetine yollar; sağlayıcı bağlantısı veya
+   yönetici yetkisi gerekmez. Mevcut sağlayıcı
    bağlantı komutları ve agent bağlantı araçları da aynı panele yönlendirir.
 
 GitHub, GitLab, Jira ve Trello için ayrı otomatik kurulum davetleri yerine kalıcı
 `/dashboard` adresi ve Slack ile giriş adımları içeren tek panel daveti gönderilir. Feedbin/Raindrop kişisel bağlantı akışları korunur.
-Daveti kaçıran veya bağlantısı süresi dolan kullanıcı doğrudan `/dashboard` adresinden giriş yapabilir. Alternatif olarak Nudgy’nin bulunduğu bir kanalda `@Nudgy panel` yazabilir.
+Daveti kaçıran veya bağlantısı süresi dolan kullanıcı doğrudan `/dashboard` adresinden giriş yapabilir. Alternatif olarak Slack’te Nudgy’den dashboard’ı açmasını veya giriş bağlantısını göndermesini isteyebilir.
 
 Yöneticinin **Hesabım** bölümü de kendi hesabıdır; yöneticinin kişisel tokenı hiçbir
 üyenin işleminde kullanılmaz. GitHub’da **Alanları yönet → GitHub kurulumuna repo

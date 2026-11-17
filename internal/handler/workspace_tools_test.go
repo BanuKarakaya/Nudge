@@ -13,14 +13,26 @@ import (
 )
 
 func TestNaturalDashboardRequestSendsPrivateLinkInExistingThread(t *testing.T) {
-	for _, mode := range []string{"success", "open", "post", "wrong workspace", "lease"} {
-		t.Run(mode, func(t *testing.T) {
+	cases := []struct{ mode, input string }{
+		{"success", "dashboard linki verebilir misin"},
+		{"success", "lütfen dashboardu aç"},
+		{"success", "dashboard inki ver"},
+		{"success", "Nudgy yönetim ekranına girmek istiyorum"},
+		{"success", "linkini at"},
+		{"open", "dashboard linki verebilir misin"},
+		{"post", "dashboard linki verebilir misin"},
+		{"wrong workspace", "dashboard linki verebilir misin"},
+		{"lease", "dashboard linki verebilir misin"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.mode+"/"+tc.input, func(t *testing.T) {
+			mode := tc.mode
 			portal, _, _ := workspaceFixture(t)
 			dm := &failedConnectionDM{stage: mode}
 			portal.installations = codingInstallations{}
 			portal.client = dm
 			q := &testJobQueue{}
-			event := conversationEvent("<@B123> dashboard linki verebilir misin")
+			event := conversationEvent("<@B123> " + tc.input)
 			if mode == "wrong workspace" {
 				event.TeamID = "OTHER"
 			}
@@ -31,6 +43,7 @@ func TestNaturalDashboardRequestSendsPrivateLinkInExistingThread(t *testing.T) {
 				key.Thread = event.Event.TS
 			}
 			state := deliveredState()
+			state.Turns = []service.ConversationExchange{{Request: "Nudgy ayarlarını nereden göreceğim?", Reply: "Kendi dashboard'ında görebilirsin."}}
 			state.AgentThreadID = "old-without-dashboard-tool"
 			state.AgentToolVersion = ""
 			if err := history.Save(context.Background(), key, state); err != nil {
@@ -38,6 +51,11 @@ func TestNaturalDashboardRequestSendsPrivateLinkInExistingThread(t *testing.T) {
 			}
 			sender := &conversationSender{}
 			h := NewSlackEventHandler("", codingInstallations{}, nil, nil, agentFunc(func(ctx context.Context, r service.AgentRequest) (service.AgentResult, error) {
+				// This verifies routing, context and private delivery. Language
+				// understanding is covered by the live model acceptance cases.
+				if !strings.HasSuffix(r.Input, "Slack message:\n"+tc.input) || len(r.History.Turns) != 1 || r.History.Turns[0] != state.Turns[0] {
+					t.Fatal("request or dashboard context did not reach the model")
+				}
 				if r.ThreadID != "" || len(r.History.Turns) != 1 || r.History.AgentToolVersion != "+workspace-panel-v2" {
 					t.Fatal("existing thread did not refresh tools while retaining delivered history", r.History)
 				}

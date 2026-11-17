@@ -12,6 +12,9 @@ kısa ömürlü giriş bağlantısı gönderir.
 | Kullanıcı örneği | Beklenen davranış |
 | --- | --- |
 | Dashboard linki verebilir misin? | `workspace_connect`, başarıdan sonra DM teslimini bildirir. |
+| Lütfen dashboardu aç / dashboard inki ver / yönetim ekranına girmek istiyorum | Yazım hatalarını ve erişim niyetini yorumlar; özel komut veya ek onay istemeden DM giriş bağlantısı gönderir. |
+| Linkini at (önceki konuşma dashboard hakkında) | Hedefi konuşma bağlamından çözer, DM giriş bağlantısı gönderir. |
+| Dashboard ne işe yarıyor, nasıl çalışıyor? | Bilgi sorusunu yanıtlar; erişim isteği olmadığı için DM göndermez. |
 | Feedbin'i bağlamak istiyorum / RSS hesabımı yeniden bağlayalım | Rehberden kullanılabilirliği kontrol eder; DM panel bağlantısı ve Hesaplarım → Feedbin adımları. Şifre Slack'te istenmez. |
 | Raindrop'u nasıl bağlarım? | Rehberden yapılandırmayı kontrol eder, Hesaplarım ve OAuth adımlarını açıklar; yalnızca bilgi sorusu DM göndermez. |
 | GitHub hesabımı değiştirir misin? | Bağlantı aracından kişisel panel yolu; kullanıcının Yeniden doğrula işlemi gerekir. Hesap değiştiğini iddia etmez. |
@@ -57,7 +60,7 @@ denenmelidir. Bir modelin her olası ifadede doğru seçim yapması garanti edil
 ## Gerçek model kabul testi
 
 `make eval-language` üretimdeki native runtime, araç tanımları ve workspace
-rehberiyle 19 senaryoyu seçtiğiniz her modelde çalıştırır. Türkçe/İngilizce ve
+rehberiyle kabul senaryolarını seçtiğiniz her modelde çalıştırır. Türkçe/İngilizce ve
 konuşma bağlamıyla link isteme, olumsuz/alıntılanmış ifadeler, üçüncü taraf dashboard,
 DM hatası, kişisel hesap yenileme, üye yetkisi, desteklenmeyen hatırlatıcı,
 MCP/OpenAPI, veri silme, loglar, izinler, RSS ve araç çıktısı enjeksiyonu kapsanır.
