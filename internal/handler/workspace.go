@@ -172,7 +172,7 @@ func (h *WorkspaceHandler) session(w http.ResponseWriter, r *http.Request) (work
 		return m, "", false
 	}
 	if !repository.WorkspaceAllowed(h.installations, m.Team) {
-		h.page(w, http.StatusForbidden, workspacePage{Error: "Bu sunucu yalnızca sunucu sahibinin izin verdiği Slack çalışma alanlarına açıktır."})
+		h.page(w, http.StatusForbidden, workspacePage{Error: "Bu sunucu yalnızca sahibinin Slack çalışma alanına açıktır."})
 		return m, "", false
 	}
 	csrf := workspaceHash("csrf:" + c.Value)

@@ -85,12 +85,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Feedbin encryption is not configured: %v", err)
 	}
-	// A present but empty plural setting intentionally denies all workspaces.
-	slackTeams, configured := os.LookupEnv("SLACK_TEAM_IDS")
-	if !configured {
-		slackTeams = os.Getenv("SLACK_TEAM_ID")
-	}
-	installationRepository := postgres.NewInstallationRepository(db, feedbinCipher).WithWorkspaces(slackTeams)
+	installationRepository := postgres.NewInstallationRepository(db, feedbinCipher).WithWorkspace(os.Getenv("SLACK_TEAM_ID"))
 	if err := installationRepository.MigrateTokens(appCtx); err != nil {
 		log.Fatal("Slack token migration failed")
 	}

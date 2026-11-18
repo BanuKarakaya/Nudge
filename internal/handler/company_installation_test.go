@@ -63,7 +63,7 @@ func TestCompanyInstallationBrowserAndPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	installs := postgres.NewInstallationRepository(db, cipher).WithWorkspaces("COMPANY_A", "COMPANY_B")
+	installs := postgres.NewInstallationRepository(db, cipher)
 	portal := NewWorkspaceHandler(store, links, "", installs, nil)
 	mux := http.NewServeMux()
 	server := httptest.NewServer(HTTPMiddleware(mux))

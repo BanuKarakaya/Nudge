@@ -10,23 +10,15 @@ import (
 var ErrWorkspaceNotAllowed = errors.New("this self-hosted instance does not accept this Slack workspace")
 
 // WorkspaceRestriction is set by the server operator, never by an OAuth caller.
-// An empty configured list denies all access until setup is complete.
+// An empty configured workspace denies all access until setup is complete.
 type WorkspaceRestriction interface {
-	AllowedWorkspaces() ([]string, bool)
+	AllowedWorkspace() (string, bool)
 }
 
 func WorkspaceAllowed(r InstallationRepository, team string) bool {
 	if policy, ok := r.(WorkspaceRestriction); ok {
-		allowed, restricted := policy.AllowedWorkspaces()
-		if !restricted {
-			return true
-		}
-		for _, id := range allowed {
-			if id != "" && id == team {
-				return true
-			}
-		}
-		return false
+		allowed, restricted := policy.AllowedWorkspace()
+		return !restricted || (allowed != "" && allowed == team)
 	}
 	return true
 }
