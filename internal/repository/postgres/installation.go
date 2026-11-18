@@ -16,30 +16,42 @@ import (
 var _ repository.InstallationRepository = (*InstallationRepository)(nil)
 
 type InstallationRepository struct {
-	db        *pgxpool.Pool
-	cipher    secure.Cipher
-	workspace *string
+	db         *pgxpool.Pool
+	cipher     secure.Cipher
+	workspaces []string
+	restricted bool
 }
 
-// WithWorkspace binds the production repository to one operator-owned workspace.
+// WithWorkspaces binds the production repository to the operator's explicit list.
 // Omission is reserved for unscoped storage migrations and multi-tenant fixtures.
-func (r *InstallationRepository) WithWorkspace(team string) *InstallationRepository {
-	team = strings.TrimSpace(team)
-	r.workspace = &team
+func (r *InstallationRepository) WithWorkspaces(teams ...string) *InstallationRepository {
+	r.restricted = true
+	r.workspaces = []string{}
+	seen := map[string]bool{}
+	for _, entry := range teams {
+		for _, team := range strings.Split(entry, ",") {
+			team = strings.TrimSpace(team)
+			if team != "" && !seen[team] {
+				r.workspaces = append(r.workspaces, team)
+				seen[team] = true
+			}
+		}
+	}
 	return r
 }
 
-func (r *InstallationRepository) AllowedWorkspace() (string, bool) {
-	if r.workspace == nil {
-		return "", false
-	}
-	return *r.workspace, true
+func (r *InstallationRepository) WithWorkspace(team string) *InstallationRepository {
+	return r.WithWorkspaces(team)
+}
+
+func (r *InstallationRepository) AllowedWorkspaces() ([]string, bool) {
+	return append([]string{}, r.workspaces...), r.restricted
 }
 
 // One stable user per installed workspace is enough to discover its members.
 func (r *InstallationRepository) ListWorkspaceSeeds(ctx context.Context) ([]int64, error) {
-	team, restricted := r.AllowedWorkspace()
-	rows, err := r.db.Query(ctx, `SELECT MIN(u.id) FROM users u JOIN slack_installations s ON s.team_id=u.team_id WHERE s.bot_token<>'' AND (NOT $1::boolean OR s.team_id=$2) GROUP BY u.team_id ORDER BY MIN(u.id)`, restricted, team)
+	teams, restricted := r.AllowedWorkspaces()
+	rows, err := r.db.Query(ctx, `SELECT MIN(u.id) FROM users u JOIN slack_installations s ON s.team_id=u.team_id WHERE s.bot_token<>'' AND (NOT $1::boolean OR s.team_id=ANY($2::text[])) GROUP BY u.team_id ORDER BY MIN(u.id)`, restricted, teams)
 	if err != nil {
 		return nil, err
 	}

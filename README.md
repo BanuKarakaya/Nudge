@@ -11,7 +11,7 @@ listelerini takip eden ve ekip araçlarına bağlanan, kendi sunucunda
 
 **Deployment model:** Run your own Nudgy server, PostgreSQL database and Slack app.
 There is no project-operated hosted signup. A `/slack/install` link authorizes
-only the operator-configured `SLACK_TEAM_ID` on that server; it does not provision
+only the operator-configured `SLACK_TEAM_IDS` on that server; it does not provision
 hosting. Never use the maintainer’s private deployment for your installation.
 
 ## What it does
@@ -41,7 +41,7 @@ actual Slack use requires your own Slack app and a reachable HTTPS origin.
 git clone https://github.com/BanuKarakaya/Nudge.git
 cd Nudge
 python3 scripts/setup-env.py
-# Edit .env: enter your own SLACK_TEAM_ID, Slack credentials and public URL.
+# Edit .env: enter your own SLACK_TEAM_IDS, Slack credentials and public URL.
 docker compose --profile app up -d --build --wait
 curl --fail http://localhost:8080/health/db
 ```

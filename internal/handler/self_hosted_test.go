@@ -20,7 +20,12 @@ type restrictedInstallations struct {
 	team string
 }
 
-func (s restrictedInstallations) AllowedWorkspace() (string, bool) { return s.team, true }
+func (s restrictedInstallations) AllowedWorkspaces() ([]string, bool) {
+	if s.team == "" {
+		return nil, true
+	}
+	return strings.Split(s.team, ","), true
+}
 
 func TestSelfHostedInstallationChecksVerifiedWorkspace(t *testing.T) {
 	for _, team := range []string{"T", "OTHER"} {
@@ -59,6 +64,22 @@ func TestSelfHostedInstallationChecksVerifiedWorkspace(t *testing.T) {
 	h.install(w, httptest.NewRequest("GET", "/slack/install?team=T", nil))
 	if w.Code != http.StatusServiceUnavailable || w.Header().Get("Location") != "" || len(w.Result().Cookies()) != 0 {
 		t.Fatal("unconfigured server offered public signup")
+	}
+}
+
+func TestSelfHostedMultipleWorkspaceOAuthSelection(t *testing.T) {
+	for _, requested := range []string{"", "T", "SECOND", "FOREIGN"} {
+		h := NewSlackHandler(slack.OAuthClient{ClientID: "client", RedirectURL: "https://nudgy.test/slack/oauth/callback"}, restrictedInstallations{team: "T,SECOND"})
+		w := httptest.NewRecorder()
+		h.install(w, httptest.NewRequest("GET", "/slack/install?team="+requested, nil))
+		u, _ := url.Parse(w.Header().Get("Location"))
+		want := requested
+		if requested == "FOREIGN" {
+			want = ""
+		}
+		if w.Code != http.StatusFound || u.Query().Get("team") != want {
+			t.Fatalf("workspace selection %q: %d %s", requested, w.Code, u.Query().Get("team"))
+		}
 	}
 }
 
@@ -108,7 +129,7 @@ func TestSelfHostedRejectsExistingForeignDashboardSessions(t *testing.T) {
 
 type restrictedSignIn struct{ *signInInstallations }
 
-func (s restrictedSignIn) AllowedWorkspace() (string, bool) { return "T", true }
+func (s restrictedSignIn) AllowedWorkspaces() ([]string, bool) { return []string{"T"}, true }
 
 func TestSelfHostedRejectsForeignSignInBeforeSavingMember(t *testing.T) {
 	portal, store, _ := workspaceFixture(t)

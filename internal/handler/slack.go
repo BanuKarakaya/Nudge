@@ -58,8 +58,8 @@ func (h *SlackHandler) RegisterRoutes(mux *http.ServeMux) {
 func (h *SlackHandler) install(w http.ResponseWriter, r *http.Request) {
 	privatePageHeaders(w)
 	if p, ok := h.installRepo.(repository.WorkspaceRestriction); ok {
-		if team, restricted := p.AllowedWorkspace(); restricted && team == "" {
-			writeError(w, http.StatusServiceUnavailable, "Self-hosted setup required: configure your own SLACK_TEAM_ID on this server")
+		if teams, restricted := p.AllowedWorkspaces(); restricted && len(teams) == 0 {
+			writeError(w, http.StatusServiceUnavailable, "Self-hosted setup required: configure your own SLACK_TEAM_IDS on this server")
 			return
 		}
 	}
@@ -80,9 +80,17 @@ func (h *SlackHandler) install(w http.ResponseWriter, r *http.Request) {
 	setOAuthCookie(w, r, "nudge_slack_oauth", state, "/slack/oauth/callback")
 	installURL, _ := url.Parse(h.oauth.InstallURL(state))
 	if p, ok := h.installRepo.(repository.WorkspaceRestriction); ok {
-		if team, restricted := p.AllowedWorkspace(); restricted {
+		if teams, restricted := p.AllowedWorkspaces(); restricted {
+			team := ""
+			if len(teams) == 1 {
+				team = teams[0]
+			} else if requested := r.URL.Query().Get("team"); repository.WorkspaceAllowed(h.installRepo, requested) {
+				team = requested
+			}
 			q := installURL.Query()
-			q.Set("team", team)
+			if team != "" {
+				q.Set("team", team)
+			}
 			installURL.RawQuery = q.Encode()
 		}
 	}
@@ -128,7 +136,7 @@ func (h *SlackHandler) callback(w http.ResponseWriter, r *http.Request) {
 	}
 	// Slack's team hint is not an authorization boundary: check the verified result.
 	if !repository.WorkspaceAllowed(h.installRepo, result.Team.ID) {
-		writeError(w, http.StatusForbidden, "This private Nudgy server only accepts its owner's Slack workspace. Deploy your own Nudgy server and Slack app.")
+		writeError(w, http.StatusForbidden, "This private Nudgy server only accepts its operator-approved Slack workspaces. Deploy your own Nudgy server and Slack app.")
 		return
 	}
 	userID, err := h.installRepo.Save(r.Context(), domain.SlackInstallation{

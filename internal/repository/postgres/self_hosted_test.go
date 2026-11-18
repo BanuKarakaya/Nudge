@@ -54,7 +54,24 @@ func TestSelfHostedRepositoryRestrictsExistingAndNewWorkspaces(t *testing.T) {
 	if installs != 2 || members != 2 {
 		t.Fatal("existing data deleted or new foreign data written", installs, members)
 	}
-	r.WithWorkspace("")
+	r.WithWorkspaces(" T, OTHER, ", "T")
+	allowed, restricted := r.AllowedWorkspaces()
+	if !restricted || len(allowed) != 2 || repository.WorkspaceAllowed(r, "THIRD") || repository.WorkspaceAllowed(r, "T-prefix") {
+		t.Fatal("allowlist normalization or exact match failed", allowed)
+	}
+	for team, id := range ids {
+		if got, err := r.GetByUserID(ctx, id); err != nil || got.TeamID != team || got.BotToken != "synthetic" {
+			t.Fatal("approved workspace lost its independent installation", team, err)
+		}
+	}
+	seeds, err = r.ListWorkspaceSeeds(ctx)
+	if err != nil || len(seeds) != 2 {
+		t.Fatal("second approved workspace excluded", seeds, err)
+	}
+	if _, err := r.Save(ctx, domain.SlackInstallation{TeamID: "THIRD", SlackUserID: "U", BotToken: "x"}); !errors.Is(err, repository.ErrWorkspaceNotAllowed) {
+		t.Fatal("multiple approvals opened public signup", err)
+	}
+	r.WithWorkspaces(" , ")
 	if got, err := r.GetByUserID(ctx, ids["T"]); !errors.Is(err, repository.ErrWorkspaceNotAllowed) || got.BotToken != "" {
 		t.Fatal("unconfigured instance returned token")
 	}

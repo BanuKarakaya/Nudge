@@ -14,7 +14,7 @@ type slackLoginRepository interface {
 
 func (h *SlackHandler) signInReady() bool {
 	if p, ok := h.installRepo.(repository.WorkspaceRestriction); ok {
-		if team, restricted := p.AllowedWorkspace(); restricted && team == "" {
+		if teams, restricted := p.AllowedWorkspaces(); restricted && len(teams) == 0 {
 			return false
 		}
 	}
@@ -69,7 +69,7 @@ func (h *SlackHandler) signInCallback(w http.ResponseWriter, r *http.Request) {
 	// This inserts only into an already installed workspace and never changes
 	// its installer/manager, bot token, or integration permissions.
 	if !repository.WorkspaceAllowed(h.installRepo, identity.Team) {
-		h.signInError(w, http.StatusForbidden, "Bu sunucu yalnızca sahibinin Slack çalışma alanına açıktır. Kendi Nudgy sunucunun adresinden giriş yap.")
+		h.signInError(w, http.StatusForbidden, "Bu sunucu yalnızca sunucu sahibinin izin verdiği Slack çalışma alanlarına açıktır. Kendi Nudgy sunucunun adresinden giriş yap.")
 		return
 	}
 	user, err := h.installRepo.(slackLoginRepository).SignInUser(r.Context(), identity.Team, identity.User)
