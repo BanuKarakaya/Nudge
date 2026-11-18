@@ -1,7 +1,13 @@
 # Self-hosting Nudgy
 
-This guide describes the current workspace-owned AI configuration. Use your own
-provider applications and accounts; no credential from the public demo is required.
+Nudgy runs on your own infrastructure: your server, PostgreSQL database, Slack
+application and provider accounts. The project does not offer hosted workspace
+signup. Do not use a maintainer deployment or its Slack OAuth credentials.
+
+One server accepts one Slack workspace, selected by its operator with
+`SLACK_TEAM_ID`. An empty value disables Slack installation and workspace access.
+Changing the workspace selector does not migrate or delete existing data; use
+a separate database and independent encryption keys for a new installation.
 
 ## 1. Configuration
 
@@ -17,6 +23,7 @@ and generate each key separately with `openssl rand -base64 32`.
 | `NUDGE_PUBLIC_URL` | Canonical HTTPS origin, no path; HTTP accepted only for localhost development |
 | `NUDGE_LINK_SIGNING_KEY` | Required independent 32-byte base64 key |
 | `FEEDBIN_ENCRYPTION_KEY` | Required even when Feedbin is unused; also the legacy AI encryption fallback |
+| `SLACK_TEAM_ID` | Your workspace ID (`T...`), required for installation and access; find it in your Slack browser URL |
 | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, `SLACK_SIGNING_SECRET` | Your Slack application's credentials |
 | `SLACK_REDIRECT_URL` | Exact registered callback: `https://YOUR_HOST/slack/oauth/callback` |
 | `NUDGY_AI_ENCRYPTION_KEY` | Recommended independent key; choose before storing AI credentials |
@@ -88,26 +95,35 @@ storage at `/var/lib/nudgy/codex` (uid/gid 1000). Railway does not require Compo
 
 ## 3. Register your Slack app
 
-Create an app for your Slack workspace and configure these URLs using your own
-HTTPS origin:
+Create your own Slack app for your workspace using
+[`internal/slack/manifest.json`](../internal/slack/manifest.json). Replace every
+`https://YOUR_NUDGY_HOST` with your own HTTPS origin before importing the manifest.
+Keep public distribution disabled; users of other workspaces deploy their own
+instance. In **Basic Information → Display Information**, upload
+[`nudgy-icon.png`](../internal/dashboard/static/nudgy-icon.png) once for your app.
+An independently created Slack app does not inherit the maintainer’s icon.
+
+Configure these URLs using your own HTTPS origin:
 
 | Slack setting | URL / value |
 | --- | --- |
 | OAuth redirect | `/slack/oauth/callback` |
 | Event subscriptions Request URL | `/slack/events` |
-| Event subscriptions | `app_mention`, `app_uninstalled`, `tokens_revoked` |
+| Event subscriptions | `app_mention`, `message.im`, `app_uninstalled`, `tokens_revoked` |
 | Interactivity Request URL | `/slack/interactions` |
 | Bot scopes | `app_mentions:read`, `chat:write`, `reactions:write`, `users:read`, `im:write`, `channels:history`, `groups:history`, `im:history`, `mpim:history` |
 
 These scopes match `internal/slack/oauth.go`. History scopes allow context from
-threads the bot can access. The server processes app mentions and installation lifecycle events; enabling
-additional message events does not add direct-message conversation support.
+threads the bot can access. The manifest also enables writable direct messages through `message.im`.
 The dashboard's separate Slack OpenID Connect sign-in requests `openid profile`
 and uses the same callback. Configure Sign in with Slack for your app as required
 by Slack; see [Slack's sign-in documentation](https://docs.slack.dev/authentication/sign-in-with-slack/).
 
-Set the client ID, client secret, signing secret and redirect URL in `.env`, then
-recreate the app service. Visit `/slack/install` to authorize installation. Invite
+Set your workspace ID (`SLACK_TEAM_ID`), client ID, client secret, signing secret
+and redirect URL in `.env`, then
+recreate the app service. Visit **your own HTTPS origin** followed by `/slack/install` to authorize installation.
+The server checks the workspace returned by Slack before saving the bot token;
+a different workspace is rejected even if the OAuth URL’s `team` hint is changed. Invite
 the bot to a channel and mention it. Open `/dashboard`; the installer configures
 the workspace's AI provider and models. Members use **Sign in with Slack**.
 
@@ -182,3 +198,12 @@ Managers can add remote MCP endpoints from the dashboard. Public HTTPS endpoints
 work by default; private network access requires an operator origin allowlist and
 actual network connectivity from the deployment. See [MCP connections](mcp-connections.md)
 for service-account permissions, supported authentication, setup and limitations.
+
+## Upgrading from an unrestricted installation
+
+Set `SLACK_TEAM_ID` to the operator-owned workspace ID before deploying this
+version. The restriction applies to OAuth, Slack events/interactions, queued Slack
+requests, dashboard sessions and bot-token access. Other stored workspace records
+are retained but cannot use this instance through those paths. No data is deleted
+automatically. A blank selector fails closed; it never allows the first visitor
+to claim the server.

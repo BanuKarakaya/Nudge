@@ -171,6 +171,10 @@ func (h *WorkspaceHandler) session(w http.ResponseWriter, r *http.Request) (work
 		h.page(w, 503, workspacePage{Error: "Çalışma alanı şu an doğrulanamıyor."})
 		return m, "", false
 	}
+	if !repository.WorkspaceAllowed(h.installations, m.Team) {
+		h.page(w, http.StatusForbidden, workspacePage{Error: "Bu sunucu yalnızca sahibinin Slack çalışma alanına açıktır."})
+		return m, "", false
+	}
 	csrf := workspaceHash("csrf:" + c.Value)
 	if r.Method != "GET" {
 		r.Body = http.MaxBytesReader(w, r.Body, 131072)
@@ -189,8 +193,12 @@ func (h *WorkspaceHandler) signedOut(w http.ResponseWriter, r *http.Request, mes
 	h.page(w, status, workspacePage{SignIn: true, Title: "Giriş", Message: message})
 }
 func (h *WorkspaceHandler) startSession(w http.ResponseWriter, r *http.Request, user int64, link string) error {
-	if _, err := h.store.Member(r.Context(), user); err != nil {
+	m, err := h.store.Member(r.Context(), user)
+	if err != nil {
 		return err
+	}
+	if !repository.WorkspaceAllowed(h.installations, m.Team) {
+		return repository.ErrWorkspaceNotAllowed
 	}
 	raw, err := newOAuthState()
 	if err != nil {

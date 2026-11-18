@@ -85,7 +85,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Feedbin encryption is not configured: %v", err)
 	}
-	installationRepository := postgres.NewInstallationRepository(db, feedbinCipher)
+	installationRepository := postgres.NewInstallationRepository(db, feedbinCipher).WithWorkspace(os.Getenv("SLACK_TEAM_ID"))
 	if err := installationRepository.MigrateTokens(appCtx); err != nil {
 		log.Fatal("Slack token migration failed")
 	}

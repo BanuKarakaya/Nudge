@@ -1,13 +1,18 @@
 # Nudgy
 
-Nudgy is a self-hostable Slack assistant for repository work, reading lists and
-team tasks. The Go server, customer dashboard, database schemas, integration
+Nudgy is a self-hosted, open-source Slack assistant for repository work, reading lists and
+team tasks. The Go server, workspace dashboard, database schemas, integration
 code and landing-page source are available in this repository under the
 [MIT license](LICENSE), including commercial use, modification and redistribution.
 
 **Türkçe:** Nudgy; Slack üzerinden kod değişiklikleri hazırlayan, okuma
 listelerini takip eden ve ekip araçlarına bağlanan, kendi sunucunda
 çalıştırabileceğin açık kaynak bir asistandır.
+
+**Deployment model:** Run your own Nudgy server, PostgreSQL database and Slack app.
+There is no project-operated hosted signup. A `/slack/install` link authorizes
+only the operator-configured `SLACK_TEAM_ID` on that server; it does not provision
+hosting. Never use the maintainer’s private deployment for your installation.
 
 ## What it does
 
@@ -36,7 +41,7 @@ actual Slack use requires your own Slack app and a reachable HTTPS origin.
 git clone https://github.com/BanuKarakaya/Nudge.git
 cd Nudge
 python3 scripts/setup-env.py
-# Edit .env: enter your Slack credentials and public URL (see the guide below).
+# Edit .env: enter your own SLACK_TEAM_ID, Slack credentials and public URL.
 docker compose --profile app up -d --build --wait
 curl --fail http://localhost:8080/health/db
 ```

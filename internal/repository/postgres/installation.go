@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/jackc/pgx/v5"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -15,13 +16,30 @@ import (
 var _ repository.InstallationRepository = (*InstallationRepository)(nil)
 
 type InstallationRepository struct {
-	db     *pgxpool.Pool
-	cipher secure.Cipher
+	db        *pgxpool.Pool
+	cipher    secure.Cipher
+	workspace *string
+}
+
+// WithWorkspace binds the production repository to one operator-owned workspace.
+// Omission is reserved for unscoped storage migrations and multi-tenant fixtures.
+func (r *InstallationRepository) WithWorkspace(team string) *InstallationRepository {
+	team = strings.TrimSpace(team)
+	r.workspace = &team
+	return r
+}
+
+func (r *InstallationRepository) AllowedWorkspace() (string, bool) {
+	if r.workspace == nil {
+		return "", false
+	}
+	return *r.workspace, true
 }
 
 // One stable user per installed workspace is enough to discover its members.
 func (r *InstallationRepository) ListWorkspaceSeeds(ctx context.Context) ([]int64, error) {
-	rows, err := r.db.Query(ctx, `SELECT MIN(u.id) FROM users u JOIN slack_installations s ON s.team_id=u.team_id WHERE s.bot_token<>'' GROUP BY u.team_id ORDER BY MIN(u.id)`)
+	team, restricted := r.AllowedWorkspace()
+	rows, err := r.db.Query(ctx, `SELECT MIN(u.id) FROM users u JOIN slack_installations s ON s.team_id=u.team_id WHERE s.bot_token<>'' AND (NOT $1::boolean OR s.team_id=$2) GROUP BY u.team_id ORDER BY MIN(u.id)`, restricted, team)
 	if err != nil {
 		return nil, err
 	}
@@ -46,6 +64,9 @@ func NewInstallationRepository(db *pgxpool.Pool, ciphers ...secure.Cipher) *Inst
 }
 
 func (r *InstallationRepository) Save(ctx context.Context, installation domain.SlackInstallation) (int64, error) {
+	if !repository.WorkspaceAllowed(r, installation.TeamID) {
+		return 0, repository.Permanent(repository.ErrWorkspaceNotAllowed)
+	}
 	encrypted, err := encryptToken(r.cipher, installation.BotToken, "slack:"+installation.TeamID)
 	if err != nil {
 		return 0, err
@@ -93,6 +114,9 @@ func (r *InstallationRepository) GetByUserID(ctx context.Context, userID int64) 
 		&installation.SlackUserID,
 	)
 	if err == nil {
+		if !repository.WorkspaceAllowed(r, installation.TeamID) {
+			return domain.SlackInstallation{}, repository.Permanent(repository.ErrWorkspaceNotAllowed)
+		}
 		installation.BotToken, err = decryptToken(r.cipher, installation.BotToken, "slack:"+installation.TeamID)
 	}
 	return installation, err
@@ -109,6 +133,9 @@ func (r *InstallationRepository) UpsertUser(ctx context.Context, teamID, slackUs
 // SignInUser accepts a verified Slack identity only for an existing installation.
 // Signing in cannot create an installation or claim its administrator role.
 func (r *InstallationRepository) SignInUser(ctx context.Context, teamID, slackUserID string) (int64, error) {
+	if !repository.WorkspaceAllowed(r, teamID) {
+		return 0, repository.Permanent(repository.ErrWorkspaceNotAllowed)
+	}
 	var id int64
 	err := r.db.QueryRow(ctx, `INSERT INTO users (team_id, slack_user_id)
 		SELECT team_id, $2 FROM slack_installations WHERE team_id=$1 AND bot_token<>'' AND $2<>''
@@ -118,6 +145,9 @@ func (r *InstallationRepository) SignInUser(ctx context.Context, teamID, slackUs
 }
 
 func (r *InstallationRepository) ListUsersByTeam(ctx context.Context, teamID string) ([]domain.WorkspaceUser, error) {
+	if !repository.WorkspaceAllowed(r, teamID) {
+		return nil, repository.Permanent(repository.ErrWorkspaceNotAllowed)
+	}
 	const query = `
 		SELECT id, team_id, slack_user_id
 		FROM users
@@ -142,6 +172,9 @@ func (r *InstallationRepository) ListUsersByTeam(ctx context.Context, teamID str
 }
 
 func (r *InstallationRepository) GetUserIDBySlackUserID(ctx context.Context, teamID, slackUserID string) (int64, error) {
+	if !repository.WorkspaceAllowed(r, teamID) {
+		return 0, repository.Permanent(repository.ErrWorkspaceNotAllowed)
+	}
 	const query = `
 		SELECT id
 		FROM users

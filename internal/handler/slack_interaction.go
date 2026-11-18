@@ -90,6 +90,10 @@ func (h *SlackInteractionHandler) handle(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "invalid Slack interaction payload")
 		return
 	}
+	if !repository.WorkspaceAllowed(h.installations, payload.Team.ID) {
+		writeError(w, http.StatusForbidden, "workspace not allowed on this self-hosted server")
+		return
+	}
 	if payload.Actions[0].ActionID == "nudgy_action_approve" {
 		if h.actions == nil {
 			writeError(w, 503, "approval unavailable")

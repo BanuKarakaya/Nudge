@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"net/http"
+	"nudge/internal/repository"
 
 	"nudge/internal/slack"
 )
@@ -12,6 +13,11 @@ type slackLoginRepository interface {
 }
 
 func (h *SlackHandler) signInReady() bool {
+	if p, ok := h.installRepo.(repository.WorkspaceRestriction); ok {
+		if team, restricted := p.AllowedWorkspace(); restricted && team == "" {
+			return false
+		}
+	}
 	_, ok := h.installRepo.(slackLoginRepository)
 	return ok && h.workspace != nil && h.oauth.ClientID != "" && h.oauth.ClientSecret != "" && h.oauth.RedirectURL != ""
 }
@@ -62,6 +68,10 @@ func (h *SlackHandler) signInCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	// This inserts only into an already installed workspace and never changes
 	// its installer/manager, bot token, or integration permissions.
+	if !repository.WorkspaceAllowed(h.installRepo, identity.Team) {
+		h.signInError(w, http.StatusForbidden, "Bu sunucu yalnızca sahibinin Slack çalışma alanına açıktır. Kendi Nudgy sunucunun adresinden giriş yap.")
+		return
+	}
 	user, err := h.installRepo.(slackLoginRepository).SignInUser(r.Context(), identity.Team, identity.User)
 	if err != nil {
 		h.signInError(w, 403, "Bu çalışma alanına giriş açılamadı. Doğru Slack çalışma alanını seçtiğinden ve Nudgy’nin kurulmuş olduğundan emin ol. Yeni kurulum için aşağıdaki bağlantıyı kullan.")

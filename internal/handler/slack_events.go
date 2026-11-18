@@ -124,6 +124,10 @@ func (h *SlackEventHandler) handle(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"challenge": envelope.Challenge})
 		return
 	}
+	if !repository.WorkspaceAllowed(h.installations, envelope.TeamID) {
+		writeError(w, http.StatusForbidden, "workspace not allowed on this self-hosted server")
+		return
+	}
 	if envelope.Event.Type == "app_uninstalled" || (envelope.Event.Type == "tokens_revoked" && len(envelope.Event.Tokens.Bot) > 0) {
 		if envelope.TeamID == "" {
 			writeError(w, 400, "missing workspace")
@@ -183,6 +187,9 @@ func (h *SlackEventHandler) replyWithSummary(event slackEventEnvelope) {
 }
 
 func (h *SlackEventHandler) processSlackEvent(parent context.Context, event slackEventEnvelope, job *repository.SlackJob) error {
+	if !repository.WorkspaceAllowed(h.installations, event.TeamID) {
+		return repository.Permanent(repository.ErrWorkspaceNotAllowed)
+	}
 	requestID := slackRequestID(event)
 	if job != nil {
 		requestID = fmt.Sprintf("slack-job-%d", job.ID)

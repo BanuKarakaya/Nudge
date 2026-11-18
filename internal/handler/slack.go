@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -55,6 +56,13 @@ func (h *SlackHandler) RegisterRoutes(mux *http.ServeMux) {
 }
 
 func (h *SlackHandler) install(w http.ResponseWriter, r *http.Request) {
+	privatePageHeaders(w)
+	if p, ok := h.installRepo.(repository.WorkspaceRestriction); ok {
+		if team, restricted := p.AllowedWorkspace(); restricted && team == "" {
+			writeError(w, http.StatusServiceUnavailable, "Self-hosted setup required: configure your own SLACK_TEAM_ID on this server")
+			return
+		}
+	}
 	if h.oauth.ClientID == "" || h.oauth.RedirectURL == "" {
 		writeError(w, http.StatusServiceUnavailable, "Slack OAuth is not configured")
 		return
@@ -70,7 +78,15 @@ func (h *SlackHandler) install(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setOAuthCookie(w, r, "nudge_slack_oauth", state, "/slack/oauth/callback")
-	http.Redirect(w, r, h.oauth.InstallURL(state), http.StatusFound)
+	installURL, _ := url.Parse(h.oauth.InstallURL(state))
+	if p, ok := h.installRepo.(repository.WorkspaceRestriction); ok {
+		if team, restricted := p.AllowedWorkspace(); restricted {
+			q := installURL.Query()
+			q.Set("team", team)
+			installURL.RawQuery = q.Encode()
+		}
+	}
+	http.Redirect(w, r, installURL.String(), http.StatusFound)
 }
 
 func (h *SlackHandler) callback(w http.ResponseWriter, r *http.Request) {
@@ -108,6 +124,11 @@ func (h *SlackHandler) callback(w http.ResponseWriter, r *http.Request) {
 
 	if result.Team.ID == "" || result.AuthedUser.ID == "" || result.AccessToken == "" {
 		writeError(w, 502, "Slack installation identity missing")
+		return
+	}
+	// Slack's team hint is not an authorization boundary: check the verified result.
+	if !repository.WorkspaceAllowed(h.installRepo, result.Team.ID) {
+		writeError(w, http.StatusForbidden, "This private Nudgy server only accepts its owner's Slack workspace. Deploy your own Nudgy server and Slack app.")
 		return
 	}
 	userID, err := h.installRepo.Save(r.Context(), domain.SlackInstallation{
