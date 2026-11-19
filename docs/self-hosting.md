@@ -100,8 +100,10 @@ Create your own Slack app for your workspace using
 `https://YOUR_NUDGY_HOST` with your own HTTPS origin before importing the manifest.
 Keep public distribution disabled; users of other workspaces deploy their own
 instance. In **Basic Information → Display Information**, upload
-[`nudgy-icon.png`](../internal/dashboard/static/nudgy-icon.png) once for your app.
+[`nudgy-icon.png`](../assets/slack/nudgy-icon.png) once for your app.
 An independently created Slack app does not inherit the maintainer’s icon.
+The [Slack asset pack](../assets/slack/README.md) also includes the optional
+thinking emoji and 11 animated GIFs, with download and usage instructions.
 
 Configure these URLs using your own HTTPS origin:
 

@@ -1,13 +1,22 @@
-.PHONY: test check build setup db run fmt-check lint eval-language
+.PHONY: test check test-installation check-integration build setup db run fmt-check lint eval-language
 
-test:
+test: test-installation
 	go test ./...
 	node --test internal/dashboard/*test.cjs
 
-check: fmt-check
+check: fmt-check test-installation
 	go vet ./...
-	go test -race ./...
+	go test -race -count=1 ./...
 	node --test internal/dashboard/*test.cjs
+
+test-installation:
+	python3 scripts/test-installation.py
+
+# Fail instead of silently skipping database/native tests during release review.
+check-integration:
+	@test -n "$$NUDGE_TEST_DATABASE_URL" || (echo "Set NUDGE_TEST_DATABASE_URL to a disposable database"; exit 1)
+	@test -n "$$NUDGY_TEST_CODEX_BINARY" && test -x "$$NUDGY_TEST_CODEX_BINARY" || (echo "Set NUDGY_TEST_CODEX_BINARY to the pinned executable"; exit 1)
+	$(MAKE) check
 
 build:
 	go build -o bin/nudge-server ./cmd/server

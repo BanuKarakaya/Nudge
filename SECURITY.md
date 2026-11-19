@@ -6,7 +6,7 @@ maintained release lines or guaranteed response-time commitments yet.
 ## Report a vulnerability privately
 
 Use GitHub's **Security → Report a vulnerability** for
-[BanuKarakaya/Nudge](https://github.com/BanuKarakaya/Nudge/security).
+[BanuKarakaya/Nudgy](https://github.com/BanuKarakaya/Nudgy/security).
 If the repository does not offer that button, request a private reporting channel
 from the maintainer via their GitHub profile. A public issue may ask for a private
 channel, but must not contain exploit details, credentials or affected user data.

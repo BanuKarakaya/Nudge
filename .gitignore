@@ -19,3 +19,6 @@ coverage.out
 
 # Local release artifacts.
 dist/
+
+# Local image-generation sources; publish selected assets under assets/slack/.
+/output/

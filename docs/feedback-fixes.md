@@ -36,6 +36,9 @@ Provider-specific permissions and registration steps:
 
 ## Slack appearance and direct messages
 
+All profile images and animations are also available in the standalone
+[Slack asset pack](../assets/slack/README.md), with previews and manual upload instructions.
+
 The manager's Setup page downloads a manifest with this installation's URLs,
 a 512px app icon and a 128px optional custom emoji. The source manifest is
 [`internal/slack/manifest.json`](../internal/slack/manifest.json). Set the real

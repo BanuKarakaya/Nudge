@@ -31,6 +31,12 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run() error {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 	appCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -286,7 +292,7 @@ func main() {
 	})
 
 	addr := ":" + port
-	log.Printf("Nudgy server listening on %s", addr)
+	log.Printf("Nudgy HTTP server starting on %s", addr)
 	var proxies []netip.Prefix
 	for _, raw := range strings.Split(os.Getenv("NUDGY_TRUSTED_PROXIES"), ",") {
 		if strings.TrimSpace(raw) == "" {
@@ -301,11 +307,12 @@ func main() {
 	server := &http.Server{Addr: addr, Handler: handler.HTTPMiddleware(mux, handler.HTTPOptions{TrustedProxies: proxies, ReportError: workspacePortal.RecordHTTPError}), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 120 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20}
 	serverDone := make(chan error, 1)
 	go func() { serverDone <- server.ListenAndServe() }()
+	var serveErr error
 	select {
 	case <-appCtx.Done():
 	case err := <-serverDone:
 		if !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("HTTP server stopped: %v", err)
+			serveErr = err
 		}
 		stop()
 	}
@@ -324,6 +331,7 @@ func main() {
 	case <-shutdownCtx.Done():
 		log.Print("Slack workers still stopping; unfinished jobs will recover after lease expiry")
 	}
+	return serveErr
 }
 
 func reminderConfig() (int64, *time.Location) {

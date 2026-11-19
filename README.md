@@ -38,8 +38,8 @@ helper. A browser can view the local login page without provider credentials;
 actual Slack use requires your own Slack app and a reachable HTTPS origin.
 
 ```sh
-git clone https://github.com/BanuKarakaya/Nudge.git
-cd Nudge
+git clone https://github.com/BanuKarakaya/Nudgy.git
+cd Nudgy
 python3 scripts/setup-env.py
 # Edit .env: enter your own SLACK_TEAM_ID, Slack credentials and public URL.
 docker compose --profile app up -d --build --wait
@@ -64,13 +64,13 @@ error: they contain application data.
 
 ## Develop and test
 
-Native development requires Go (the version in `go.mod`), Git and Node.js 22+
+Native development requires Go (the version in `go.mod`), Git, Python 3 and Node.js 22+
 for the dashboard tests. The supported server targets are Linux and macOS;
 use Docker or WSL2 on Windows. The Codex version is pinned in `Dockerfile`.
 
 ```sh
 make test                 # Go tests + browser-code tests; no real provider calls
-make check                # vet + race-enabled Go tests + browser-code tests
+make check                # fresh race tests, vet, browser and setup-helper tests
 make build                # bin/nudge-server
 ```
 
@@ -96,9 +96,18 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow.
 | `internal/dashboard` | Embedded styles/assets and legacy dashboard tests |
 | `railway/nudgy-tanitim` | Committed landing-page source and container configuration |
 | `scripts` | Local configuration and empty-database initialization |
+| `assets/slack` | Profile images, custom emoji and 11 animated GIFs |
+
+## Slack profile images and GIFs
+
+The [Slack asset pack](assets/slack/README.md) includes the profile/app icon,
+thinking emoji and 11 GIFs, with previews and manual installation instructions. These
+files are included when you clone the repository; no running server is needed
+to download them.
 
 ## Documentation
 
+- [Latest launch audit — 19 November 2026](docs/launch-audit-2026-11-19.md)
 - [Release validation and test boundaries](docs/release-validation.md)
 - [Self-hosting and configuration](docs/self-hosting.md)
 - [Architecture, external services and stored data](docs/architecture.md)

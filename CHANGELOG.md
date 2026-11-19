@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Fixed
+- Return a failing process exit code when the HTTP listener cannot start; retain shutdown cleanup.
+- Keep dashboard usage counters within narrow mobile screens.
+- Require patched OpenSSL runtime packages (3.5.9-r1 or newer); CI image scanning now includes medium-severity findings.
 - Decode Slack bot flags; stop permanent Slack/constraint retries; fall back to a standard thinking reaction in fresh workspaces.
 - Explain missing provider application setup with exact callback/setting names; trust forwarded client IPs only for configured proxies.
 - Removed Nudgy-imposed daily and per-request AI token quotas, including legacy configuration enforcement. Usage metrics and workspace concurrency remain available.
@@ -25,6 +28,8 @@
 - Updated go-jose to 4.1.6; moved the runtime to Alpine and removed build-only package managers. The verified arm64 image has no HIGH/CRITICAL Trivy findings.
 
 ### Added
+- Standalone Slack asset pack with profile images, seven animated emoji and four message GIFs; also included in binary release bundles.
+- Fresh integration-check target, startup-failure regression and atomic/concurrent/legacy migration tests; see the [19 November audit](docs/launch-audit-2026-11-19.md).
 - Compact dashboard charts, owner-only conversation/model-call inspection, encrypted redacted provider traces, cache/reasoning tokens and reported USD cost coverage.
 - Request IDs, route/status/duration logs and signed-in dashboard HTTP error history.
 - Slack DM support, downloadable app manifest/icon/emoji assets and a one-time icon setup helper.

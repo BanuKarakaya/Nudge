@@ -17,5 +17,7 @@ done
 cp LICENSE CHANGELOG.md THIRD_PARTY_NOTICES.md "$release_dir/"
 mkdir -p "$release_dir/LICENSES"
 cp LICENSES/*.txt "$release_dir/LICENSES/"
-(cd "$release_dir" && shasum -a 256 nudge-server-* LICENSE CHANGELOG.md THIRD_PARTY_NOTICES.md LICENSES/*.txt > SHA256SUMS)
+mkdir -p "$release_dir/assets/slack"
+cp assets/slack/* "$release_dir/assets/slack/"
+(cd "$release_dir" && shasum -a 256 nudge-server-* LICENSE CHANGELOG.md THIRD_PARTY_NOTICES.md LICENSES/*.txt assets/slack/* > SHA256SUMS)
 printf 'Prepared %s; review before tagging or publishing.\n' "$release_dir"

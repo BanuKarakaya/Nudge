@@ -15,7 +15,8 @@ FROM node:22-alpine AS runtime
 WORKDIR /app
 ARG CODEX_VERSION=0.164.0
 # Upgrade the base image's zlib too: versions before 1.4 contain CVE-2026-4738.
-RUN apk add --no-cache ca-certificates tzdata git tini 'zlib>=1.4-r0' \
+# OpenSSL 3.5.9-r1 includes fixes missing from the base image's 3.5.9-r0.
+RUN apk add --no-cache ca-certificates tzdata git tini 'zlib>=1.4-r0' 'libcrypto3>=3.5.9-r1' 'libssl3>=3.5.9-r1' \
     && npm install --global --ignore-scripts --no-audit --no-fund @openai/codex@${CODEX_VERSION} \
     && npm cache clean --force \
     && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \

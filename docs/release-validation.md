@@ -1,5 +1,7 @@
 # Yayın öncesi doğrulama — 15 Kasım 2026
 
+> En güncel yerel sonuçlar: [19 Kasım duyuru öncesi denetimi](launch-audit-2026-11-19.md).
+
 > Bu rapor 14–15 Kasım kapsamını korur. Sonraki canlı dil testleri,
 > dayanıklılık kontrolleri ve paket düzeltmeleri için
 > [16 Kasım sonuçlarına](release-completion.md) bakın.

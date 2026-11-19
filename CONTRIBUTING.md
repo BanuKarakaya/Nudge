@@ -23,6 +23,20 @@ Regular tests must not call paid AI services, message real Slack users, or mutat
 live repositories. The existing live-model test is opt-in; read its documented
 limits before deliberately running it with a dedicated account.
 
+For release review, run the full offline integration gate with a disposable
+PostgreSQL database and the Codex executable pinned in `Dockerfile`:
+
+```sh
+NUDGE_TEST_DATABASE_URL='postgres://nudge:nudge@localhost:5432/nudge_test?sslmode=disable' \
+NUDGY_TEST_CODEX_BINARY='/absolute/path/to/pinned/codex' make check-integration
+NUDGY_TEST_COMPOSE=1 make test-installation
+```
+
+`check-integration` refuses to run without both prerequisites. `make check`
+always reruns Go tests with the race detector and also checks the configuration
+helper; without those integration variables, database/native tests are skipped.
+Three paid model tests and the manual dashboard preview remain opt-in.
+
 CI runs Go vet/race tests, JavaScript tests, PostgreSQL integration tests, a clean
 server build, vulnerability checks and secret scanning. Dependency changes should
 update `go.sum`, the notices and any bundled license texts. Keep the Docker Codex
